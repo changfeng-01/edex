@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "circuitpilot"
+version = "0.1.0"
+description = "CircuitPilot: simulation-driven circuit evaluation and rule-based parameter recommendation prototype"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "pandas",
+  "matplotlib",
+  "scipy",
+  "pyyaml",
+  "tqdm",
+  "beautifulsoup4",
+  "lxml",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+circuitpilot = "goa_eval.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

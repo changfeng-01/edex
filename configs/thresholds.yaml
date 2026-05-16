@@ -1,0 +1,31 @@
+voltage:
+  VGH: 15.0
+  VGL: -5.0
+  VH_ratio: 0.70
+  VL_ratio: 0.20
+  edge_low_ratio: 0.10
+  edge_high_ratio: 0.90
+
+time:
+  expected_line_period: 20.0e-6
+  expected_pulse_width: 10.0e-6
+  edge_guard_ratio_of_line: 0.05
+  min_false_trigger_duration: 0.2e-6
+  min_valid_pulse_width: 2.0e-6
+
+windows:
+  plateau_center_ratio: 0.60
+  non_select_exclude_edges: true
+  real_waveform_window_source: auto_crossing
+  mock_waveform_window_source: generator_truth
+
+mock:
+  data_source: mock
+  engineering_validity: workflow_test_only
+  sample_interval: 20.0e-9
+  total_time: 180.0e-6
+  output_nodes: [o1, o2, o3, o4, o5, o6, o7, o8]
+
+cost:
+  alpha_W: 1.0
+  alpha_C: 1.0e6

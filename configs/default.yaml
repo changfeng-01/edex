@@ -1,0 +1,18 @@
+project:
+  name: goa_eval_framework
+  default_data_source: mock
+
+paths:
+  raw_dir: data/raw
+  extracted_dir: data/extracted
+  output_dir: outputs
+
+version_detection:
+  version_dir_pattern: "v*"
+  netlist_suffixes: [".netlist", ".sp", ".cir"]
+  mapping_suffix: ".mapping"
+  design_suffix: ".design"
+
+cli:
+  fail_on_missing_metric_table: false
+  fail_on_missing_waveform: false
