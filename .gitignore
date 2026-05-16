@@ -48,3 +48,5 @@ report_ppt*/
 !examples/
 !examples/sample_waveform.csv
 !examples/sample_params.yaml
+
+sitecustomize.py
