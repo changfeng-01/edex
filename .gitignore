@@ -4,8 +4,16 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .tmp_skill_audit/
+.coverage
+coverage.xml
+htmlcov/
+.env
+.env.*
+!.env.example
 .venv/
 venv/
+__pypackages__/
+.DS_Store
 .idea/
 .vscode/
 build/
@@ -40,6 +48,10 @@ data/processed/*
 data/waveforms/*
 outputs/*
 output/*
+outputs_batch/*
+runs/*
+tmp/*
+tmp_outputs/*
 report_ppt*/
 汇报用/
 汇报用.zip

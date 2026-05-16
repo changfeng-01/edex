@@ -1,10 +1,15 @@
 import json
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from conftest import write_extracted_fixture, write_raw_fixture
+
+
+def assert_is_version_marker(value: str) -> None:
+    assert value == "unknown" or re.fullmatch(r"[0-9a-f]{7,40}", value)
 
 
 def test_cli_all_writes_core_outputs(tmp_path):
@@ -75,7 +80,7 @@ def test_cli_all_writes_core_outputs(tmp_path):
     assert required <= set(manifest)
     assert manifest["data_source"] == "mock"
     assert manifest["engineering_validity"] == "workflow_test_only"
-    assert manifest["code_version_or_git_commit"] == "unknown"
+    assert_is_version_marker(manifest["code_version_or_git_commit"])
 
 
 def test_cli_evaluate_design_writes_flat_acceptance_outputs(tmp_path):
@@ -135,7 +140,7 @@ def test_cli_evaluate_design_writes_flat_acceptance_outputs(tmp_path):
     assert manifest["config"]["project"]["name"] == "goa_eval_framework"
     assert manifest["thresholds"]["mock"]["data_source"] == "mock"
     assert manifest["command"].startswith("python -m goa_eval.cli evaluate")
-    assert manifest["code_version_or_git_commit"] == "unknown"
+    assert_is_version_marker(manifest["code_version_or_git_commit"])
     assert manifest["data_source"] == "mock"
     assert manifest["engineering_validity"] == "workflow_test_only"
 
