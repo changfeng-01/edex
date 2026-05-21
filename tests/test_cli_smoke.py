@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 from conftest import write_extracted_fixture, write_raw_fixture
 
 
@@ -230,3 +232,85 @@ def test_cli_evaluate_design_with_waveform_csv_marks_simulation(tmp_path):
     assert "simulation_result" in metrics_text
     assert "simulation waveform data" in report_text
     assert "mock waveform data" not in report_text.splitlines()[0]
+
+
+def test_cli_propose_candidates_writes_csv_and_markdown(tmp_path):
+    summary_path = tmp_path / "real_summary.json"
+    score_path = tmp_path / "score_summary.json"
+    metrics_path = tmp_path / "real_metrics.csv"
+    param_space_path = tmp_path / "param_space.yaml"
+    output_csv = tmp_path / "next_candidates.csv"
+    output_md = tmp_path / "next_candidates.md"
+
+    summary_path.write_text(
+        json.dumps(
+            {
+                "data_source": "real_simulation_csv",
+                "engineering_validity": "simulation_only",
+                "Max_ripple": 1.2,
+                "max_ripple_v_limit": 0.5,
+                "Delay_mean": 14.0e-6,
+                "target_pulse_width": 10.0e-6,
+                "pulse_width_tolerance": 1.0e-6,
+            }
+        ),
+        encoding="utf-8",
+    )
+    score_path.write_text(json.dumps({"hard_constraint_passed": False}), encoding="utf-8")
+    pd.DataFrame([{"stage": 1, "node": "o1", "Ripple": 1.2}]).to_csv(metrics_path, index=False)
+    param_space_path.write_text(
+        """
+parameters:
+  capacitance:
+    unit: F
+    values: [8.0e-13, 1.0e-12]
+  drive_resistance:
+    unit: ohm
+    values: [1000, 1500]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "goa_eval.cli",
+            "propose-candidates",
+            "--summary",
+            str(summary_path),
+            "--score",
+            str(score_path),
+            "--metrics",
+            str(metrics_path),
+            "--param-space",
+            str(param_space_path),
+            "--output-csv",
+            str(output_csv),
+            "--output-md",
+            str(output_md),
+        ],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    table = pd.read_csv(output_csv)
+    assert list(table.columns) == [
+        "schema_version",
+        "result_version",
+        "candidate_id",
+        "priority",
+        "parameter",
+        "direction",
+        "candidate_value",
+        "candidate_unit",
+        "source_recommendation",
+        "trigger_metric",
+        "data_source",
+        "engineering_validity",
+    ]
+    assert {"capacitance", "drive_resistance"} <= set(table["parameter"])
+    assert "simulation_only" in output_md.read_text(encoding="utf-8")

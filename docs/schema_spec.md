@@ -165,6 +165,41 @@ result_version = 1.0
 
 当前无法从输入推断的参数保持空值，不应编造。
 
+## next_candidates.csv
+
+用途：基于单次评价结果、规则推荐和参数空间，生成下一轮仿真可参考的保守候选参数。第一版只输出单参数候选，不生成组合参数。
+
+稳定列：
+
+| 字段 | 说明 |
+|---|---|
+| `schema_version` | Schema 版本。 |
+| `result_version` | 结果格式版本。 |
+| `candidate_id` | 稳定候选编号，例如 `cand_001`。 |
+| `priority` | 规则优先级，数值越大越靠前。 |
+| `parameter` | 建议调整或复核的参数名。 |
+| `direction` | 调整方向，例如 `increase`、`decrease`、`review`。 |
+| `candidate_value` | 参数空间中给出的候选值。 |
+| `candidate_unit` | 参数单位；简单列表格式可为空。 |
+| `source_recommendation` | 触发候选的推荐 ID。 |
+| `trigger_metric` | 触发推荐的指标。 |
+| `data_source` | 固定为 `real_simulation_csv`。 |
+| `engineering_validity` | 固定为 `simulation_only`。 |
+
+候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。
+
+## next_candidates.md
+
+用途：面向人工阅读的下一轮候选参数说明。
+
+内容应包括：
+
+- schema 和 result 版本；
+- `real_simulation_csv` / `simulation_only` 边界；
+- 候选来源和排序规则；
+- 按优先级列出的候选参数；
+- 明确声明：结果基于仿真 CSV 和规则建议，不是实物测试结果，也不是自动优化闭环完成证明。
+
 ## params.yaml
 
 用途：批量评价时描述每个 run 的参数和仿真条件。

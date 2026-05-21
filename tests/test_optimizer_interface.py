@@ -1,4 +1,5 @@
 import pytest
+import pandas as pd
 
 from goa_eval.optimizer import (
     OptimizationRequest,
@@ -7,6 +8,7 @@ from goa_eval.optimizer import (
     load_param_space,
     propose_candidates,
     rank_candidates,
+    write_candidate_outputs,
 )
 
 
@@ -53,3 +55,100 @@ parameters:
     assert any(candidate["parameter"] == "C_store" for candidate in candidates)
     assert any(candidate["parameter"] == "R_driver" for candidate in candidates)
     assert ranked[0]["priority"] >= ranked[-1]["priority"]
+
+
+def test_propose_candidates_expands_simple_parameter_values():
+    param_space = {
+        "C_store": ["1pF", "2pF"],
+        "R_driver": ["10k"],
+    }
+    recommendations = [
+        {
+            "recommendation_id": "ripple_hold_window_review",
+            "trigger_metric": "Max_ripple",
+            "data_source": "real_simulation_csv",
+            "engineering_validity": "simulation_only",
+        }
+    ]
+
+    candidates = rank_candidates(propose_candidates(param_space, recommendations))
+
+    assert [candidate["candidate_value"] for candidate in candidates if candidate["parameter"] == "C_store"] == ["1pF", "2pF"]
+    assert all(candidate["data_source"] == "real_simulation_csv" for candidate in candidates)
+    assert all(candidate["engineering_validity"] == "simulation_only" for candidate in candidates)
+
+
+def test_propose_candidates_supports_unit_values_parameter_space(tmp_path):
+    param_space = tmp_path / "param_space.yaml"
+    param_space.write_text(
+        """
+parameters:
+  capacitance:
+    unit: F
+    values: [8.0e-13, 1.0e-12]
+  drive_resistance:
+    unit: ohm
+    values: [1000, 1500]
+  transistor_width:
+    unit: m
+    values: [8.0e-7]
+""".strip(),
+        encoding="utf-8",
+    )
+    recommendations = [
+        {"recommendation_id": "ripple_hold_window_review", "trigger_metric": "Max_ripple"},
+        {"recommendation_id": "delay_drive_load_review", "trigger_metric": "Delay_mean"},
+    ]
+
+    candidates = rank_candidates(propose_candidates(load_param_space(param_space), recommendations))
+
+    assert any(candidate["parameter"] == "capacitance" and candidate["candidate_unit"] == "F" for candidate in candidates)
+    assert any(candidate["parameter"] == "drive_resistance" and candidate["candidate_unit"] == "ohm" for candidate in candidates)
+    assert any(candidate["parameter"] == "transistor_width" and candidate["candidate_unit"] == "m" for candidate in candidates)
+
+
+def test_propose_candidates_returns_empty_for_info_only_recommendation():
+    recommendations = [{"recommendation_id": "no_rule_failure_detected", "trigger_metric": "none"}]
+
+    assert propose_candidates({"C_store": ["1pF"]}, recommendations) == []
+
+
+def test_write_candidate_outputs_writes_fixed_csv_and_boundary_markdown(tmp_path):
+    candidates = [
+        {
+            "candidate_id": "cand_001",
+            "priority": 90,
+            "parameter": "C_store",
+            "direction": "increase",
+            "candidate_value": "2pF",
+            "candidate_unit": "",
+            "source_recommendation": "ripple_hold_window_review",
+            "trigger_metric": "Max_ripple",
+            "data_source": "real_simulation_csv",
+            "engineering_validity": "simulation_only",
+        }
+    ]
+    csv_path = tmp_path / "next_candidates.csv"
+    md_path = tmp_path / "next_candidates.md"
+
+    write_candidate_outputs(candidates, csv_path=csv_path, markdown_path=md_path)
+
+    table = pd.read_csv(csv_path)
+    assert list(table.columns) == [
+        "schema_version",
+        "result_version",
+        "candidate_id",
+        "priority",
+        "parameter",
+        "direction",
+        "candidate_value",
+        "candidate_unit",
+        "source_recommendation",
+        "trigger_metric",
+        "data_source",
+        "engineering_validity",
+    ]
+    content = md_path.read_text(encoding="utf-8")
+    assert "simulation_only" in content
+    assert "不是实物测试结果" in content
+    assert "自动优化闭环" in content
