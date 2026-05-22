@@ -250,6 +250,32 @@ conditions:
 - `output_dir`
 - `engineering_validity`
 
+## llm_parameter_analysis.md
+
+用途：面向人工阅读的 DeepSeek V4 参数分析结果。
+
+内容应包含：
+
+- 使用模型，例如 `deepseek-v4-pro`；
+- `data_source = real_simulation_csv`；
+- `engineering_validity = simulation_only`；
+- 基于当前参数、指标、评分和候选项生成的分析正文；
+- 明确说明：该分析不是实物测试结论，也不是自动优化闭环完成证明。
+
+## llm_parameter_analysis.json
+
+用途：保留 DeepSeek V4 参数分析的结构化结果，便于后续归档或汇报脚本读取。
+
+稳定字段：
+
+| 字段 | 说明 |
+|---|---|
+| `model` | 调用模型，默认 `deepseek-v4-pro`。 |
+| `boundary` | 包含 `data_source` 和 `engineering_validity`。 |
+| `analysis` | 模型返回的分析正文。 |
+| `metadata` | 模型、token 用量或 mock 标记等元数据。 |
+| `input_files` | 本次分析读取的 summary、score、metrics、candidates 和 params 文件路径。 |
+
 ## recommendations.md
 
 每条推荐项包含：

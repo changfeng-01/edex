@@ -14,6 +14,7 @@ from goa_eval.evaluation.feature_extractor import extract_waveform_features
 from goa_eval.evaluation.mock_waveform import generate_mock_waveform
 from goa_eval.evaluation.scoring import compute_metric_results
 from goa_eval.io_utils import copy_initial_raw_inputs, ensure_run_dirs, extract_archives, to_jsonable, write_json
+from goa_eval.llm_analysis import run_llm_parameter_analysis
 from goa_eval.optimizer import constrained_random_candidates, load_baseline_params, load_param_space, propose_candidates, write_candidate_outputs
 from goa_eval.parsers.design_parser import build_design_version, discover_design_roots
 from goa_eval.parsers.mapping_parser import parse_mapping
@@ -118,6 +119,19 @@ def main(argv: list[str] | None = None) -> int:
             )
         write_candidate_outputs(candidates, csv_path=Path(args.output_csv), markdown_path=Path(args.output_md))
         return 0
+    if args.command == "analyze-params":
+        run_llm_parameter_analysis(
+            summary_path=Path(args.summary),
+            score_path=Path(args.score) if args.score else None,
+            metrics_path=Path(args.metrics) if args.metrics else None,
+            candidates_path=Path(args.candidates) if args.candidates else None,
+            params_path=Path(args.params) if args.params else None,
+            model=args.model,
+            output_md=Path(args.output_md),
+            output_json=Path(args.output_json),
+            mock_response=args.mock_response,
+        )
+        return 0
     parser.print_help()
     return 2
 
@@ -166,6 +180,16 @@ def build_parser() -> argparse.ArgumentParser:
     candidates.add_argument("--baseline-params")
     candidates.add_argument("--output-csv", default="outputs/next_candidates.csv")
     candidates.add_argument("--output-md", default="outputs/next_candidates.md")
+    analyze = sub.add_parser("analyze-params")
+    analyze.add_argument("--summary", required=True)
+    analyze.add_argument("--score")
+    analyze.add_argument("--metrics")
+    analyze.add_argument("--candidates")
+    analyze.add_argument("--params")
+    analyze.add_argument("--model", default="deepseek-v4-pro")
+    analyze.add_argument("--mock-response")
+    analyze.add_argument("--output-md", default="outputs/llm_parameter_analysis.md")
+    analyze.add_argument("--output-json", default="outputs/llm_parameter_analysis.json")
     return parser
 
 
