@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import argparse
+import json
 import re
 import sys
+
+import pandas as pd
 
 from goa_eval.config import load_configs
 from goa_eval.batch_eval import run_batch_evaluation
@@ -11,6 +14,7 @@ from goa_eval.evaluation.feature_extractor import extract_waveform_features
 from goa_eval.evaluation.mock_waveform import generate_mock_waveform
 from goa_eval.evaluation.scoring import compute_metric_results
 from goa_eval.io_utils import copy_initial_raw_inputs, ensure_run_dirs, extract_archives, to_jsonable, write_json
+from goa_eval.optimizer import constrained_random_candidates, load_baseline_params, load_param_space, propose_candidates, write_candidate_outputs
 from goa_eval.parsers.design_parser import build_design_version, discover_design_roots
 from goa_eval.parsers.mapping_parser import parse_mapping
 from goa_eval.parsers.metric_table_parser import parse_metric_table
@@ -21,7 +25,7 @@ from goa_eval.report.markdown_report import write_markdown_report
 from goa_eval.report.reporter import write_report_md
 from goa_eval.report.summary_writer import write_metric_table, write_metrics_csv, write_summary_json
 from goa_eval.real_waveform_eval import run_real_waveform_evaluation
-from goa_eval.recommendation import write_recommendations_markdown
+from goa_eval.recommendation import build_recommendations, write_recommendations_markdown
 from goa_eval.visualization.comparison_plotter import plot_v1_v8_comparison
 from goa_eval.visualization.metric_plotter import plot_voh_bar
 from goa_eval.visualization.version_compare_plotter import plot_timing_overview
@@ -96,6 +100,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "evaluate-batch":
         run_batch_evaluation(runs_dir=Path(args.runs_dir), output_dir=Path(args.output_dir))
         return 0
+    if args.command == "propose-candidates":
+        summary = json.loads(Path(args.summary).read_text(encoding="utf-8"))
+        score = json.loads(Path(args.score).read_text(encoding="utf-8")) if args.score else {}
+        metrics = pd.read_csv(Path(args.metrics)) if args.metrics else pd.DataFrame()
+        recommendations = build_recommendations(summary, score, metrics)
+        param_space = load_param_space(Path(args.param_space))
+        if args.strategy == "rule":
+            candidates = propose_candidates(param_space, recommendations)
+        else:
+            candidates = constrained_random_candidates(
+                param_space,
+                recommendations,
+                max_candidates=args.max_candidates,
+                seed=args.seed,
+                baseline_params=load_baseline_params(Path(args.baseline_params)) if args.baseline_params else None,
+            )
+        write_candidate_outputs(candidates, csv_path=Path(args.output_csv), markdown_path=Path(args.output_md))
+        return 0
     parser.print_help()
     return 2
 
@@ -133,6 +155,17 @@ def build_parser() -> argparse.ArgumentParser:
     batch = sub.add_parser("evaluate-batch")
     batch.add_argument("--runs-dir", required=True)
     batch.add_argument("--output-dir", default="outputs_batch")
+    candidates = sub.add_parser("propose-candidates")
+    candidates.add_argument("--summary", required=True)
+    candidates.add_argument("--score")
+    candidates.add_argument("--metrics")
+    candidates.add_argument("--param-space", required=True)
+    candidates.add_argument("--strategy", choices=["constrained-random", "rule"], default="constrained-random")
+    candidates.add_argument("--max-candidates", type=int, default=10)
+    candidates.add_argument("--seed", type=int, default=42)
+    candidates.add_argument("--baseline-params")
+    candidates.add_argument("--output-csv", default="outputs/next_candidates.csv")
+    candidates.add_argument("--output-md", default="outputs/next_candidates.md")
     return parser
 
 

@@ -165,6 +165,47 @@ result_version = 1.0
 
 当前无法从输入推断的参数保持空值，不应编造。
 
+## next_candidates.csv
+
+用途：基于单次评价结果、规则推荐和参数空间，生成下一轮仿真可参考的保守候选参数。默认 `constrained-random` 策略会生成单参数和两参数组合候选；`rule` 策略只输出规则映射的单参数候选。
+
+稳定列：
+
+| 字段 | 说明 |
+|---|---|
+| `schema_version` | Schema 版本。 |
+| `result_version` | 结果格式版本。 |
+| `candidate_id` | 稳定候选编号，例如 `cand_001`。 |
+| `priority` | 规则优先级，数值越大越靠前。 |
+| `parameter` | 建议调整或复核的参数名。 |
+| `direction` | 调整方向，例如 `increase`、`decrease`、`review`。 |
+| `candidate_value` | 参数空间中给出的候选值。 |
+| `candidate_unit` | 参数单位；简单列表格式可为空。 |
+| `source_recommendation` | 触发候选的推荐 ID。 |
+| `trigger_metric` | 触发推荐的指标。 |
+| `data_source` | 固定为 `real_simulation_csv`。 |
+| `engineering_validity` | 固定为 `simulation_only`。 |
+| `strategy` | 候选生成策略，例如 `constrained_random` 或 `rule`。 |
+| `candidate_kind` | 候选类型，例如 `single_parameter` 或 `two_parameter_combo`。 |
+| `changed_parameters` | 本候选改变的参数名，多个参数以分号分隔。 |
+| `parameters_json` | 本候选的参数键值 JSON。 |
+| `search_score` | 约束搜索排序分数。 |
+| `rationale` | 生成该候选的简要原因。 |
+
+候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。
+
+## next_candidates.md
+
+用途：面向人工阅读的下一轮候选参数说明。
+
+内容应包括：
+
+- schema 和 result 版本；
+- `real_simulation_csv` / `simulation_only` 边界；
+- 候选来源和排序规则；
+- 按优先级列出的候选参数；
+- 明确声明：结果基于仿真 CSV 和规则建议，不是实物测试结果，也不是自动优化闭环完成证明。
+
 ## params.yaml
 
 用途：批量评价时描述每个 run 的参数和仿真条件。
