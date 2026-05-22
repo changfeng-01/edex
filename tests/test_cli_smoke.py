@@ -298,7 +298,7 @@ parameters:
 
     assert result.returncode == 0, result.stderr
     table = pd.read_csv(output_csv)
-    assert list(table.columns) == [
+    assert {
         "schema_version",
         "result_version",
         "candidate_id",
@@ -311,6 +311,68 @@ parameters:
         "trigger_metric",
         "data_source",
         "engineering_validity",
-    ]
+        "strategy",
+        "candidate_kind",
+        "changed_parameters",
+        "parameters_json",
+        "search_score",
+        "rationale",
+    } <= set(table.columns)
     assert {"capacitance", "drive_resistance"} <= set(table["parameter"])
     assert "simulation_only" in output_md.read_text(encoding="utf-8")
+
+
+def test_cli_propose_candidates_rule_strategy_keeps_single_parameter_outputs(tmp_path):
+    summary_path = tmp_path / "real_summary.json"
+    param_space_path = tmp_path / "param_space.yaml"
+    output_csv = tmp_path / "next_candidates.csv"
+    output_md = tmp_path / "next_candidates.md"
+
+    summary_path.write_text(
+        json.dumps(
+            {
+                "data_source": "real_simulation_csv",
+                "engineering_validity": "simulation_only",
+                "Max_ripple": 1.2,
+                "max_ripple_v_limit": 0.5,
+            }
+        ),
+        encoding="utf-8",
+    )
+    param_space_path.write_text(
+        """
+parameters:
+  capacitance:
+    unit: F
+    values: [8.0e-13, 1.0e-12]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "goa_eval.cli",
+            "propose-candidates",
+            "--strategy",
+            "rule",
+            "--summary",
+            str(summary_path),
+            "--param-space",
+            str(param_space_path),
+            "--output-csv",
+            str(output_csv),
+            "--output-md",
+            str(output_md),
+        ],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    table = pd.read_csv(output_csv)
+    assert set(table["strategy"]) == {"rule"}
+    assert set(table["candidate_kind"]) == {"single_parameter"}

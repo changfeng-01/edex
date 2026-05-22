@@ -5,6 +5,7 @@ from goa_eval.optimizer import (
     OptimizationRequest,
     OptimizationResult,
     CircuitPilotOptimizer,
+    constrained_random_candidates,
     load_param_space,
     propose_candidates,
     rank_candidates,
@@ -134,7 +135,7 @@ def test_write_candidate_outputs_writes_fixed_csv_and_boundary_markdown(tmp_path
     write_candidate_outputs(candidates, csv_path=csv_path, markdown_path=md_path)
 
     table = pd.read_csv(csv_path)
-    assert list(table.columns) == [
+    assert list(table.columns[:12]) == [
         "schema_version",
         "result_version",
         "candidate_id",
@@ -148,7 +149,62 @@ def test_write_candidate_outputs_writes_fixed_csv_and_boundary_markdown(tmp_path
         "data_source",
         "engineering_validity",
     ]
+    assert {"strategy", "candidate_kind", "changed_parameters", "parameters_json", "search_score", "rationale"} <= set(table.columns)
     content = md_path.read_text(encoding="utf-8")
     assert "simulation_only" in content
     assert "不是实物测试结果" in content
     assert "自动优化闭环" in content
+
+
+def test_constrained_random_candidates_are_reproducible_and_limited():
+    recommendations = [
+        {"recommendation_id": "ripple_hold_window_review", "trigger_metric": "Max_ripple"},
+        {"recommendation_id": "delay_drive_load_review", "trigger_metric": "Delay_mean"},
+    ]
+    param_space = {
+        "capacitance": {"unit": "F", "values": [8.0e-13, 1.0e-12, 1.2e-12]},
+        "drive_resistance": {"unit": "ohm", "values": [1000, 1500, 2000]},
+        "transistor_width": {"unit": "m", "values": [8.0e-7, 1.0e-6]},
+    }
+
+    first = constrained_random_candidates(param_space, recommendations, max_candidates=4, seed=7)
+    second = constrained_random_candidates(param_space, recommendations, max_candidates=4, seed=7)
+
+    assert first == second
+    assert len(first) == 4
+    assert any(candidate["candidate_kind"] == "single_parameter" for candidate in first)
+    assert any(candidate["candidate_kind"] == "two_parameter_combo" for candidate in first)
+    assert all(candidate["strategy"] == "constrained_random" for candidate in first)
+    assert all("parameters_json" in candidate for candidate in first)
+
+
+def test_constrained_random_candidates_respect_baseline_direction():
+    recommendations = [
+        {"recommendation_id": "ripple_hold_window_review", "trigger_metric": "Max_ripple"},
+        {"recommendation_id": "delay_drive_load_review", "trigger_metric": "Delay_mean"},
+    ]
+    param_space = {
+        "capacitance": {"unit": "F", "values": [8.0e-13, 1.0e-12, 1.2e-12]},
+        "drive_resistance": {"unit": "ohm", "values": [1000, 1500, 2000]},
+    }
+
+    candidates = constrained_random_candidates(
+        param_space,
+        recommendations,
+        max_candidates=10,
+        seed=42,
+        baseline_params={"capacitance": 1.0e-12, "drive_resistance": 1500},
+    )
+
+    for candidate in candidates:
+        params = candidate["parameters_json"]
+        if "capacitance" in params:
+            assert float(params["capacitance"]) > 1.0e-12
+        if "drive_resistance" in params:
+            assert float(params["drive_resistance"]) < 1500
+
+
+def test_constrained_random_candidates_return_empty_for_info_only_recommendation():
+    recommendations = [{"recommendation_id": "no_rule_failure_detected", "trigger_metric": "none"}]
+
+    assert constrained_random_candidates({"capacitance": {"unit": "F", "values": [1.0e-12]}}, recommendations) == []

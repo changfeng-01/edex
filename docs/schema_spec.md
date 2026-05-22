@@ -167,7 +167,7 @@ result_version = 1.0
 
 ## next_candidates.csv
 
-用途：基于单次评价结果、规则推荐和参数空间，生成下一轮仿真可参考的保守候选参数。第一版只输出单参数候选，不生成组合参数。
+用途：基于单次评价结果、规则推荐和参数空间，生成下一轮仿真可参考的保守候选参数。默认 `constrained-random` 策略会生成单参数和两参数组合候选；`rule` 策略只输出规则映射的单参数候选。
 
 稳定列：
 
@@ -185,8 +185,14 @@ result_version = 1.0
 | `trigger_metric` | 触发推荐的指标。 |
 | `data_source` | 固定为 `real_simulation_csv`。 |
 | `engineering_validity` | 固定为 `simulation_only`。 |
+| `strategy` | 候选生成策略，例如 `constrained_random` 或 `rule`。 |
+| `candidate_kind` | 候选类型，例如 `single_parameter` 或 `two_parameter_combo`。 |
+| `changed_parameters` | 本候选改变的参数名，多个参数以分号分隔。 |
+| `parameters_json` | 本候选的参数键值 JSON。 |
+| `search_score` | 约束搜索排序分数。 |
+| `rationale` | 生成该候选的简要原因。 |
 
-候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。
+候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。
 
 ## next_candidates.md
 

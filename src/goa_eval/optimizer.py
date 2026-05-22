@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import combinations
 from pathlib import Path
+import json
+import random
 from typing import Any
 
 import pandas as pd
 import yaml
 
+from goa_eval.param_space import parse_engineering_value
 from goa_eval.schemas import RESULT_VERSION, SCHEMA_VERSION
 
 
@@ -23,6 +27,12 @@ CANDIDATE_COLUMNS = [
     "trigger_metric",
     "data_source",
     "engineering_validity",
+    "strategy",
+    "candidate_kind",
+    "changed_parameters",
+    "parameters_json",
+    "search_score",
+    "rationale",
 ]
 
 
@@ -63,6 +73,11 @@ def load_param_space(path: Path) -> dict[str, list[object]]:
     return loaded
 
 
+def load_baseline_params(path: Path) -> dict[str, object]:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return dict(raw.get("parameters", raw) or {})
+
+
 def propose_candidates(param_space: dict[str, list[object]], recommendations: list[dict]) -> list[dict]:
     candidates: list[dict] = []
     for recommendation in recommendations:
@@ -87,8 +102,54 @@ def propose_candidates(param_space: dict[str, list[object]], recommendations: li
     return candidates
 
 
+def constrained_random_candidates(
+    param_space: dict[str, list[object]],
+    recommendations: list[dict],
+    *,
+    max_candidates: int = 10,
+    seed: int = 42,
+    baseline_params: dict[str, object] | None = None,
+) -> list[dict]:
+    baseline_params = baseline_params or {}
+    rule_candidates = [
+        candidate
+        for candidate in propose_candidates(param_space, recommendations)
+        if _matches_direction(candidate, baseline_params)
+    ]
+    single_candidates = [_search_candidate([candidate], "single_parameter") for candidate in rule_candidates]
+    combo_candidates = [
+        _search_candidate(list(pair), "two_parameter_combo")
+        for pair in combinations(rule_candidates, 2)
+        if pair[0]["parameter"] != pair[1]["parameter"]
+    ]
+    candidates = single_candidates + combo_candidates
+    rng = random.Random(seed)
+    for candidate in candidates:
+        candidate["_random_rank"] = rng.random()
+    ranked = sorted(
+        candidates,
+        key=lambda item: (
+            -float(item.get("search_score", 0)),
+            float(item.get("_random_rank", 0)),
+            str(item.get("candidate_kind", "")),
+            str(item.get("changed_parameters", "")),
+        ),
+    )
+    return [
+        {key: value for key, value in candidate.items() if key != "_random_rank"}
+        for candidate in ranked[: max(0, int(max_candidates))]
+    ]
+
+
 def rank_candidates(candidates: list[dict]) -> list[dict]:
-    return sorted(candidates, key=lambda item: (-float(item.get("priority", 0)), str(item.get("parameter", "")), str(item.get("candidate_value", ""))))
+    return sorted(
+        candidates,
+        key=lambda item: (
+            -float(item.get("priority", 0)),
+            str(item.get("parameter", "")),
+            str(item.get("candidate_value", "")),
+        ),
+    )
 
 
 def _append_if_available(candidates: list[dict], param_space: dict[str, list[object]], parameter: str, direction: str, priority: int, recommendation: dict) -> None:
@@ -109,6 +170,12 @@ def _append_if_available(candidates: list[dict], param_space: dict[str, list[obj
                 "trigger_metric": recommendation.get("trigger_metric"),
                 "data_source": recommendation.get("data_source", "real_simulation_csv"),
                 "engineering_validity": recommendation.get("engineering_validity", "simulation_only"),
+                "strategy": "rule",
+                "candidate_kind": "single_parameter",
+                "changed_parameters": parameter,
+                "parameters_json": {parameter: value},
+                "search_score": priority,
+                "rationale": f"{parameter} {direction} from {recommendation.get('recommendation_id')}",
             }
         )
 
@@ -130,6 +197,12 @@ def _rows_with_ids(candidates: list[dict]) -> list[dict]:
         row["candidate_id"] = row["candidate_id"] or f"cand_{index:03d}"
         row["data_source"] = row["data_source"] or "real_simulation_csv"
         row["engineering_validity"] = row["engineering_validity"] or "simulation_only"
+        row["strategy"] = row["strategy"] or "rule"
+        row["candidate_kind"] = row["candidate_kind"] or "single_parameter"
+        row["changed_parameters"] = row["changed_parameters"] or row["parameter"]
+        row["parameters_json"] = _json_cell(row["parameters_json"] or {row["parameter"]: row["candidate_value"]})
+        row["search_score"] = row["search_score"] if row["search_score"] != "" else row["priority"]
+        row["rationale"] = row["rationale"] or f"{row['parameter']} {row['direction']}"
         rows.append(row)
     return rows
 
@@ -144,7 +217,7 @@ def _candidate_markdown(rows: list[dict]) -> str:
         "- engineering_validity: `simulation_only`",
         "",
         "本报告基于仿真 CSV 的结构化指标和规则建议生成，不是实物测试结果，也不表示自动优化闭环已经完成。",
-        "候选项按规则优先级排序；第一版只做单参数保守调整，不生成组合参数。",
+        "候选项按约束、规则优先级和搜索得分排序；constrained_random 策略只生成单参数和两参数组合候选。",
         "",
         "## Candidates",
         "",
@@ -161,11 +234,16 @@ def _candidate_markdown(rows: list[dict]) -> str:
                 f"### {row['candidate_id']}",
                 "",
                 f"- priority: `{row['priority']}`",
+                f"- strategy: `{row['strategy']}`",
+                f"- candidate_kind: `{row['candidate_kind']}`",
                 f"- parameter: `{row['parameter']}`",
                 f"- direction: `{row['direction']}`",
                 f"- candidate_value: `{value_text}`",
+                f"- changed_parameters: `{row['changed_parameters']}`",
+                f"- search_score: `{row['search_score']}`",
                 f"- source_recommendation: `{row['source_recommendation']}`",
                 f"- trigger_metric: `{row['trigger_metric']}`",
+                f"- rationale: {row['rationale']}",
                 "",
             ]
         )
@@ -178,3 +256,70 @@ def _values_and_unit(entry) -> tuple[list[object], str]:
         unit = str(entry.get("unit", "") or "")
         return (list(values) if isinstance(values, list) else [values], unit)
     return (list(entry) if isinstance(entry, list) else [entry], "")
+
+
+def _search_candidate(parts: list[dict], kind: str) -> dict:
+    parameters = {part["parameter"]: part["candidate_value"] for part in parts}
+    changed = sorted(parameters)
+    priority = max(float(part.get("priority", 0)) for part in parts)
+    combo_penalty = 0.0 if kind == "single_parameter" else 5.0
+    search_score = priority - combo_penalty
+    primary = parts[0]
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "result_version": RESULT_VERSION,
+        "candidate_id": "",
+        "priority": int(priority),
+        "parameter": ";".join(changed),
+        "direction": ";".join(str(part.get("direction", "")) for part in parts),
+        "candidate_value": primary.get("candidate_value", ""),
+        "candidate_unit": primary.get("candidate_unit", ""),
+        "source_recommendation": ";".join(str(part.get("source_recommendation", "")) for part in parts),
+        "trigger_metric": ";".join(str(part.get("trigger_metric", "")) for part in parts),
+        "data_source": primary.get("data_source", "real_simulation_csv"),
+        "engineering_validity": primary.get("engineering_validity", "simulation_only"),
+        "strategy": "constrained_random",
+        "candidate_kind": kind,
+        "changed_parameters": ";".join(changed),
+        "parameters_json": parameters,
+        "search_score": search_score,
+        "rationale": _rationale(parts, kind),
+    }
+
+
+def _matches_direction(candidate: dict, baseline_params: dict[str, object]) -> bool:
+    parameter = str(candidate.get("parameter", ""))
+    if parameter not in baseline_params:
+        return True
+    baseline = _numeric_value(baseline_params.get(parameter))
+    value = _numeric_value(candidate.get("candidate_value"))
+    if baseline is None or value is None:
+        return True
+    direction = str(candidate.get("direction", ""))
+    if direction == "increase":
+        return value > baseline
+    if direction == "decrease":
+        return value < baseline
+    return value != baseline
+
+
+def _numeric_value(value) -> float | None:
+    parsed = parse_engineering_value(value)
+    if parsed is not None:
+        return parsed
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _rationale(parts: list[dict], kind: str) -> str:
+    labels = [f"{part.get('parameter')} {part.get('direction')}" for part in parts]
+    prefix = "single-parameter" if kind == "single_parameter" else "two-parameter"
+    return f"{prefix} constrained candidate from rule triggers: {', '.join(labels)}"
+
+
+def _json_cell(value) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)

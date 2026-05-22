@@ -44,7 +44,7 @@ engineering_validity = simulation_only
 - 评分结果区分 `hard_constraints`、`soft_scores`、`failure_reasons` 和 `warning_reasons`。
 - 批量评价输出 `all_metrics.csv`、`all_scores.csv`、`leaderboard.csv` 和 `recommendations.md`。
 - 输出 `optimization_dataset.csv`，保留固定列和 provenance 字段，方便后续参数搜索流程读取。
-- 输出 `next_candidates.csv` / `next_candidates.md`，把规则建议转换成保守的单参数候选。
+- 输出 `next_candidates.csv` / `next_candidates.md`，把规则建议转换成可复现的约束感知随机搜索候选。
 
 ## 仓库结构
 
@@ -135,6 +135,9 @@ python -m goa_eval.cli propose-candidates \
   --score outputs/example/score_summary.json \
   --metrics outputs/example/real_metrics.csv \
   --param-space examples/sample_params.yaml \
+  --strategy constrained-random \
+  --max-candidates 10 \
+  --seed 42 \
   --output-csv outputs/example/next_candidates.csv \
   --output-md outputs/example/next_candidates.md
 ```
@@ -155,6 +158,9 @@ python -m goa_eval.cli propose-candidates `
   --score outputs/example/score_summary.json `
   --metrics outputs/example/real_metrics.csv `
   --param-space examples/sample_params.yaml `
+  --strategy constrained-random `
+  --max-candidates 10 `
+  --seed 42 `
   --output-csv outputs/example/next_candidates.csv `
   --output-md outputs/example/next_candidates.md
 ```
@@ -175,7 +181,7 @@ python -m goa_eval.cli evaluate-batch --runs-dir runs --output-dir outputs_batch
 - `diagnosis_report.md`：面向人工复核的诊断报告。
 - `real_waveform_report.md`：波形评价 Markdown 报告。
 - `optimization_dataset.csv`：面向后续参数搜索的一行结构化数据。
-- `next_candidates.csv` / `next_candidates.md`：基于当前规则建议和参数空间生成的下一轮候选参数。
+- `next_candidates.csv` / `next_candidates.md`：基于当前规则建议、参数空间和约束感知随机搜索生成的下一轮候选参数。
 - `run_manifest_real.json`：输入文件、配置、阈值、版本和有效性边界记录。
 - `figures/`：波形总览、趋势图、热力图和内部节点图。
 
@@ -244,7 +250,7 @@ python -m goa_eval.cli evaluate-real \
 
 CircuitPilot 当前只处理仿真数据。推荐器是规则系统，不训练深度学习模型，不直接调度外部 SPICE，也不声明已经完成全自动闭环优化。建议内容用于指导下一轮仿真设计和指标复核。
 
-`propose-candidates` 只生成单参数保守候选，不生成组合参数，也不代表已经完成自动搜索。候选需要经过下一轮外部仿真和人工复核后才能进入新的评价流程。
+`propose-candidates` 默认使用 `constrained-random` 策略，生成单参数和两参数组合候选；也可以用 `--strategy rule` 只输出规则映射的单参数候选。该命令不调用外部 SPICE、不训练模型，也不代表已经完成自动优化闭环。候选需要经过下一轮外部仿真和人工复核后才能进入新的评价流程。
 
 公开仓库不应上传私有或大体积仿真数据。上传前请查看 [docs/github_upload_checklist.md](docs/github_upload_checklist.md) 和 `.gitignore`。
 
