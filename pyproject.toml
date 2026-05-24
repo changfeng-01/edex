@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+sky130 = ["datasets"]
 
 [project.scripts]
 circuitpilot = "goa_eval.cli:main"

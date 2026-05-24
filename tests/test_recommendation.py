@@ -44,6 +44,26 @@ def test_build_recommendations_covers_core_rule_failures():
     assert all(item["engineering_validity"] == "simulation_only" for item in recommendations)
 
 
+def test_build_recommendations_carries_metric_penalty_context_from_score():
+    score = {
+        "hard_constraint_passed": False,
+        "metric_penalties": {
+            "Max_overlap_ratio": {
+                "severity": "critical",
+                "score": 8.4,
+                "deduction": 91.6,
+            }
+        },
+    }
+
+    recommendations = build_recommendations(_summary(), score, pd.DataFrame())
+    overlap = next(item for item in recommendations if item["trigger_metric"] == "Max_overlap_ratio")
+
+    assert overlap["metric_penalty_severity"] == "critical"
+    assert overlap["metric_penalty_score"] == 8.4
+    assert overlap["metric_penalty_deduction"] == 91.6
+
+
 def test_write_recommendations_markdown_keeps_simulation_only_boundary(tmp_path: Path):
     summary_path = tmp_path / "real_summary.json"
     score_path = tmp_path / "score_summary.json"

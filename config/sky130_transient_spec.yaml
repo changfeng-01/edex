@@ -1,0 +1,26 @@
+thresholds:
+  high_threshold: 0.9
+  low_threshold: 0.3
+  target_pulse_width_us: 0.02
+  pulse_width_tolerance_us: 0.02
+  max_overlap_ratio: 0.10
+  max_ripple_v: 0.10
+  max_voltage_loss_v: 0.20
+  max_delay_std_us: 0.02
+  min_voh_margin_v: 0.20
+  target_refresh_hz: 1000000.0
+  min_pulse_width_us: 0.002
+  false_trigger_min_duration_us: 0.001
+
+cascade:
+  stage_count: 8
+  output_node_pattern: "o{index}"
+  stage_group_size: 4
+  sample_nodes: [1, 2, 3, 4, 5, 6, 7, 8]
+
+weights:
+  function_score: 0.35
+  quality_score: 0.25
+  stability_score: 0.15
+  consistency_score: 0.15
+  cost_score: 0.10

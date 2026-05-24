@@ -175,6 +175,8 @@ def _append_if_available(candidates: list[dict], param_space: dict[str, list[obj
                 "changed_parameters": parameter,
                 "parameters_json": {parameter: value},
                 "search_score": priority,
+                "metric_penalty_severity": recommendation.get("metric_penalty_severity"),
+                "metric_penalty_deduction": recommendation.get("metric_penalty_deduction"),
                 "rationale": f"{parameter} {direction} from {recommendation.get('recommendation_id')}",
             }
         )
@@ -263,7 +265,7 @@ def _search_candidate(parts: list[dict], kind: str) -> dict:
     changed = sorted(parameters)
     priority = max(float(part.get("priority", 0)) for part in parts)
     combo_penalty = 0.0 if kind == "single_parameter" else 5.0
-    search_score = priority - combo_penalty
+    search_score = _best_part_score(parts) - combo_penalty
     primary = parts[0]
     return {
         "schema_version": SCHEMA_VERSION,
@@ -315,8 +317,40 @@ def _numeric_value(value) -> float | None:
 
 def _rationale(parts: list[dict], kind: str) -> str:
     labels = [f"{part.get('parameter')} {part.get('direction')}" for part in parts]
+    severities = sorted(
+        {
+            str(part.get("metric_penalty_severity"))
+            for part in parts
+            if part.get("metric_penalty_severity")
+        }
+    )
+    severity_text = f"; penalty severity: {', '.join(severities)}" if severities else ""
     prefix = "single-parameter" if kind == "single_parameter" else "two-parameter"
-    return f"{prefix} constrained candidate from rule triggers: {', '.join(labels)}"
+    return f"{prefix} constrained candidate from rule triggers: {', '.join(labels)}{severity_text}"
+
+
+def _constraint_boost(parts: list[dict]) -> float:
+    if not parts:
+        return 0.0
+    return max(_part_constraint_boost(part) for part in parts)
+
+
+def _best_part_score(parts: list[dict]) -> float:
+    if not parts:
+        return 0.0
+    return max(float(part.get("priority", 0)) + _part_constraint_boost(part) for part in parts)
+
+
+def _part_constraint_boost(part: dict) -> float:
+    severity_boost = {
+        "critical": 10.0,
+        "fail": 5.0,
+        "warning": 2.0,
+        "pass": 0.0,
+        "unknown": 0.0,
+    }.get(str(part.get("metric_penalty_severity", "")).lower(), 0.0)
+    deduction = _numeric_value(part.get("metric_penalty_deduction")) or 0.0
+    return severity_boost + 0.25 * max(0.0, min(100.0, deduction))
 
 
 def _json_cell(value) -> str:

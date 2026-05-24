@@ -74,6 +74,7 @@ SCORE_SUMMARY_REQUIRED_FIELDS = [
     "hard_constraints",
     "failure_reasons",
     "warning_reasons",
+    "metric_penalties",
     "soft_scores",
     "score_explanations",
     "overall_score",

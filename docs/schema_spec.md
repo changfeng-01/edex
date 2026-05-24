@@ -87,6 +87,7 @@ result_version = 1.0
 | `hard_constraints` | object | 各硬约束明细。 |
 | `failure_reasons` | array | 失败原因。 |
 | `warning_reasons` | array | 警告原因。 |
+| `metric_penalties` | object | 面向排序和优化的逐指标惩罚明细。 |
 | `soft_scores` | object | 软评分明细。 |
 | `score_explanations` | object | 评分解释。 |
 | `function_score` | number/null | 功能得分。 |
@@ -97,6 +98,8 @@ result_version = 1.0
 | `overall_score` | number/null | 总体得分。 |
 
 硬约束与软评分保持分离，便于失败 run 继续参与排序、诊断和参数建议。
+
+`metric_penalties` 对关键指标输出 `current_value`、`threshold`、`limit_type`、`severity`、`score`、`deduction` 和 `reason`。硬约束仍决定 pass/fail；惩罚分用于区分失败程度，例如轻微超限的 `Max_overlap_ratio` 会比严重超限保留更高排序分。
 
 ## diagnosis_report.md
 
@@ -189,10 +192,10 @@ result_version = 1.0
 | `candidate_kind` | 候选类型，例如 `single_parameter` 或 `two_parameter_combo`。 |
 | `changed_parameters` | 本候选改变的参数名，多个参数以分号分隔。 |
 | `parameters_json` | 本候选的参数键值 JSON。 |
-| `search_score` | 约束搜索排序分数。 |
+| `search_score` | 约束搜索排序分数，综合规则优先级、指标惩罚严重度和组合复杂度。 |
 | `rationale` | 生成该候选的简要原因。 |
 
-候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。
+候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。当 `score_summary.json` 提供 `metric_penalties` 时，严重超限指标会得到更高搜索权重；两参数组合会保留组合惩罚，避免过早偏向复杂改动。
 
 ## next_candidates.md
 
@@ -205,6 +208,37 @@ result_version = 1.0
 - 候选来源和排序规则；
 - 按优先级列出的候选参数；
 - 明确声明：结果基于仿真 CSV 和规则建议，不是实物测试结果，也不是自动优化闭环完成证明。
+
+## SKY130 transient outputs
+
+`sky130-transient` creates one run directory per public SKY130 dataset row.
+
+| File | Purpose |
+|---|---|
+| `testbench.spice` | ngspice input written from dataset `testbench_spice`. |
+| `source_netlist.spice` | Source SPICE text selected from `netlist`, `spice_netlist`, or `testbench_spice` for structure analysis. |
+| `netlist_structure.json` | AMS-Net-style structure companion data: device counts, models, node degrees, directives, and scalar size features. |
+| `waveform.csv` | Converted `TIME,v(o1),...` waveform for `evaluate-real`. |
+| `dataset_row.json` | Snapshot of the source dataset row. |
+| `node_map.json` | Mapping from `o1/o2/...` aliases to original output nodes. |
+| `sky130_metadata.json` | Dataset provenance, topology, PDK, split, original output nodes, and structure companion paths. |
+| `sky130_status.json` | Per-row `evaluated`, `skipped`, or `failed` status. |
+
+`output_root/sky130_runs.csv` summarizes status, `overall_score`, failure reasons, topology, source, run directory, and compact structure columns such as `mos_count`, `cap_count`, `resistor_count`, `current_source_count`, `model_count`, `node_count`, and `transistor_width_sum`. Structure data is analysis metadata only. This entrypoint still uses `data_source = real_simulation_csv` and `engineering_validity = simulation_only`; it does not represent physical test validation or a completed automatic optimization loop.
+
+## SKY130 sweep outputs
+
+`sky130-sweep` creates one run directory per explicit parameter combination and keeps the same per-run output contract as `sky130-transient`.
+
+| File | Purpose |
+|---|---|
+| `params.yaml` | Parameter values used for this sweep point. |
+| `testbench.spice` | Per-run SPICE copy after parameter rewrite. |
+| `waveform.csv` | Converted transient waveform for `evaluate-real`. |
+| `real_summary.json` / `score_summary.json` | Existing waveform evaluation and score outputs. |
+| `next_candidates.csv` | Existing constrained-random next-candidate output for the run. |
+
+At the sweep root, `sky130_sweep_runs.csv` summarizes every sweep point, `sky130_sweep_leaderboard.csv` sorts evaluated points by score, `sky130_sweep_sensitivity.csv` reports coarse one-parameter score deltas, and `next_param_space.yaml` preserves a narrowed next-round parameter-space suggestion. These files are simulation-only ranking artifacts, not physical validation and not proof of a completed multi-round optimizer.
 
 ## params.yaml
 
@@ -249,6 +283,32 @@ conditions:
 - `runs_dir`
 - `output_dir`
 - `engineering_validity`
+
+## llm_parameter_analysis.md
+
+用途：面向人工阅读的 DeepSeek V4 参数分析结果。
+
+内容应包含：
+
+- 使用模型，例如 `deepseek-v4-pro`；
+- `data_source = real_simulation_csv`；
+- `engineering_validity = simulation_only`；
+- 基于当前参数、指标、评分和候选项生成的分析正文；
+- 明确说明：该分析不是实物测试结论，也不是自动优化闭环完成证明。
+
+## llm_parameter_analysis.json
+
+用途：保留 DeepSeek V4 参数分析的结构化结果，便于后续归档或汇报脚本读取。
+
+稳定字段：
+
+| 字段 | 说明 |
+|---|---|
+| `model` | 调用模型，默认 `deepseek-v4-pro`。 |
+| `boundary` | 包含 `data_source` 和 `engineering_validity`。 |
+| `analysis` | 模型返回的分析正文。 |
+| `metadata` | 模型、token 用量或 mock 标记等元数据。 |
+| `input_files` | 本次分析读取的 summary、score、metrics、candidates 和 params 文件路径。 |
 
 ## recommendations.md
 

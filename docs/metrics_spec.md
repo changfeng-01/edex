@@ -140,7 +140,11 @@ engineering_validity = simulation_only
 - `cost_score`：成本或复杂度预留得分。
 - `overall_score`：按权重聚合后的总体得分。
 
-硬约束失败不会删除软评分。这样可以在失败 run 中继续判断主要短板来自功能、质量、稳定性还是一致性。
+`metric_penalties` 记录关键指标的可排序惩罚项，包括 `Max_overlap_ratio`、`Max_ripple`、`Max_voltage_loss`、`Delay_std`、`Width_std`、`Width_mean`、`VOH_min_margin` 和 `FalseTriggerCount`。每个惩罚项包含当前值、阈值、限制类型、严重程度、分数、扣分和原因。
+
+硬约束失败不会删除软评分。这样可以在失败 run 中继续判断主要短板来自功能、质量、稳定性还是一致性。软评分采用连续惩罚函数，超过阈值后仍保留排序梯度，避免把轻微失败和严重失败都压成同一个分数。
+
+`propose-candidates --strategy constrained-random` 会读取这些惩罚项辅助排序：规则优先级决定基础方向，惩罚严重度和扣分提高当前主要失效指标的候选权重，两参数组合再扣除复杂度惩罚。
 
 ## 参数元数据
 

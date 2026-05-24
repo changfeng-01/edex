@@ -376,3 +376,81 @@ parameters:
     table = pd.read_csv(output_csv)
     assert set(table["strategy"]) == {"rule"}
     assert set(table["candidate_kind"]) == {"single_parameter"}
+
+
+def test_cli_analyze_params_writes_mock_deepseek_outputs(tmp_path):
+    summary_path = tmp_path / "real_summary.json"
+    score_path = tmp_path / "score_summary.json"
+    metrics_path = tmp_path / "real_metrics.csv"
+    candidates_path = tmp_path / "next_candidates.csv"
+    params_path = tmp_path / "params.yaml"
+    output_md = tmp_path / "llm_parameter_analysis.md"
+    output_json = tmp_path / "llm_parameter_analysis.json"
+
+    summary_path.write_text(
+        json.dumps(
+            {
+                "data_source": "real_simulation_csv",
+                "engineering_validity": "simulation_only",
+                "Overall_status": "FAIL",
+                "Max_ripple": 1.2,
+            }
+        ),
+        encoding="utf-8",
+    )
+    score_path.write_text(json.dumps({"hard_constraint_passed": False, "overall_score": 72.5}), encoding="utf-8")
+    pd.DataFrame([{"stage": 1, "node": "o1", "Ripple": 1.2}]).to_csv(metrics_path, index=False)
+    pd.DataFrame(
+        [
+            {
+                "candidate_id": "cand_001",
+                "parameter": "capacitance",
+                "direction": "increase",
+                "candidate_value": 1.2e-12,
+            }
+        ]
+    ).to_csv(candidates_path, index=False)
+    params_path.write_text(
+        """
+run_id: run_001
+parameters:
+  capacitance: 1.0e-12
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "goa_eval.cli",
+            "analyze-params",
+            "--summary",
+            str(summary_path),
+            "--score",
+            str(score_path),
+            "--metrics",
+            str(metrics_path),
+            "--candidates",
+            str(candidates_path),
+            "--params",
+            str(params_path),
+            "--mock-response",
+            "建议优先复核 cand_001。",
+            "--output-md",
+            str(output_md),
+            "--output-json",
+            str(output_json),
+        ],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "deepseek-v4-pro" in output_md.read_text(encoding="utf-8")
+    assert "simulation_only" in output_md.read_text(encoding="utf-8")
+    output = json.loads(output_json.read_text(encoding="utf-8"))
+    assert output["model"] == "deepseek-v4-pro"
+    assert output["analysis"] == "建议优先复核 cand_001。"

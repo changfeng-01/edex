@@ -9,6 +9,7 @@ from goa_eval.schemas import (
     REAL_METRICS_COLUMNS,
     REAL_SUMMARY_REQUIRED_FIELDS,
     RECOMMENDATION_REQUIRED_FIELDS,
+    SCORE_SUMMARY_REQUIRED_FIELDS,
     validate_required_fields,
 )
 
@@ -32,6 +33,7 @@ def test_real_result_schema_contains_stable_boundary_fields():
         "needs_metric_review",
         "message",
     } <= set(RECOMMENDATION_REQUIRED_FIELDS)
+    assert {"hard_constraints", "metric_penalties", "soft_scores", "overall_score"} <= set(SCORE_SUMMARY_REQUIRED_FIELDS)
 
 
 def test_batch_schema_contains_parameter_and_manifest_fields():

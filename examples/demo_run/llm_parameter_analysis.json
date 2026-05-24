@@ -1,0 +1,20 @@
+{
+  "model": "deepseek-v4-pro",
+  "boundary": {
+    "data_source": "real_simulation_csv",
+    "engineering_validity": "simulation_only"
+  },
+  "analysis": "固定公开 demo：当前样例波形的主要风险是相邻输出阶段存在重叠，建议优先复核 cand_001 到 cand_003 的 drive_resistance 时序候选，再观察 Max_overlap_ratio、Delay_mean 和 Max_ripple 是否改善。本结论仅用于下一轮仿真设计，必须保留 simulation_only 边界。",
+  "metadata": {
+    "model": "deepseek-v4-pro",
+    "usage": {},
+    "mock_response": true
+  },
+  "input_files": {
+    "summary": "examples/demo_run/real_summary.json",
+    "score": "examples/demo_run/score_summary.json",
+    "metrics": "examples/demo_run/real_metrics.csv",
+    "candidates": "examples/demo_run/next_candidates.csv",
+    "params": "examples/sample_params.yaml"
+  }
+}
