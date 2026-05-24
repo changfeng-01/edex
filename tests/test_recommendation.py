@@ -99,6 +99,7 @@ def test_build_recommendations_adds_topology_specific_analysis_guidance():
     assert "ota_gain_bandwidth_review" in ids
     assert "ota_power_bias_review" in ids
     assert "no_rule_failure_detected" not in ids
+    assert gain["topology_profile"] == "ota"
     assert gain["metric_penalty_severity"] == "fail"
     assert gain["metric_penalty_deduction"] == 25.0
     assert all(item["engineering_validity"] == "simulation_only" for item in recommendations)

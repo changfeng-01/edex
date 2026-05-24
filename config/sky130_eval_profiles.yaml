@@ -37,6 +37,73 @@ profiles:
       static_power_w:
         source: op_metrics
         maximum: 0.01
+    candidate_rules:
+      dc_gain_db:
+        - parameters: ["m1_width", "m2_width", "transistor_width", "W_nmos", "W_pmos"]
+          direction: increase
+          priority: 92
+          rationale: "Increase input/output device width for OTA gain recovery."
+        - parameters: ["ibias", "bias_current"]
+          direction: increase
+          priority: 86
+          rationale: "Review OTA bias current when gain is below the profile threshold."
+        - parameters: ["load_cap", "capacitance"]
+          direction: decrease
+          priority: 78
+          rationale: "Reduce load capacitance when gain-bandwidth metrics are weak."
+      bandwidth_3db_hz:
+        - parameters: ["m1_width", "m2_width", "transistor_width"]
+          direction: increase
+          priority: 84
+          rationale: "Increase device width for OTA bandwidth recovery."
+        - parameters: ["load_cap", "capacitance"]
+          direction: decrease
+          priority: 88
+          rationale: "Reduce load capacitance for OTA bandwidth recovery."
+        - parameters: ["ibias", "bias_current"]
+          direction: increase
+          priority: 82
+          rationale: "Review OTA bias current for bandwidth recovery."
+      unity_gain_hz:
+        - parameters: ["m1_width", "m2_width", "transistor_width"]
+          direction: increase
+          priority: 84
+          rationale: "Increase device width for OTA unity-gain recovery."
+        - parameters: ["load_cap", "capacitance"]
+          direction: decrease
+          priority: 88
+          rationale: "Reduce load capacitance for OTA unity-gain recovery."
+        - parameters: ["ibias", "bias_current"]
+          direction: increase
+          priority: 82
+          rationale: "Review OTA bias current for unity-gain recovery."
+      slew_rate_v_per_s:
+        - parameters: ["ibias", "bias_current"]
+          direction: increase
+          priority: 88
+          rationale: "Increase OTA bias current for slew-rate recovery."
+        - parameters: ["load_cap", "capacitance"]
+          direction: decrease
+          priority: 84
+          rationale: "Reduce load capacitance for slew-rate recovery."
+      output_swing_v:
+        - parameters: ["m1_width", "m2_width", "transistor_width"]
+          direction: increase
+          priority: 78
+          rationale: "Review OTA output device sizing for output swing."
+        - parameters: ["vdd", "VDD"]
+          direction: review
+          priority: 72
+          rationale: "Review supply setting when OTA swing is below threshold."
+      static_power_w:
+        - parameters: ["ibias", "bias_current"]
+          direction: decrease
+          priority: 96
+          rationale: "Reduce OTA bias current when static power is high."
+        - parameters: ["m1_width", "m2_width", "transistor_width"]
+          direction: decrease
+          priority: 72
+          rationale: "Avoid widening OTA devices when static power dominates."
 
   comparator:
     aliases: ["comp"]
@@ -58,6 +125,35 @@ profiles:
       static_power_w:
         source: op_metrics
         maximum: 0.01
+    candidate_rules:
+      switching_threshold_v:
+        - parameters: ["m1_width", "m2_width", "transistor_width"]
+          direction: review
+          priority: 82
+          rationale: "Review comparator input-pair and regeneration sizing for threshold behavior."
+        - parameters: ["vdd", "VDD"]
+          direction: review
+          priority: 70
+          rationale: "Review comparator supply setting for DC sweep behavior."
+      hysteresis_proxy_v:
+        - parameters: ["m1_width", "m2_width", "transistor_width"]
+          direction: review
+          priority: 80
+          rationale: "Review comparator input-pair and regeneration sizing for hysteresis behavior."
+      output_swing_v:
+        - parameters: ["m1_width", "m2_width", "transistor_width"]
+          direction: increase
+          priority: 84
+          rationale: "Increase comparator drive strength when output swing is weak."
+        - parameters: ["load_cap", "capacitance"]
+          direction: decrease
+          priority: 80
+          rationale: "Reduce comparator output loading when swing is weak."
+      static_power_w:
+        - parameters: ["ibias", "bias_current"]
+          direction: decrease
+          priority: 94
+          rationale: "Reduce comparator bias current when static power is high."
 
   oscillator:
     aliases: ["vco", "ring_oscillator"]
@@ -84,3 +180,53 @@ profiles:
       static_power_w:
         source: op_metrics
         maximum: 0.01
+    candidate_rules:
+      frequency_hz:
+        - parameters: ["load_cap", "capacitance"]
+          direction: decrease
+          priority: 86
+          rationale: "Reduce oscillator loading when frequency is below target."
+        - parameters: ["m1_width", "m2_width", "transistor_width"]
+          direction: increase
+          priority: 80
+          rationale: "Increase oscillator drive strength when frequency is low."
+        - parameters: ["vdd", "VDD"]
+          direction: review
+          priority: 74
+          rationale: "Review oscillator supply setting for frequency behavior."
+      period_std_s:
+        - parameters: ["load_cap", "capacitance"]
+          direction: review
+          priority: 82
+          rationale: "Review oscillator load for period stability."
+        - parameters: ["ibias", "bias_current"]
+          direction: review
+          priority: 78
+          rationale: "Review oscillator bias for period stability."
+      startup_time_s:
+        - parameters: ["m1_width", "m2_width", "transistor_width"]
+          direction: increase
+          priority: 82
+          rationale: "Increase oscillator drive strength when startup is slow."
+        - parameters: ["load_cap", "capacitance"]
+          direction: decrease
+          priority: 80
+          rationale: "Reduce oscillator load when startup is slow."
+      output_swing_v:
+        - parameters: ["m1_width", "m2_width", "transistor_width"]
+          direction: increase
+          priority: 80
+          rationale: "Increase oscillator drive strength when amplitude is low."
+        - parameters: ["load_cap", "capacitance"]
+          direction: decrease
+          priority: 76
+          rationale: "Reduce oscillator load when amplitude is low."
+      static_power_w:
+        - parameters: ["ibias", "bias_current"]
+          direction: decrease
+          priority: 94
+          rationale: "Reduce oscillator bias current when static power is high."
+        - parameters: ["vdd", "VDD"]
+          direction: review
+          priority: 72
+          rationale: "Review oscillator supply setting when static power is high."

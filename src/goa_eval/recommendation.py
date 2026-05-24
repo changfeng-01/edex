@@ -230,7 +230,8 @@ def _profile_recommendation(
     threshold = _number(penalty.get("threshold"))
     if profile == "ota":
         if metric in {"dc_gain_db", "bandwidth_3db_hz", "unity_gain_hz", "slew_rate_v_per_s"}:
-            return _item(
+            return _profile_item(
+                profile,
                 "ota_gain_bandwidth_review",
                 "high" if metric == "dc_gain_db" else "medium",
                 metric,
@@ -244,7 +245,8 @@ def _profile_recommendation(
                 engineering_validity,
             )
         if metric == "static_power_w":
-            return _item(
+            return _profile_item(
+                profile,
                 "ota_power_bias_review",
                 "high",
                 metric,
@@ -259,7 +261,8 @@ def _profile_recommendation(
             )
     if profile == "comparator":
         if metric in {"switching_threshold_v", "hysteresis_proxy_v"}:
-            return _item(
+            return _profile_item(
+                profile,
                 "comparator_dc_sweep_review",
                 "medium",
                 metric,
@@ -273,7 +276,8 @@ def _profile_recommendation(
                 engineering_validity,
             )
         if metric in {"output_swing_v", "static_power_w"}:
-            return _item(
+            return _profile_item(
+                profile,
                 "comparator_drive_power_review",
                 "medium",
                 metric,
@@ -288,7 +292,8 @@ def _profile_recommendation(
             )
     if profile == "oscillator":
         if metric in {"frequency_hz", "period_std_s", "startup_time_s"}:
-            return _item(
+            return _profile_item(
+                profile,
                 "oscillator_frequency_stability_review",
                 "medium",
                 metric,
@@ -302,7 +307,8 @@ def _profile_recommendation(
                 engineering_validity,
             )
         if metric == "output_swing_v":
-            return _item(
+            return _profile_item(
+                profile,
                 "oscillator_amplitude_review",
                 "medium",
                 metric,
@@ -316,6 +322,12 @@ def _profile_recommendation(
                 engineering_validity,
             )
     return None
+
+
+def _profile_item(profile: str, *args) -> dict:
+    item = _item(*args)
+    item["topology_profile"] = profile
+    return item
 
 
 def _attach_metric_penalty_context(recommendations: list[dict], score: dict) -> None:

@@ -158,6 +158,8 @@ Profile metrics are stored in `analysis_metrics.json` and then summarized in `sc
 
 If OP/AC/DC/TRAN files are missing or unreadable, the metric is recorded under `not_evaluable`; the run can still complete and remain eligible for simulation-only sorting by available metrics.
 
+The same profile file may also define `candidate_rules` for profile metrics. These rules map active `analysis_metric_penalties` to next-round parameter candidates when matching parameter names exist in the current parameter space, such as generic names (`transistor_width`, `load_cap`, `bias_current`) or SKY130 sweep names (`m1_width`, `m2_width`, `ibias`). The generated candidates remain simulation-only suggestions for the next run; they are not physical validation and do not mean an automatic optimization loop has completed.
+
 ## 参数元数据
 
 批量评价会把 `params.yaml` 中的参数拼接到指标表和榜单中。常见参数包括：

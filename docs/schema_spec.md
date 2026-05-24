@@ -222,7 +222,7 @@ These metrics are simulation-only analysis helpers. Missing OP/AC/DC data should
 | `search_score` | 约束搜索排序分数，综合规则优先级、指标惩罚严重度和组合复杂度。 |
 | `rationale` | 生成该候选的简要原因。 |
 
-候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。当 `score_summary.json` 提供 `metric_penalties` 时，严重超限指标会得到更高搜索权重；两参数组合会保留组合惩罚，避免过早偏向复杂改动。
+候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。当 `score_summary.json` 提供 `metric_penalties` 或 `analysis_metric_penalties` 时，严重超限指标会得到更高搜索权重；两参数组合会保留组合惩罚，避免过早偏向复杂改动。Topology-aware candidate generation uses `config/sky130_eval_profiles.yaml` `candidate_rules` to map active profile metrics such as `dc_gain_db`, `static_power_w`, `switching_threshold_v`, or `frequency_hz` onto parameters that exist in the current parameter space. If a profile rule references parameters that are absent from the current parameter space, those entries are skipped.
 
 ## next_candidates.md
 
