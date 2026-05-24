@@ -146,6 +146,13 @@ engineering_validity = simulation_only
 
 `propose-candidates --strategy constrained-random` 会读取这些惩罚项辅助排序：规则优先级决定基础方向，惩罚严重度和扣分提高当前主要失效指标的候选权重，两参数组合再扣除复杂度惩罚。
 
+Hard-constraint failures also feed candidate generation. When `All_pulses_exist`
+or `Seq_pass` fails, `build_recommendations` emits recovery recommendations that
+`propose-candidates` can map to drive-strength, load, and threshold-review
+parameters present in the current parameter space. These candidates remain
+simulation-only next-run suggestions and should be reviewed against the waveform
+before any physical conclusion.
+
 ## Topology-aware analysis metrics
 
 `config/sky130_eval_profiles.yaml` defines the first profile set: `default`, `ota`, `comparator`, and `oscillator`. Aliases map common topologies such as `two_stage_opamp` to `ota` and `vco` to `oscillator`.

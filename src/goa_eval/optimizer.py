@@ -101,6 +101,24 @@ def propose_candidates(param_space: dict[str, list[object]], recommendations: li
         if "false_trigger" in rec_id or metric == "FalseTriggerCount":
             _append_if_available(candidates, param_space, "VDD", "review_threshold", 75, recommendation)
             _append_if_available(candidates, param_space, "vdd", "review_threshold", 75, recommendation)
+        if "missing_pulse" in rec_id or metric == "All_pulses_exist":
+            _append_if_available(candidates, param_space, "transistor_width", "increase", 94, recommendation)
+            _append_if_available(candidates, param_space, "W_nmos", "increase", 90, recommendation)
+            _append_if_available(candidates, param_space, "W_pmos", "increase", 90, recommendation)
+            _append_if_available(candidates, param_space, "drive_resistance", "decrease", 86, recommendation)
+            _append_if_available(candidates, param_space, "R_driver", "decrease", 86, recommendation)
+            _append_if_available(candidates, param_space, "load_cap", "decrease", 84, recommendation)
+            _append_if_available(candidates, param_space, "capacitance", "decrease", 78, recommendation)
+            _append_if_available(candidates, param_space, "vdd", "review_threshold", 70, recommendation)
+            _append_if_available(candidates, param_space, "VDD", "review_threshold", 70, recommendation)
+        if "sequence_order" in rec_id or metric == "Seq_pass":
+            _append_if_available(candidates, param_space, "drive_resistance", "decrease", 92, recommendation)
+            _append_if_available(candidates, param_space, "R_driver", "decrease", 92, recommendation)
+            _append_if_available(candidates, param_space, "transistor_width", "increase", 88, recommendation)
+            _append_if_available(candidates, param_space, "W_nmos", "increase", 84, recommendation)
+            _append_if_available(candidates, param_space, "W_pmos", "increase", 84, recommendation)
+            _append_if_available(candidates, param_space, "load_cap", "decrease", 80, recommendation)
+            _append_if_available(candidates, param_space, "capacitance", "decrease", 74, recommendation)
         _append_profile_rule_candidates(candidates, param_space, recommendation, profiles)
     return candidates
 

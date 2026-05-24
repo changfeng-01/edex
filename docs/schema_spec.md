@@ -224,6 +224,11 @@ These metrics are simulation-only analysis helpers. Missing OP/AC/DC data should
 
 候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。当 `score_summary.json` 提供 `metric_penalties` 或 `analysis_metric_penalties` 时，严重超限指标会得到更高搜索权重；两参数组合会保留组合惩罚，避免过早偏向复杂改动。Topology-aware candidate generation uses `config/sky130_eval_profiles.yaml` `candidate_rules` to map active profile metrics such as `dc_gain_db`, `static_power_w`, `switching_threshold_v`, or `frequency_hz` onto parameters that exist in the current parameter space. If a profile rule references parameters that are absent from the current parameter space, those entries are skipped.
 
+Hard-constraint failures such as `All_pulses_exist` and `Seq_pass` can also
+produce recovery candidates for drive-strength, load, and threshold-review
+parameters when those names exist in the parameter space. These candidates are
+simulation-only next-run suggestions, not physical-validation evidence.
+
 ## next_candidates.md
 
 用途：面向人工阅读的下一轮候选参数说明。
