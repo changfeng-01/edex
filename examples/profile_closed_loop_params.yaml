@@ -1,0 +1,17 @@
+parameters:
+  m1_width:
+    unit: m
+    target: M1.W
+    values: ["1u", "2u"]
+  m2_width:
+    unit: m
+    target: M2.W
+    values: ["1u", "2u"]
+  load_cap:
+    unit: F
+    target: CLOAD.C
+    values: ["0.5pF", "1.0pF"]
+  ibias:
+    unit: A
+    target: .param:ibias
+    values: ["5u", "10u"]

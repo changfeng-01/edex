@@ -12,6 +12,7 @@ import yaml
 
 from goa_eval.param_space import parse_engineering_value
 from goa_eval.schemas import RESULT_VERSION, SCHEMA_VERSION
+from goa_eval.topology_profiles import load_eval_profiles
 
 
 CANDIDATE_COLUMNS = [
@@ -80,6 +81,7 @@ def load_baseline_params(path: Path) -> dict[str, object]:
 
 def propose_candidates(param_space: dict[str, list[object]], recommendations: list[dict]) -> list[dict]:
     candidates: list[dict] = []
+    profiles = load_eval_profiles()
     for recommendation in recommendations:
         rec_id = str(recommendation.get("recommendation_id", ""))
         metric = str(recommendation.get("trigger_metric", ""))
@@ -99,7 +101,47 @@ def propose_candidates(param_space: dict[str, list[object]], recommendations: li
         if "false_trigger" in rec_id or metric == "FalseTriggerCount":
             _append_if_available(candidates, param_space, "VDD", "review_threshold", 75, recommendation)
             _append_if_available(candidates, param_space, "vdd", "review_threshold", 75, recommendation)
+        _append_profile_rule_candidates(candidates, param_space, recommendation, profiles)
     return candidates
+
+
+def _append_profile_rule_candidates(
+    candidates: list[dict],
+    param_space: dict[str, list[object]],
+    recommendation: dict,
+    profiles: dict,
+) -> None:
+    profile_name = str(recommendation.get("topology_profile", "") or "")
+    metric = str(recommendation.get("trigger_metric", "") or "")
+    if not profile_name or not metric:
+        return
+    profile = profiles.get(profile_name)
+    if not isinstance(profile, dict):
+        return
+    rules = (profile.get("candidate_rules", {}) or {}).get(metric, [])
+    if isinstance(rules, dict):
+        rules = [rules]
+    if not isinstance(rules, list):
+        return
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        parameters = rule.get("parameters", [])
+        if isinstance(parameters, str):
+            parameters = [parameters]
+        direction = str(rule.get("direction", "review") or "review")
+        priority = int(rule.get("priority", 50) or 50)
+        rationale = str(rule.get("rationale", "") or "")
+        for parameter in parameters:
+            _append_if_available(
+                candidates,
+                param_space,
+                str(parameter),
+                direction,
+                priority,
+                recommendation,
+                rationale=rationale,
+            )
 
 
 def constrained_random_candidates(
@@ -152,7 +194,16 @@ def rank_candidates(candidates: list[dict]) -> list[dict]:
     )
 
 
-def _append_if_available(candidates: list[dict], param_space: dict[str, list[object]], parameter: str, direction: str, priority: int, recommendation: dict) -> None:
+def _append_if_available(
+    candidates: list[dict],
+    param_space: dict[str, list[object]],
+    parameter: str,
+    direction: str,
+    priority: int,
+    recommendation: dict,
+    *,
+    rationale: str = "",
+) -> None:
     if parameter not in param_space:
         return
     values, unit = _values_and_unit(param_space[parameter])
@@ -177,7 +228,7 @@ def _append_if_available(candidates: list[dict], param_space: dict[str, list[obj
                 "search_score": priority,
                 "metric_penalty_severity": recommendation.get("metric_penalty_severity"),
                 "metric_penalty_deduction": recommendation.get("metric_penalty_deduction"),
-                "rationale": f"{parameter} {direction} from {recommendation.get('recommendation_id')}",
+                "rationale": rationale or f"{parameter} {direction} from {recommendation.get('recommendation_id')}",
             }
         )
 

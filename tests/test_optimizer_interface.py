@@ -231,6 +231,104 @@ def test_constrained_random_candidates_prioritize_severe_constraint_penalties():
     assert "critical" in candidates[0]["rationale"]
 
 
+def test_propose_candidates_uses_topology_profile_candidate_rules_for_ota_gain():
+    recommendations = [
+        {
+            "recommendation_id": "ota_gain_bandwidth_review",
+            "trigger_metric": "dc_gain_db",
+            "topology_profile": "ota",
+            "metric_penalty_severity": "fail",
+            "metric_penalty_deduction": 25.0,
+            "data_source": "real_simulation_csv",
+            "engineering_validity": "simulation_only",
+        }
+    ]
+    param_space = {
+        "m1_width": {"unit": "m", "values": ["1u", "2u"]},
+        "m2_width": {"unit": "m", "values": ["1u"]},
+        "load_cap": {"unit": "F", "values": ["1pF"]},
+    }
+
+    candidates = propose_candidates(param_space, recommendations)
+
+    assert {"m1_width", "m2_width", "load_cap"} <= {candidate["parameter"] for candidate in candidates}
+    assert any(candidate["parameter"] == "m1_width" and candidate["direction"] == "increase" for candidate in candidates)
+    assert any(candidate["parameter"] == "load_cap" and candidate["direction"] == "decrease" for candidate in candidates)
+    assert all(candidate["source_recommendation"] == "ota_gain_bandwidth_review" for candidate in candidates)
+    assert all(candidate["trigger_metric"] == "dc_gain_db" for candidate in candidates)
+
+
+def test_constrained_random_profile_candidates_score_power_above_mild_gain():
+    recommendations = [
+        {
+            "recommendation_id": "ota_gain_bandwidth_review",
+            "trigger_metric": "dc_gain_db",
+            "topology_profile": "ota",
+            "metric_penalty_severity": "fail",
+            "metric_penalty_deduction": 20.0,
+        },
+        {
+            "recommendation_id": "ota_power_bias_review",
+            "trigger_metric": "static_power_w",
+            "topology_profile": "ota",
+            "metric_penalty_severity": "critical",
+            "metric_penalty_deduction": 90.0,
+        },
+    ]
+    param_space = {
+        "m1_width": {"unit": "m", "values": ["2u"]},
+        "ibias": {"unit": "A", "values": ["5u", "10u"]},
+    }
+
+    candidates = constrained_random_candidates(param_space, recommendations, max_candidates=2, seed=3)
+    all_candidates = constrained_random_candidates(param_space, recommendations, max_candidates=10, seed=3)
+    best_power = max(float(candidate["search_score"]) for candidate in all_candidates if "static_power_w" in candidate["trigger_metric"])
+    best_gain = max(float(candidate["search_score"]) for candidate in all_candidates if candidate["trigger_metric"] == "dc_gain_db")
+
+    assert candidates[0]["trigger_metric"] == "static_power_w"
+    assert "ibias" in candidates[0]["changed_parameters"]
+    assert "critical" in candidates[0]["rationale"]
+    assert best_power > best_gain
+
+
+def test_profile_candidate_rules_skip_unknown_profiles_and_missing_rules():
+    recommendations = [
+        {"recommendation_id": "custom_review", "trigger_metric": "dc_gain_db", "topology_profile": "unknown_filter"},
+        {"recommendation_id": "ota_unknown_metric_review", "trigger_metric": "phase_margin_deg", "topology_profile": "ota"},
+    ]
+
+    assert propose_candidates({"m1_width": {"unit": "m", "values": ["1u"]}}, recommendations) == []
+
+
+def test_profile_candidate_rules_respect_baseline_direction_filter():
+    recommendations = [
+        {
+            "recommendation_id": "ota_gain_bandwidth_review",
+            "trigger_metric": "dc_gain_db",
+            "topology_profile": "ota",
+        }
+    ]
+    param_space = {
+        "m1_width": {"unit": "m", "values": ["1u", "2u"]},
+        "load_cap": {"unit": "F", "values": ["1pF", "2pF"]},
+    }
+
+    candidates = constrained_random_candidates(
+        param_space,
+        recommendations,
+        max_candidates=10,
+        seed=11,
+        baseline_params={"m1_width": "1u", "load_cap": "2pF"},
+    )
+
+    for candidate in candidates:
+        params = candidate["parameters_json"]
+        if "m1_width" in params:
+            assert params["m1_width"] == "2u"
+        if "load_cap" in params:
+            assert params["load_cap"] == "1pF"
+
+
 def test_constrained_random_candidates_return_empty_for_info_only_recommendation():
     recommendations = [{"recommendation_id": "no_rule_failure_detected", "trigger_metric": "none"}]
 

@@ -64,6 +64,47 @@ def test_build_recommendations_carries_metric_penalty_context_from_score():
     assert overlap["metric_penalty_deduction"] == 91.6
 
 
+def test_build_recommendations_adds_topology_specific_analysis_guidance():
+    score = {
+        "topology_profile": "ota",
+        "analysis_metric_penalties": {
+            "dc_gain_db": {
+                "severity": "fail",
+                "score": 75.0,
+                "deduction": 25.0,
+                "current_value": 30.0,
+                "threshold": 40.0,
+            },
+            "static_power_w": {
+                "severity": "critical",
+                "score": 0.0,
+                "deduction": 100.0,
+                "current_value": 0.02,
+                "threshold": 0.01,
+            },
+        },
+    }
+
+    recommendations = build_recommendations(
+        {
+            "data_source": "real_simulation_csv",
+            "engineering_validity": "simulation_only",
+        },
+        score,
+        pd.DataFrame(),
+    )
+    ids = {item["recommendation_id"] for item in recommendations}
+    gain = next(item for item in recommendations if item["trigger_metric"] == "dc_gain_db")
+
+    assert "ota_gain_bandwidth_review" in ids
+    assert "ota_power_bias_review" in ids
+    assert "no_rule_failure_detected" not in ids
+    assert gain["topology_profile"] == "ota"
+    assert gain["metric_penalty_severity"] == "fail"
+    assert gain["metric_penalty_deduction"] == 25.0
+    assert all(item["engineering_validity"] == "simulation_only" for item in recommendations)
+
+
 def test_write_recommendations_markdown_keeps_simulation_only_boundary(tmp_path: Path):
     summary_path = tmp_path / "real_summary.json"
     score_path = tmp_path / "score_summary.json"

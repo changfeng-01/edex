@@ -378,6 +378,109 @@ parameters:
     assert set(table["candidate_kind"]) == {"single_parameter"}
 
 
+def test_cli_propose_candidates_uses_topology_profile_penalties(tmp_path):
+    summary_path = tmp_path / "real_summary.json"
+    score_path = tmp_path / "score_summary.json"
+    metrics_path = tmp_path / "real_metrics.csv"
+    param_space_path = tmp_path / "param_space.yaml"
+    output_csv = tmp_path / "next_candidates.csv"
+    output_md = tmp_path / "next_candidates.md"
+
+    summary_path.write_text(
+        json.dumps(
+            {
+                "data_source": "real_simulation_csv",
+                "engineering_validity": "simulation_only",
+            }
+        ),
+        encoding="utf-8",
+    )
+    score_path.write_text(
+        json.dumps(
+            {
+                "topology_profile": "ota",
+                "analysis_metric_penalties": {
+                    "dc_gain_db": {
+                        "severity": "fail",
+                        "score": 60.0,
+                        "deduction": 40.0,
+                        "current_value": 24.0,
+                        "threshold": 40.0,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    pd.DataFrame([{"stage": 1, "node": "o1"}]).to_csv(metrics_path, index=False)
+    param_space_path.write_text(
+        """
+parameters:
+  m1_width:
+    unit: m
+    values: ["1u", "2u"]
+  m2_width:
+    unit: m
+    values: ["1u"]
+  load_cap:
+    unit: F
+    values: ["1pF"]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "goa_eval.cli",
+            "propose-candidates",
+            "--summary",
+            str(summary_path),
+            "--score",
+            str(score_path),
+            "--metrics",
+            str(metrics_path),
+            "--param-space",
+            str(param_space_path),
+            "--output-csv",
+            str(output_csv),
+            "--output-md",
+            str(output_md),
+        ],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    table = pd.read_csv(output_csv)
+    assert list(table.columns[:18]) == [
+        "schema_version",
+        "result_version",
+        "candidate_id",
+        "priority",
+        "parameter",
+        "direction",
+        "candidate_value",
+        "candidate_unit",
+        "source_recommendation",
+        "trigger_metric",
+        "data_source",
+        "engineering_validity",
+        "strategy",
+        "candidate_kind",
+        "changed_parameters",
+        "parameters_json",
+        "search_score",
+        "rationale",
+    ]
+    assert {"m1_width", "m2_width", "load_cap"} & set(table["parameter"])
+    assert all("dc_gain_db" in metric for metric in table["trigger_metric"])
+    assert "simulation_only" in output_md.read_text(encoding="utf-8")
+
+
 def test_cli_analyze_params_writes_mock_deepseek_outputs(tmp_path):
     summary_path = tmp_path / "real_summary.json"
     score_path = tmp_path / "score_summary.json"

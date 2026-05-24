@@ -104,6 +104,8 @@ def build_recommendations(summary: dict, score: dict | None = None, metrics: pd.
             )
         )
 
+    _add_topology_profile_recommendations(recommendations, score, data_source, engineering_validity)
+
     if not recommendations:
         recommendations.append(
             _item(
@@ -199,12 +201,145 @@ def _item(
     }
 
 
+def _add_topology_profile_recommendations(
+    recommendations: list[dict],
+    score: dict,
+    data_source: str,
+    engineering_validity: str,
+) -> None:
+    profile = str(score.get("topology_profile", "default"))
+    penalties = score.get("analysis_metric_penalties", {}) if isinstance(score, dict) else {}
+    if not isinstance(penalties, dict) or profile == "default":
+        return
+    for metric, penalty in penalties.items():
+        if not _active_penalty(penalty):
+            continue
+        recommendation = _profile_recommendation(profile, str(metric), penalty, data_source, engineering_validity)
+        if recommendation is not None:
+            recommendations.append(recommendation)
+
+
+def _profile_recommendation(
+    profile: str,
+    metric: str,
+    penalty: dict,
+    data_source: str,
+    engineering_validity: str,
+) -> dict | None:
+    current = _number(penalty.get("current_value"))
+    threshold = _number(penalty.get("threshold"))
+    if profile == "ota":
+        if metric in {"dc_gain_db", "bandwidth_3db_hz", "unity_gain_hz", "slew_rate_v_per_s"}:
+            return _profile_item(
+                profile,
+                "ota_gain_bandwidth_review",
+                "high" if metric == "dc_gain_db" else "medium",
+                metric,
+                current,
+                threshold,
+                "OTA profile metric is outside the configured simulation threshold; likely causes include device sizing, bias current, load capacitance, or compensation choices.",
+                "Review input/output transistor sizing and bias first for gain, then load/compensation and slew limits for bandwidth-related misses.",
+                True,
+                f"{metric} is outside the OTA profile threshold; use this as a simulation-only tuning hint, not a silicon conclusion.",
+                data_source,
+                engineering_validity,
+            )
+        if metric == "static_power_w":
+            return _profile_item(
+                profile,
+                "ota_power_bias_review",
+                "high",
+                metric,
+                current,
+                threshold,
+                "Static power is above the OTA profile threshold; bias current or always-on branches may be too large for this sweep point.",
+                "Review bias source values and transistor operating points before widening devices further.",
+                False,
+                "OTA static power exceeds the configured simulation threshold; bias should be checked before the next sweep.",
+                data_source,
+                engineering_validity,
+            )
+    if profile == "comparator":
+        if metric in {"switching_threshold_v", "hysteresis_proxy_v"}:
+            return _profile_item(
+                profile,
+                "comparator_dc_sweep_review",
+                "medium",
+                metric,
+                current,
+                threshold,
+                "Comparator DC behavior is outside the configured threshold; input pair balance, regeneration bias, or sweep direction may be involved.",
+                "Review DC sweep setup and input/regeneration-stage sizing before trusting delay-only ranking.",
+                True,
+                f"{metric} suggests comparator switching behavior needs DC-sweep review.",
+                data_source,
+                engineering_validity,
+            )
+        if metric in {"output_swing_v", "static_power_w"}:
+            return _profile_item(
+                profile,
+                "comparator_drive_power_review",
+                "medium",
+                metric,
+                current,
+                threshold,
+                "Comparator output swing or power is outside the profile threshold; output load, latch drive, or bias values may dominate.",
+                "Check output loading, regeneration strength, and bias values in the next sweep space.",
+                False,
+                f"{metric} is outside the comparator profile threshold.",
+                data_source,
+                engineering_validity,
+            )
+    if profile == "oscillator":
+        if metric in {"frequency_hz", "period_std_s", "startup_time_s"}:
+            return _profile_item(
+                profile,
+                "oscillator_frequency_stability_review",
+                "medium",
+                metric,
+                current,
+                threshold,
+                "Oscillator frequency, startup, or period stability is outside the configured threshold; RC/load/bias or transient window length may dominate.",
+                "Review RC/load/bias parameters and confirm the transient window excludes startup before narrowing the next sweep.",
+                True,
+                f"{metric} is outside the oscillator profile threshold.",
+                data_source,
+                engineering_validity,
+            )
+        if metric == "output_swing_v":
+            return _profile_item(
+                profile,
+                "oscillator_amplitude_review",
+                "medium",
+                metric,
+                current,
+                threshold,
+                "Oscillator amplitude is outside the configured threshold; load, bias, or insufficient startup time may be involved.",
+                "Review load and bias values, then rerun with a long enough transient window.",
+                True,
+                "Oscillator output swing is below the configured simulation threshold.",
+                data_source,
+                engineering_validity,
+            )
+    return None
+
+
+def _profile_item(profile: str, *args) -> dict:
+    item = _item(*args)
+    item["topology_profile"] = profile
+    return item
+
+
 def _attach_metric_penalty_context(recommendations: list[dict], score: dict) -> None:
     penalties = score.get("metric_penalties", {}) if isinstance(score, dict) else {}
+    analysis_penalties = score.get("analysis_metric_penalties", {}) if isinstance(score, dict) else {}
     if not isinstance(penalties, dict):
-        return
+        penalties = {}
+    if not isinstance(analysis_penalties, dict):
+        analysis_penalties = {}
+    combined = {**analysis_penalties, **penalties}
     for recommendation in recommendations:
-        penalty = penalties.get(recommendation.get("trigger_metric"))
+        penalty = combined.get(recommendation.get("trigger_metric"))
         if not isinstance(penalty, dict):
             continue
         recommendation["metric_penalty_severity"] = penalty.get("severity")
@@ -225,3 +360,13 @@ def _gt(value, limit) -> bool:
     value = _number(value)
     limit = _number(limit)
     return value is not None and limit is not None and value > limit
+
+
+def _active_penalty(penalty: object) -> bool:
+    if not isinstance(penalty, dict):
+        return False
+    severity = str(penalty.get("severity", "")).lower()
+    if severity in {"fail", "critical"}:
+        return True
+    score = _number(penalty.get("score"))
+    return score is not None and score < 100.0

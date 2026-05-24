@@ -101,6 +101,33 @@ result_version = 1.0
 
 `metric_penalties` 对关键指标输出 `current_value`、`threshold`、`limit_type`、`severity`、`score`、`deduction` 和 `reason`。硬约束仍决定 pass/fail；惩罚分用于区分失败程度，例如轻微超限的 `Max_overlap_ratio` 会比严重超限保留更高排序分。
 
+Topology-aware scoring adds optional fields without changing the existing waveform score contract:
+
+| Field | Type | Description |
+|---|---|---|
+| `topology_profile` | string | Resolved profile name, currently `default`, `ota`, `comparator`, or `oscillator`. Unknown topology falls back to `default`. |
+| `profile_metric_scores` | object | Per-profile OP/AC/DC/TRAN metric scores used by the profile score. |
+| `analysis_metric_penalties` | object | Penalty details for profile metrics such as gain, bandwidth, switching threshold, frequency, startup, output swing, or static power. |
+| `not_evaluable_metrics` | object | Missing or unreadable analysis inputs. These do not fail the run; they only mark profile metrics as unavailable. |
+| `profile_score` | number/null | Weighted profile-specific score when a non-default profile is active or profile metrics are present. |
+
+## analysis_metrics.json
+
+Purpose: companion metrics for topology-aware evaluation. This file is written next to `real_summary.json` and `score_summary.json` when `evaluate-real`, `sky130-transient`, or `sky130-sweep` runs.
+
+Stable top-level fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `topology_profile` | string | Resolved evaluation profile. |
+| `op_metrics` | object | Basic operating-point metrics, including `static_power_w` when supply voltage and current are available. |
+| `ac_metrics` | object | Basic AC metrics such as `dc_gain_db`, `bandwidth_3db_hz`, and `unity_gain_hz`. |
+| `dc_metrics` | object | Basic DC metrics such as `switching_threshold_v`, `output_swing_v`, and `hysteresis_proxy_v`. |
+| `tran_metrics` | object | Transient metrics such as `output_swing_v`, `frequency_hz`, `period_std_s`, `slew_rate_v_per_s`, and `startup_time_s`. |
+| `not_evaluable` | object | Reasons for missing OP/AC/DC/TRAN inputs or missing derived metrics. |
+
+These metrics are simulation-only analysis helpers. Missing OP/AC/DC data should be treated as `not_evaluable`, not as physical pass/fail evidence.
+
 ## diagnosis_report.md
 
 用途：面向人工复核的诊断说明。
@@ -195,7 +222,7 @@ result_version = 1.0
 | `search_score` | 约束搜索排序分数，综合规则优先级、指标惩罚严重度和组合复杂度。 |
 | `rationale` | 生成该候选的简要原因。 |
 
-候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。当 `score_summary.json` 提供 `metric_penalties` 时，严重超限指标会得到更高搜索权重；两参数组合会保留组合惩罚，避免过早偏向复杂改动。
+候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。当 `score_summary.json` 提供 `metric_penalties` 或 `analysis_metric_penalties` 时，严重超限指标会得到更高搜索权重；两参数组合会保留组合惩罚，避免过早偏向复杂改动。Topology-aware candidate generation uses `config/sky130_eval_profiles.yaml` `candidate_rules` to map active profile metrics such as `dc_gain_db`, `static_power_w`, `switching_threshold_v`, or `frequency_hz` onto parameters that exist in the current parameter space. If a profile rule references parameters that are absent from the current parameter space, those entries are skipped.
 
 ## next_candidates.md
 
@@ -219,12 +246,13 @@ result_version = 1.0
 | `source_netlist.spice` | Source SPICE text selected from `netlist`, `spice_netlist`, or `testbench_spice` for structure analysis. |
 | `netlist_structure.json` | AMS-Net-style structure companion data: device counts, models, node degrees, directives, and scalar size features. |
 | `waveform.csv` | Converted `TIME,v(o1),...` waveform for `evaluate-real`. |
+| `analysis_metrics.json` | Topology-aware OP/AC/DC/TRAN companion metrics and `not_evaluable` reasons. |
 | `dataset_row.json` | Snapshot of the source dataset row. |
 | `node_map.json` | Mapping from `o1/o2/...` aliases to original output nodes. |
 | `sky130_metadata.json` | Dataset provenance, topology, PDK, split, original output nodes, and structure companion paths. |
 | `sky130_status.json` | Per-row `evaluated`, `skipped`, or `failed` status. |
 
-`output_root/sky130_runs.csv` summarizes status, `overall_score`, failure reasons, topology, source, run directory, and compact structure columns such as `mos_count`, `cap_count`, `resistor_count`, `current_source_count`, `model_count`, `node_count`, and `transistor_width_sum`. Structure data is analysis metadata only. This entrypoint still uses `data_source = real_simulation_csv` and `engineering_validity = simulation_only`; it does not represent physical test validation or a completed automatic optimization loop.
+`output_root/sky130_runs.csv` summarizes status, `overall_score`, failure reasons, topology, resolved `topology_profile`, selected analysis metrics such as `dc_gain_db`, `bandwidth_3db_hz`, `unity_gain_hz`, `static_power_w`, `switching_threshold_v`, and `frequency_hz`, source, run directory, and compact structure columns such as `mos_count`, `cap_count`, `resistor_count`, `current_source_count`, `model_count`, `node_count`, and `transistor_width_sum`. Structure and analysis data are companion metadata only. This entrypoint still uses `data_source = real_simulation_csv` and `engineering_validity = simulation_only`; it does not represent physical test validation or a completed automatic optimization loop.
 
 ## SKY130 sweep outputs
 
@@ -235,7 +263,8 @@ result_version = 1.0
 | `params.yaml` | Parameter values used for this sweep point. |
 | `testbench.spice` | Per-run SPICE copy after parameter rewrite. |
 | `waveform.csv` | Converted transient waveform for `evaluate-real`. |
-| `real_summary.json` / `score_summary.json` | Existing waveform evaluation and score outputs. |
+| `analysis_metrics.json` | Topology-aware OP/AC/DC/TRAN companion metrics and `not_evaluable` reasons. |
+| `real_summary.json` / `score_summary.json` | Existing waveform evaluation and topology-aware score outputs. |
 | `next_candidates.csv` | Existing constrained-random next-candidate output for the run. |
 
 At the sweep root, `sky130_sweep_runs.csv` summarizes every sweep point, `sky130_sweep_leaderboard.csv` sorts evaluated points by score, `sky130_sweep_sensitivity.csv` reports coarse one-parameter score deltas, and `next_param_space.yaml` preserves a narrowed next-round parameter-space suggestion. These files are simulation-only ranking artifacts, not physical validation and not proof of a completed multi-round optimizer.
