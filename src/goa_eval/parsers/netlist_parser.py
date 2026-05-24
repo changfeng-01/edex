@@ -13,18 +13,28 @@ class NetlistParseResult:
     devices: list[Device] = field(default_factory=list)
     subckts: dict[str, SubcktDef] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    models: dict[str, dict] = field(default_factory=dict)
+    analysis_directives: list[dict] = field(default_factory=list)
 
 
 _UNIT_FACTORS = {
     "T": 1e12,
     "G": 1e9,
     "MEG": 1e6,
+    "meg": 1e6,
     "K": 1e3,
+    "k": 1e3,
     "m": 1e-3,
     "u": 1e-6,
     "n": 1e-9,
     "p": 1e-12,
     "f": 1e-15,
+    "": 1.0,
+    "F": 1.0,
+    "A": 1.0,
+    "V": 1.0,
+    "Ohm": 1.0,
+    "ohm": 1.0,
 }
 
 
@@ -37,10 +47,19 @@ def parse_numeric_with_unit(value: str) -> float:
     unit = match.group(2)
     if not unit:
         return number
-    key = "MEG" if unit.upper() == "MEG" else unit
+    key = _unit_key(unit)
     if key not in _UNIT_FACTORS:
         raise ValueError(f"Unsupported unit '{unit}' in value: {value}")
     return number * _UNIT_FACTORS[key]
+
+
+def _unit_key(unit: str) -> str:
+    if unit in _UNIT_FACTORS:
+        return unit
+    for suffix in ["Ohm", "ohm", "F", "A", "V"]:
+        if unit.endswith(suffix):
+            return unit[: -len(suffix)] or suffix
+    return "MEG" if unit.upper() == "MEG" else unit
 
 
 def parse_netlist(path: Path) -> NetlistParseResult:
@@ -101,6 +120,20 @@ def _parse_directive(
         if current and end_name and end_name != current.name:
             result.warnings.append(f"{path}:{line_no}: .ENDS {end_name} does not match {current.name}")
         current = None
+    elif directive == ".MODEL":
+        model = _parse_model_directive(stripped, path, line_no)
+        if model:
+            result.models[str(model["name"])] = model
+    elif directive in {".OP", ".TRAN", ".DC"}:
+        result.analysis_directives.append(
+            {
+                "directive": directive,
+                "args": tokens[1:],
+                "raw_line": stripped,
+                "source_file": str(path),
+                "line_no": line_no,
+            }
+        )
     result.subckts["__current__"] = current
 
 
@@ -119,8 +152,12 @@ def _parse_device_line(
         device = _parse_mos(tokens)
     elif prefix == "c":
         device = _parse_capacitor(tokens)
+    elif prefix == "r":
+        device = _parse_resistor(tokens)
     elif prefix == "v":
-        device = _parse_voltage_source(tokens)
+        device = _parse_source(tokens, "voltage_source")
+    elif prefix == "i":
+        device = _parse_source(tokens, "current_source")
     elif prefix == "x":
         device = _parse_subckt_instance(tokens, subckts)
     else:
@@ -156,9 +193,22 @@ def _parse_capacitor(tokens: list[str]) -> Device:
     )
 
 
-def _parse_voltage_source(tokens: list[str]) -> Device:
+def _parse_resistor(tokens: list[str]) -> Device:
     if len(tokens) < 4:
-        raise ValueError("voltage source line needs two nodes and source spec")
+        raise ValueError("resistor line needs two nodes and value")
+    raw = tokens[3]
+    return Device(
+        tokens[0],
+        "resistor",
+        tokens[1:3],
+        params_raw={"R": raw},
+        params_si={"R": parse_numeric_with_unit(raw)},
+    )
+
+
+def _parse_source(tokens: list[str], kind: str) -> Device:
+    if len(tokens) < 4:
+        raise ValueError(f"{kind} line needs two nodes and source spec")
     spec = " ".join(tokens[3:])
     params_raw = {"source_spec": spec}
     params_si = {}
@@ -177,7 +227,7 @@ def _parse_voltage_source(tokens: list[str]) -> Device:
                 params_si[f"pulse_{key}"] = parse_numeric_with_unit(value)
             except ValueError:
                 pass
-    return Device(tokens[0], "voltage_source", tokens[1:3], params_raw=params_raw, params_si=params_si)
+    return Device(tokens[0], kind, tokens[1:3], params_raw=params_raw, params_si=params_si)
 
 
 def _parse_subckt_instance(tokens: list[str], subckts: dict[str, SubcktDef]) -> Device:
@@ -203,3 +253,30 @@ def _parse_params(tokens: list[str]) -> tuple[dict[str, str], dict[str, float]]:
         except ValueError:
             pass
     return raw, si
+
+
+def _parse_model_directive(stripped: str, path: Path, line_no: int) -> dict | None:
+    match = re.match(r"\.MODEL\s+(\S+)\s+(\S+)\s*(?:\((.*)\))?\s*$", stripped, flags=re.IGNORECASE)
+    if not match:
+        return None
+    raw_params = {}
+    params_si = {}
+    body = match.group(3) or ""
+    for token in body.split():
+        if "=" not in token:
+            continue
+        key, value = token.split("=", 1)
+        raw_params[key] = value
+        try:
+            params_si[key] = parse_numeric_with_unit(value)
+        except ValueError:
+            pass
+    return {
+        "name": match.group(1),
+        "kind": match.group(2),
+        "raw_params": raw_params,
+        "params_si": params_si,
+        "raw_line": stripped,
+        "source_file": str(path),
+        "line_no": line_no,
+    }

@@ -1,5 +1,8 @@
+import json
+
 import pytest
 
+from goa_eval.netlist_structure import summarize_netlist_structure, write_netlist_structure
 from goa_eval.parsers.netlist_parser import parse_netlist, parse_numeric_with_unit
 
 
@@ -48,3 +51,68 @@ def test_v8_subckt_instances_and_cascade(tmp_path):
     assert instances["Xs1"].port_map["output"] == "o1"
     assert instances["Xs8"].port_map["output"] == "o5"
     assert design.cascade_chain == ["o1", "o2", "o3", "o4", "o5", "o6", "o7", "o8"]
+
+
+def test_ams_net_style_netlist_parses_sources_models_and_op(tmp_path):
+    netlist = tmp_path / "amsnet_example.spice"
+    netlist.write_text(
+        "\n".join(
+            [
+                "M1 7 2 6 6 NMOS W=1u L=1u",
+                "M2 8 1 6 6 NMOS W=1u L=1u",
+                "I1 6 0 DC 1mA",
+                "M4 7 7 VDD VDD PMOS W=1u L=1u",
+                "M3 8 7 VDD VDD PMOS W=1u L=1u",
+                "C1 0 8 1nF",
+                ".MODEL NMOS NMOS (LEVEL=1 VTO=1 KP=1.0e-4 LAMBDA=0.02)",
+                ".MODEL PMOS PMOS (LEVEL=1 VTO=-1 KP=1.0e-4 LAMBDA=0.02)",
+                ".OP",
+                ".END",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_netlist(netlist)
+
+    assert len([device for device in parsed.devices if device.kind == "mos"]) == 4
+    current = next(device for device in parsed.devices if device.kind == "current_source")
+    assert current.nodes == ["6", "0"]
+    assert current.params_si["dc_value"] == pytest.approx(1e-3)
+    assert len([device for device in parsed.devices if device.kind == "capacitor"]) == 1
+    assert parsed.models["NMOS"]["kind"] == "NMOS"
+    assert parsed.models["PMOS"]["params_si"]["KP"] == pytest.approx(1.0e-4)
+    assert parsed.analysis_directives[0]["directive"] == ".OP"
+
+
+def test_netlist_structure_summary_writes_scalar_features(tmp_path):
+    netlist = tmp_path / "structure.spice"
+    netlist.write_text(
+        "\n".join(
+            [
+                "M1 out in vdd vdd PMOS W=2u L=1u",
+                "M2 out in 0 0 NMOS W=1u L=1u",
+                "R1 out load 10k",
+                "C1 load 0 2pF",
+                "VDD vdd 0 DC 1.8",
+                "I1 load 0 DC 10uA",
+                ".TRAN 1n 100n",
+                ".DC VDD 0 1.8 0.1",
+                ".END",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    parsed = parse_netlist(netlist)
+
+    summary = summarize_netlist_structure(parsed)
+    output = write_netlist_structure(tmp_path / "netlist_structure.json", parsed)
+
+    assert summary["device_counts"]["mos"] == 2
+    assert summary["device_counts"]["resistor"] == 1
+    assert summary["device_counts"]["current_source"] == 1
+    assert summary["node_count"] >= 5
+    assert summary["scalar_features"]["transistor_width_sum"] == pytest.approx(3e-6)
+    assert summary["scalar_features"]["capacitance_sum"] == pytest.approx(2e-12)
+    assert {item["directive"] for item in summary["analysis_directives"]} == {".TRAN", ".DC"}
+    assert json.loads((tmp_path / "netlist_structure.json").read_text(encoding="utf-8")) == output

@@ -30,6 +30,8 @@ def load_real_spec(spec_path: Path | None, *, high_threshold: float | None = Non
         "max_delay_std": _us_to_s(thresholds.get("max_delay_std_us", 0.5)),
         "min_voh_margin_v": _float(thresholds.get("min_voh_margin_v", 1.0)),
         "target_refresh_hz": _float(thresholds.get("target_refresh_hz", 60.0)),
+        "min_pulse_width": _us_to_s(thresholds.get("min_pulse_width_us", 2.0)),
+        "false_trigger_min_duration": _us_to_s(thresholds.get("false_trigger_min_duration_us", 0.0)),
         "cascade": {
             "stage_count": _int(cascade.get("stage_count", 720)),
             "output_node_pattern": str(cascade.get("output_node_pattern", "o{index}")),

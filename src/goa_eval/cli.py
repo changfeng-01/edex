@@ -27,6 +27,7 @@ from goa_eval.report.reporter import write_report_md
 from goa_eval.report.summary_writer import write_metric_table, write_metrics_csv, write_summary_json
 from goa_eval.real_waveform_eval import run_real_waveform_evaluation
 from goa_eval.recommendation import build_recommendations, write_recommendations_markdown
+from goa_eval.sky130_transient import Sky130DependencyError, run_sky130_transient
 from goa_eval.visualization.comparison_plotter import plot_v1_v8_comparison
 from goa_eval.visualization.metric_plotter import plot_voh_bar
 from goa_eval.visualization.version_compare_plotter import plot_timing_overview
@@ -132,6 +133,28 @@ def main(argv: list[str] | None = None) -> int:
             mock_response=args.mock_response,
         )
         return 0
+    if args.command == "sky130-transient":
+        try:
+            run_sky130_transient(
+                output_root=Path(args.output_root),
+                split=args.split,
+                max_rows=args.max_rows,
+                topology=args.topology,
+                source_dataset=args.source_dataset,
+                dataset_name=args.dataset,
+                mock_dataset_json=Path(args.mock_dataset_json) if args.mock_dataset_json else None,
+                mock_ngspice=args.mock_ngspice,
+                ngspice_cmd=args.ngspice_cmd,
+                spec_path=Path(args.spec),
+                param_space_path=Path(args.param_space),
+                max_candidates=args.max_candidates,
+                seed=args.seed,
+                skip_netlist_structure=args.skip_netlist_structure,
+            )
+        except Sky130DependencyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        return 0
     parser.print_help()
     return 2
 
@@ -190,6 +213,21 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--mock-response")
     analyze.add_argument("--output-md", default="outputs/llm_parameter_analysis.md")
     analyze.add_argument("--output-json", default="outputs/llm_parameter_analysis.json")
+    sky130 = sub.add_parser("sky130-transient")
+    sky130.add_argument("--dataset", default="pphilip/analog-circuits-sky130")
+    sky130.add_argument("--split", choices=["train", "validation", "test"], default="train")
+    sky130.add_argument("--max-rows", type=int, default=5)
+    sky130.add_argument("--topology")
+    sky130.add_argument("--source-dataset")
+    sky130.add_argument("--output-root", default="outputs/sky130_smoke")
+    sky130.add_argument("--spec", default="config/sky130_transient_spec.yaml")
+    sky130.add_argument("--param-space", default="examples/sample_params.yaml")
+    sky130.add_argument("--max-candidates", type=int, default=10)
+    sky130.add_argument("--seed", type=int, default=42)
+    sky130.add_argument("--ngspice-cmd", default="ngspice")
+    sky130.add_argument("--mock-dataset-json")
+    sky130.add_argument("--mock-ngspice", action="store_true")
+    sky130.add_argument("--skip-netlist-structure", action="store_true")
     return parser
 
 

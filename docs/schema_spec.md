@@ -209,6 +209,23 @@ result_version = 1.0
 - 按优先级列出的候选参数；
 - 明确声明：结果基于仿真 CSV 和规则建议，不是实物测试结果，也不是自动优化闭环完成证明。
 
+## SKY130 transient outputs
+
+`sky130-transient` creates one run directory per public SKY130 dataset row.
+
+| File | Purpose |
+|---|---|
+| `testbench.spice` | ngspice input written from dataset `testbench_spice`. |
+| `source_netlist.spice` | Source SPICE text selected from `netlist`, `spice_netlist`, or `testbench_spice` for structure analysis. |
+| `netlist_structure.json` | AMS-Net-style structure companion data: device counts, models, node degrees, directives, and scalar size features. |
+| `waveform.csv` | Converted `TIME,v(o1),...` waveform for `evaluate-real`. |
+| `dataset_row.json` | Snapshot of the source dataset row. |
+| `node_map.json` | Mapping from `o1/o2/...` aliases to original output nodes. |
+| `sky130_metadata.json` | Dataset provenance, topology, PDK, split, original output nodes, and structure companion paths. |
+| `sky130_status.json` | Per-row `evaluated`, `skipped`, or `failed` status. |
+
+`output_root/sky130_runs.csv` summarizes status, `overall_score`, failure reasons, topology, source, run directory, and compact structure columns such as `mos_count`, `cap_count`, `resistor_count`, `current_source_count`, `model_count`, `node_count`, and `transistor_width_sum`. Structure data is analysis metadata only. This entrypoint still uses `data_source = real_simulation_csv` and `engineering_validity = simulation_only`; it does not represent physical test validation or a completed automatic optimization loop.
+
 ## params.yaml
 
 用途：批量评价时描述每个 run 的参数和仿真条件。

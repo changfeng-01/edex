@@ -71,6 +71,8 @@ def run_real_waveform_evaluation(
         min_voh_margin_v=spec["min_voh_margin_v"],
         target_refresh_hz=spec["target_refresh_hz"],
         stage_group_size=cascade["stage_group_size"],
+        min_pulse_width=spec["min_pulse_width"],
+        false_trigger_min_duration=spec["false_trigger_min_duration"],
     )
     evaluation = evaluate_waveform_metrics(waveform.frame, config, output_nodes=output_nodes)
     evaluation.notes.append(node_selection_note)

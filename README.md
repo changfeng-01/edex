@@ -174,6 +174,21 @@ python -m goa_eval.cli propose-candidates `
 python -m goa_eval.cli evaluate-batch --runs-dir runs --output-dir outputs_batch
 ```
 
+## SKY130 / ngspice 小闭环
+
+可选入口 `sky130-transient` 用于把公开 SKY130 SPICE testbench 数据接入现有评价链路：
+
+```bash
+python -m pip install -e ".[test,sky130]"
+python -m goa_eval.cli sky130-transient --split train --max-rows 5 --output-root outputs/sky130_smoke
+```
+
+该命令读取 Hugging Face `pphilip/analog-circuits-sky130` 的 `with_testbench` 配置，调用本机 `ngspice` 生成 transient 波形，再导出 `TIME,v(o1),...` 兼容 CSV，并继续生成 `real_summary.json`、`score_summary.json`、`optimization_dataset.csv`、`recommendations.md` 和 `next_candidates.csv`。
+
+每个样本目录还会写入 `source_netlist.spice` 和 `netlist_structure.json`，用于保存 AMS-Net 风格的 SPICE 结构特征。总表 `sky130_runs.csv` 会附带 `mos_count`、`cap_count`、`resistor_count`、`current_source_count`、`model_count`、`node_count` 等压缩摘要列；这些字段只作为 companion analysis metadata，不表示结构驱动优化已经完成。
+
+本入口需要外部安装 `ngspice`，项目不会打包 SKY130 PDK 或 ngspice。若只想验证软件链路，可使用本地 mock 数据和 `--mock-ngspice`。所有输出仍是 `simulation_only`，只能证明公开仿真数据可进入评价/候选生成管线，不能写成实物测试通过或自动优化闭环完成。
+
 ## 固定公开 Demo Run
 
 仓库内置一套可复现的公开 demo，位于 [examples/demo_run](examples/demo_run)。它只使用 [examples/sample_waveform.csv](examples/sample_waveform.csv) 和 [examples/sample_params.yaml](examples/sample_params.yaml)，并用固定 mock DeepSeek 输出生成参数分析，所以不需要 `DEEPSEEK_API_KEY`，也不会调用外部网络。
