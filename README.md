@@ -55,10 +55,13 @@ docs/
 ├── project_overview.md         # 项目总览、数据流和扩展边界
 ├── metrics_spec.md             # 指标定义、单位和判定策略
 ├── schema_spec.md              # 输出文件 schema 与字段约定
+├── public_demo_run.md           # 固定公开 demo run 的重建说明
+├── reproduce_results.md         # 复现公开结果的最短步骤
 └── github_upload_checklist.md  # 上传 GitHub 前的检查清单
 examples/
 ├── sample_waveform.csv         # 可公开的小型示例波形
-└── sample_params.yaml          # 可公开的示例参数
+├── sample_params.yaml          # 可公开的示例参数
+└── demo_run/                   # 由公开样例生成的固定 demo 输出包
 scripts/                        # 辅助脚本，核心逻辑不放在这里
 src/goa_eval/                   # CircuitPilot 核心包
 tests/                          # pytest 回归测试
@@ -170,6 +173,24 @@ python -m goa_eval.cli propose-candidates `
 ```bash
 python -m goa_eval.cli evaluate-batch --runs-dir runs --output-dir outputs_batch
 ```
+
+## 固定公开 Demo Run
+
+仓库内置一套可复现的公开 demo，位于 [examples/demo_run](examples/demo_run)。它只使用 [examples/sample_waveform.csv](examples/sample_waveform.csv) 和 [examples/sample_params.yaml](examples/sample_params.yaml)，并用固定 mock DeepSeek 输出生成参数分析，所以不需要 `DEEPSEEK_API_KEY`，也不会调用外部网络。
+
+重新生成 demo 和前端 dashboard 数据：
+
+```bash
+python scripts/build_public_demo.py
+```
+
+如果要用本机真实 DeepSeek key 重新生成 AI 分析，复制 `.env.example` 为 `.env` 并填入 `DEEPSEEK_API_KEY`，然后运行：
+
+```powershell
+.\scripts\run_real_deepseek.ps1
+```
+
+最短复现步骤见 [docs/reproduce_results.md](docs/reproduce_results.md)，完整说明见 [docs/public_demo_run.md](docs/public_demo_run.md)。该 demo 仍然保留 `data_source = real_simulation_csv` 和 `engineering_validity = simulation_only`，只能说明仿真 CSV 分析、候选参数生成和 mock AI 解释链路可复现，不能写成实物测试结论或已完成自动优化闭环。
 
 ## 单次评价输出
 

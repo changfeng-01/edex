@@ -204,6 +204,33 @@ def test_constrained_random_candidates_respect_baseline_direction():
             assert float(params["drive_resistance"]) < 1500
 
 
+def test_constrained_random_candidates_prioritize_severe_constraint_penalties():
+    recommendations = [
+        {
+            "recommendation_id": "ripple_hold_window_review",
+            "trigger_metric": "Max_ripple",
+            "metric_penalty_severity": "fail",
+            "metric_penalty_deduction": 15.0,
+        },
+        {
+            "recommendation_id": "overlap_timing_review",
+            "trigger_metric": "Max_overlap_ratio",
+            "metric_penalty_severity": "critical",
+            "metric_penalty_deduction": 90.0,
+        },
+    ]
+    param_space = {
+        "capacitance": {"unit": "F", "values": [1.2e-12]},
+        "drive_resistance": {"unit": "ohm", "values": [2000]},
+    }
+
+    candidates = constrained_random_candidates(param_space, recommendations, max_candidates=2, seed=1)
+
+    assert candidates[0]["trigger_metric"] == "Max_overlap_ratio"
+    assert float(candidates[0]["search_score"]) > float(candidates[1]["search_score"])
+    assert "critical" in candidates[0]["rationale"]
+
+
 def test_constrained_random_candidates_return_empty_for_info_only_recommendation():
     recommendations = [{"recommendation_id": "no_rule_failure_detected", "trigger_metric": "none"}]
 

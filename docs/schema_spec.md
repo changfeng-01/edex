@@ -87,6 +87,7 @@ result_version = 1.0
 | `hard_constraints` | object | 各硬约束明细。 |
 | `failure_reasons` | array | 失败原因。 |
 | `warning_reasons` | array | 警告原因。 |
+| `metric_penalties` | object | 面向排序和优化的逐指标惩罚明细。 |
 | `soft_scores` | object | 软评分明细。 |
 | `score_explanations` | object | 评分解释。 |
 | `function_score` | number/null | 功能得分。 |
@@ -97,6 +98,8 @@ result_version = 1.0
 | `overall_score` | number/null | 总体得分。 |
 
 硬约束与软评分保持分离，便于失败 run 继续参与排序、诊断和参数建议。
+
+`metric_penalties` 对关键指标输出 `current_value`、`threshold`、`limit_type`、`severity`、`score`、`deduction` 和 `reason`。硬约束仍决定 pass/fail；惩罚分用于区分失败程度，例如轻微超限的 `Max_overlap_ratio` 会比严重超限保留更高排序分。
 
 ## diagnosis_report.md
 
@@ -189,10 +192,10 @@ result_version = 1.0
 | `candidate_kind` | 候选类型，例如 `single_parameter` 或 `two_parameter_combo`。 |
 | `changed_parameters` | 本候选改变的参数名，多个参数以分号分隔。 |
 | `parameters_json` | 本候选的参数键值 JSON。 |
-| `search_score` | 约束搜索排序分数。 |
+| `search_score` | 约束搜索排序分数，综合规则优先级、指标惩罚严重度和组合复杂度。 |
 | `rationale` | 生成该候选的简要原因。 |
 
-候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。
+候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。当 `score_summary.json` 提供 `metric_penalties` 时，严重超限指标会得到更高搜索权重；两参数组合会保留组合惩罚，避免过早偏向复杂改动。
 
 ## next_candidates.md
 

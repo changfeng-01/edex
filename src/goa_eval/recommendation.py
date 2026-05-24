@@ -120,6 +120,7 @@ def build_recommendations(summary: dict, score: dict | None = None, metrics: pd.
                 engineering_validity,
             )
         )
+    _attach_metric_penalty_context(recommendations, score)
     return recommendations
 
 
@@ -196,6 +197,19 @@ def _item(
         "data_source": data_source,
         "engineering_validity": engineering_validity,
     }
+
+
+def _attach_metric_penalty_context(recommendations: list[dict], score: dict) -> None:
+    penalties = score.get("metric_penalties", {}) if isinstance(score, dict) else {}
+    if not isinstance(penalties, dict):
+        return
+    for recommendation in recommendations:
+        penalty = penalties.get(recommendation.get("trigger_metric"))
+        if not isinstance(penalty, dict):
+            continue
+        recommendation["metric_penalty_severity"] = penalty.get("severity")
+        recommendation["metric_penalty_score"] = _number(penalty.get("score"))
+        recommendation["metric_penalty_deduction"] = _number(penalty.get("deduction"))
 
 
 def _number(value) -> float | None:

@@ -1,0 +1,125 @@
+{
+  "schema_version": "1.0",
+  "result_version": "1.0",
+  "hard_constraint_passed": false,
+  "hard_constraint_failures": [
+    "Max_overlap_ratio exceeds max_overlap_ratio"
+  ],
+  "hard_constraints": {
+    "All_pulses_exist": {
+      "passed": true,
+      "current_value": true,
+      "threshold": true,
+      "reason": "All_pulses_exist is false"
+    },
+    "Seq_pass": {
+      "passed": true,
+      "current_value": true,
+      "threshold": true,
+      "reason": "Seq_pass is false"
+    },
+    "FalseTriggerCount": {
+      "passed": true,
+      "current_value": 0.0,
+      "threshold": 0.0,
+      "reason": "FalseTriggerCount is greater than 0"
+    },
+    "Max_overlap_ratio": {
+      "passed": false,
+      "current_value": 0.33333333333333354,
+      "threshold": 0.1,
+      "reason": "Max_overlap_ratio exceeds max_overlap_ratio"
+    },
+    "Max_ripple": {
+      "passed": true,
+      "current_value": 0.2,
+      "threshold": 0.5,
+      "reason": "Max_ripple exceeds max_ripple_v"
+    },
+    "Max_voltage_loss": {
+      "passed": true,
+      "current_value": 0.10000000000000053,
+      "threshold": 0.5,
+      "reason": "Max_voltage_loss exceeds max_voltage_loss_v"
+    },
+    "Delay_std": {
+      "passed": true,
+      "current_value": 8.470329472543003e-22,
+      "threshold": 5e-07,
+      "reason": "Delay_std exceeds max_delay_std"
+    },
+    "VOH_min_margin": {
+      "passed": true,
+      "current_value": 1.1500000000000004,
+      "threshold": 1.0,
+      "reason": "VOH_min margin is below min_voh_margin_v"
+    }
+  },
+  "failure_reasons": [
+    "Max_overlap_ratio exceeds max_overlap_ratio"
+  ],
+  "warning_reasons": [
+    "LowFreqStable is not evaluable with current waveform duration",
+    "DeviceCount is not available"
+  ],
+  "soft_scores": {
+    "function_score": {
+      "score": 80.0,
+      "deduction": 20.0,
+      "weight": 0.35
+    },
+    "quality_score": {
+      "score": 0.0,
+      "deduction": 100.0,
+      "weight": 0.25
+    },
+    "stability_score": {
+      "score": 60.0,
+      "deduction": 40.0,
+      "weight": 0.15
+    },
+    "consistency_score": {
+      "score": 99.99999999999983,
+      "deduction": 1.7053025658242404e-13,
+      "weight": 0.15
+    },
+    "cost_score": {
+      "score": 100.0,
+      "deduction": 0.0,
+      "weight": 0.1
+    }
+  },
+  "score_explanations": {
+    "function_score": {
+      "score": 80.0,
+      "deduction": 20.0,
+      "weight": 0.35
+    },
+    "quality_score": {
+      "score": 0.0,
+      "deduction": 100.0,
+      "weight": 0.25
+    },
+    "stability_score": {
+      "score": 60.0,
+      "deduction": 40.0,
+      "weight": 0.15
+    },
+    "consistency_score": {
+      "score": 99.99999999999983,
+      "deduction": 1.7053025658242404e-13,
+      "weight": 0.15
+    },
+    "cost_score": {
+      "score": 100.0,
+      "deduction": 0.0,
+      "weight": 0.1
+    }
+  },
+  "function_score": 80.0,
+  "quality_score": 0.0,
+  "stability_score": 60.0,
+  "consistency_score": 99.99999999999983,
+  "cost_score": 100.0,
+  "overall_score": 61.99999999999997
+}

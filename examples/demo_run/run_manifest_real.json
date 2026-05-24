@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "result_version": "1.0",
+  "run_id": "public_demo_run",
+  "run_time": "2026-05-22T00:00:00",
+  "command": "python -m goa_eval.cli evaluate-real --waveform examples/sample_waveform.csv --output-dir examples/demo_run",
+  "input_files": [
+    "examples/sample_waveform.csv"
+  ],
+  "input_file_hashes": {
+    "examples/sample_waveform.csv": {
+      "sha256": "629d4919780a9167c9bc526df3bf935f9ee7f4123e633e800e2454fa7e795a7e",
+      "size_bytes": 254
+    }
+  },
+  "thresholds": {
+    "spec_path": "config\\spec.yaml",
+    "high_threshold": 5.0,
+    "low_threshold": 1.0,
+    "target_pulse_width": 9.999999999999999e-06,
+    "pulse_width_tolerance": 1e-06,
+    "max_overlap_ratio": 0.1,
+    "max_ripple_v": 0.5,
+    "max_voltage_loss_v": 0.5,
+    "max_delay_std": 5e-07,
+    "min_voh_margin_v": 1.0,
+    "target_refresh_hz": 60.0,
+    "frame_hold_time": 0.016666666666666666,
+    "cascade": {
+      "stage_count": 720,
+      "output_node_pattern": "o{index}",
+      "stage_group_size": 60,
+      "sample_nodes": [
+        1,
+        60,
+        120,
+        180,
+        240,
+        300,
+        360,
+        420,
+        480,
+        540,
+        600,
+        660,
+        720
+      ]
+    },
+    "resolved_output_node_count": 3,
+    "selected_center_ratio": 0.8,
+    "edge_buffer_ratio": 0.1,
+    "min_pulse_width": 2e-06,
+    "false_trigger_min_duration": 0.0
+  },
+  "data_source": "real_simulation_csv",
+  "engineering_validity": "simulation_only",
+  "code_version_or_git_commit": "public_demo_snapshot"
+}
