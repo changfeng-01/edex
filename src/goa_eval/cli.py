@@ -15,6 +15,7 @@ from goa_eval.evaluation.mock_waveform import generate_mock_waveform
 from goa_eval.evaluation.scoring import compute_metric_results
 from goa_eval.io_utils import copy_initial_raw_inputs, ensure_run_dirs, extract_archives, to_jsonable, write_json
 from goa_eval.llm_analysis import run_llm_parameter_analysis
+from goa_eval.multi_round_optimizer import run_multi_round_optimization
 from goa_eval.optimizer import constrained_random_candidates, load_baseline_params, load_param_space, propose_candidates, write_candidate_outputs
 from goa_eval.parsers.design_parser import build_design_version, discover_design_roots
 from goa_eval.parsers.mapping_parser import parse_mapping
@@ -181,6 +182,34 @@ def main(argv: list[str] | None = None) -> int:
             print(str(exc), file=sys.stderr)
             return 2
         return 0
+    if args.command == "optimize-rounds":
+        try:
+            run_multi_round_optimization(
+                sweep_path=Path(args.sweep),
+                output_root=Path(args.output_root),
+                rounds=args.rounds,
+                max_runs_per_round=args.max_runs_per_round,
+                patience=args.patience,
+                min_improvement=args.min_improvement,
+                exploration_ratio=args.exploration_ratio,
+                pdk_root=Path(args.pdk_root) if args.pdk_root else None,
+                split=args.split,
+                max_rows=args.max_rows,
+                topology=args.topology,
+                source_dataset=args.source_dataset,
+                dataset_name=args.dataset,
+                mock_dataset_json=Path(args.mock_dataset_json) if args.mock_dataset_json else None,
+                mock_ngspice=args.mock_ngspice,
+                ngspice_cmd=args.ngspice_cmd,
+                spec_path=Path(args.spec),
+                param_space_path=Path(args.param_space),
+                max_candidates=args.max_candidates,
+                seed=args.seed,
+            )
+        except Sky130DependencyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        return 0
     parser.print_help()
     return 2
 
@@ -272,6 +301,27 @@ def build_parser() -> argparse.ArgumentParser:
     sweep.add_argument("--ngspice-cmd", default="ngspice")
     sweep.add_argument("--mock-dataset-json")
     sweep.add_argument("--mock-ngspice", action="store_true")
+    optimize = sub.add_parser("optimize-rounds")
+    optimize.add_argument("--sweep", default="config/sky130_sweep.yaml")
+    optimize.add_argument("--pdk-root")
+    optimize.add_argument("--dataset", default="pphilip/analog-circuits-sky130")
+    optimize.add_argument("--split", choices=["train", "validation", "test"], default="train")
+    optimize.add_argument("--max-rows", type=int, default=5)
+    optimize.add_argument("--topology")
+    optimize.add_argument("--source-dataset")
+    optimize.add_argument("--output-root", default="outputs/sky130_multi_round")
+    optimize.add_argument("--spec", default="config/sky130_transient_spec.yaml")
+    optimize.add_argument("--param-space", default="examples/sample_params.yaml")
+    optimize.add_argument("--max-candidates", type=int, default=10)
+    optimize.add_argument("--seed", type=int, default=42)
+    optimize.add_argument("--rounds", type=int, default=3)
+    optimize.add_argument("--max-runs-per-round", type=int, default=5)
+    optimize.add_argument("--patience", type=int, default=2)
+    optimize.add_argument("--min-improvement", type=float, default=0.0)
+    optimize.add_argument("--exploration-ratio", type=float, default=0.25)
+    optimize.add_argument("--ngspice-cmd", default="ngspice")
+    optimize.add_argument("--mock-dataset-json")
+    optimize.add_argument("--mock-ngspice", action="store_true")
     return parser
 
 

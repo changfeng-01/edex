@@ -269,6 +269,23 @@ These metrics are simulation-only analysis helpers. Missing OP/AC/DC data should
 
 At the sweep root, `sky130_sweep_runs.csv` summarizes every sweep point, `sky130_sweep_leaderboard.csv` sorts evaluated points by score, `sky130_sweep_sensitivity.csv` reports coarse one-parameter score deltas, and `next_param_space.yaml` preserves a narrowed next-round parameter-space suggestion. These files are simulation-only ranking artifacts, not physical validation and not proof of a completed multi-round optimizer.
 
+## optimize-rounds outputs
+
+`optimize-rounds` runs `sky130-sweep` repeatedly and adapts each later round from
+the best previous run's `next_candidates.csv`, while skipping parameter points
+already present in the accumulated history. The command is still bounded by
+`engineering_validity = simulation_only`; its outputs are search traces and next
+simulation suggestions, not physical-validation evidence.
+
+| File | Purpose |
+|---|---|
+| `round_001/`, `round_002/`, ... | Per-round `sky130-sweep` roots, each with the normal sweep outputs. |
+| `optimization_history.json` | Combined machine-readable round summaries and per-run history rows. |
+| `optimization_leaderboard.csv` | All attempted runs sorted by `overall_score`. |
+| `round_summary.csv` | One row per optimization round with `best_score`, `best_run_dir`, and `stop_reason`. |
+| `final_param_space.yaml` | Final explicit point list or narrowed sweep config used by the last round. |
+| `best_next_candidates.csv` | Candidate table copied from the best run when available. |
+
 ## params.yaml
 
 用途：批量评价时描述每个 run 的参数和仿真条件。

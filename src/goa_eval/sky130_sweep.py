@@ -32,6 +32,10 @@ def load_sweep_config(path: Path) -> dict:
 
 
 def generate_sweep_points(config: dict, *, max_runs: int | None = None) -> list[dict[str, object]]:
+    explicit_points = config.get("points")
+    if isinstance(explicit_points, list):
+        limit = int(max_runs if max_runs is not None else config.get("max_runs", len(explicit_points)))
+        return [dict(point) for point in explicit_points[: max(0, limit)] if isinstance(point, dict)]
     parameters = config.get("parameters", {}) or {}
     names = list(parameters)
     value_lists = [_values(parameters[name]) for name in names]

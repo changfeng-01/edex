@@ -203,6 +203,25 @@ python -m goa_eval.cli sky130-sweep \
   --output-root outputs/sky130_sweep
 ```
 
+多轮优化驱动可以复用同一个 sweep 文件，并把每轮最佳 run 的 `next_candidates.csv`
+反馈到下一轮扫描。它仍然只生成 `simulation_only` 排序工件：这是可复现的闭环搜索调度，
+不是实物验证。
+
+```bash
+python -m goa_eval.cli optimize-rounds \
+  --sweep config/sky130_sweep.yaml \
+  --pdk-root /path/to/sky130/pdk \
+  --split train \
+  --max-rows 1 \
+  --rounds 3 \
+  --max-runs-per-round 5 \
+  --output-root outputs/sky130_multi_round
+```
+
+该命令写出 `round_001/`、`round_002/`、`optimization_history.json`、
+`optimization_leaderboard.csv`、`round_summary.csv`、`final_param_space.yaml`
+和 `best_next_candidates.csv`。
+
 `--pdk-root` 优先，其次读取 `PDK_ROOT` 或 `SKYWATER_PDK_ROOT`。项目只检测和传递外部 PDK 路径，不下载、不打包、不改写 PDK 模型文件。输出包括 `sky130_sweep_runs.csv`、`sky130_sweep_leaderboard.csv`、`sky130_sweep_sensitivity.csv` 和 `next_param_space.yaml`。这是一轮仿真扫描排序，不代表多轮自动优化已经完成。
 
 ## 固定公开 Demo Run
