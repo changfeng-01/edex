@@ -98,6 +98,29 @@ def test_summary_contains_validity_labels(tmp_path: Path):
     assert summary["engineering_validity"] == "simulation_only"
 
 
+def test_single_output_real_waveform_evaluation_writes_stacked_plot(tmp_path: Path):
+    waveform = tmp_path / "single_output.csv"
+    time = np.arange(0, 10, dtype=float) * 1e-6
+    rows = pd.DataFrame(
+        {
+            "XVAL": time,
+            "v(o1)": np.where((time >= 1e-6) & (time < 4e-6), 6.0, 0.0),
+        }
+    )
+    rows.to_csv(waveform, index=False)
+
+    run_real_waveform_evaluation(
+        waveform_path=waveform,
+        internal_waveform_path=None,
+        output_dir=tmp_path / "outputs",
+        high_threshold=5.0,
+        low_threshold=1.0,
+        output_nodes=["o1"],
+    )
+
+    assert (tmp_path / "outputs" / "figures" / "o1_o8_stacked.png").exists()
+
+
 def test_real_report_lists_optimized_figures_and_validity_labels(tmp_path: Path):
     waveform = tmp_path / "yuanshi_csv"
     time = np.arange(0, 20, dtype=float) * 1e-6

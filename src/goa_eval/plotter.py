@@ -45,6 +45,8 @@ def plot_o1_o8_stacked(frame: pd.DataFrame, output_nodes: list[str], path: Path)
     configure_plot_fonts()
     path.parent.mkdir(parents=True, exist_ok=True)
     fig, axes = plt.subplots(len(output_nodes), 1, figsize=(12, 10), sharex=True)
+    if not isinstance(axes, np.ndarray):
+        axes = np.array([axes])
     time_us = _time_us(frame)
     for ax, node in zip(axes, output_nodes):
         ax.plot(time_us, frame[node], lw=0.8)
@@ -286,7 +288,13 @@ def plot_internal_compare(frame: pd.DataFrame, path: Path) -> bool:
 
 def _bar(frame: pd.DataFrame, x_col: str, y_col: str, title: str, ylabel: str, path: Path, hline: float | None = None, hline_label: str | None = None) -> None:
     fig, ax = plt.subplots(figsize=(9, 4))
-    ax.bar(frame[x_col], frame[y_col])
+    plot_frame = frame.copy()
+    plot_frame[y_col] = pd.to_numeric(plot_frame[y_col], errors="coerce")
+    plot_frame = plot_frame.dropna(subset=[y_col])
+    if plot_frame.empty:
+        ax.text(0.5, 0.5, f"No evaluable {y_col}", ha="center", va="center")
+    else:
+        ax.bar(plot_frame[x_col], plot_frame[y_col])
     if hline is not None:
         ax.axhline(hline, color="red", linestyle="--", linewidth=1.1, label=hline_label or "reference")
         ax.legend()
@@ -302,16 +310,24 @@ def _bar(frame: pd.DataFrame, x_col: str, y_col: str, title: str, ylabel: str, p
 
 def _paired_bar(frame: pd.DataFrame, x_col: str, left_col: str, right_col: str, title: str, ylabel: str, path: Path) -> None:
     fig, ax = plt.subplots(figsize=(10, 4.5))
-    x = np.arange(len(frame[x_col]))
+    plot_frame = frame.copy()
+    for column in [left_col, right_col]:
+        plot_frame[column] = pd.to_numeric(plot_frame[column], errors="coerce")
+    plot_frame = plot_frame.dropna(subset=[left_col, right_col], how="all")
+    x = np.arange(len(plot_frame[x_col]))
     width = 0.36
-    ax.bar(x - width / 2, frame[left_col], width, label=left_col)
-    ax.bar(x + width / 2, frame[right_col], width, label=right_col)
-    ax.set_xticks(x, frame[x_col])
+    if plot_frame.empty:
+        ax.text(0.5, 0.5, f"No evaluable {left_col}/{right_col}", ha="center", va="center")
+    else:
+        ax.bar(x - width / 2, plot_frame[left_col], width, label=left_col)
+        ax.bar(x + width / 2, plot_frame[right_col], width, label=right_col)
+    ax.set_xticks(x, plot_frame[x_col])
     ax.set_title(title)
     ax.set_xlabel("输出节点")
     ax.set_ylabel(ylabel)
     ax.grid(axis="y", alpha=0.25)
-    ax.legend()
+    if not plot_frame.empty:
+        ax.legend()
     _add_data_label(fig)
     fig.tight_layout()
     fig.savefig(path, dpi=160)

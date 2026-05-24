@@ -50,6 +50,7 @@ outputs/*
 output/*
 outputs_batch/*
 runs/*
+tools/
 tmp/*
 tmp_outputs/*
 report_ppt*/
