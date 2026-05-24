@@ -226,6 +226,20 @@ result_version = 1.0
 
 `output_root/sky130_runs.csv` summarizes status, `overall_score`, failure reasons, topology, source, run directory, and compact structure columns such as `mos_count`, `cap_count`, `resistor_count`, `current_source_count`, `model_count`, `node_count`, and `transistor_width_sum`. Structure data is analysis metadata only. This entrypoint still uses `data_source = real_simulation_csv` and `engineering_validity = simulation_only`; it does not represent physical test validation or a completed automatic optimization loop.
 
+## SKY130 sweep outputs
+
+`sky130-sweep` creates one run directory per explicit parameter combination and keeps the same per-run output contract as `sky130-transient`.
+
+| File | Purpose |
+|---|---|
+| `params.yaml` | Parameter values used for this sweep point. |
+| `testbench.spice` | Per-run SPICE copy after parameter rewrite. |
+| `waveform.csv` | Converted transient waveform for `evaluate-real`. |
+| `real_summary.json` / `score_summary.json` | Existing waveform evaluation and score outputs. |
+| `next_candidates.csv` | Existing constrained-random next-candidate output for the run. |
+
+At the sweep root, `sky130_sweep_runs.csv` summarizes every sweep point, `sky130_sweep_leaderboard.csv` sorts evaluated points by score, `sky130_sweep_sensitivity.csv` reports coarse one-parameter score deltas, and `next_param_space.yaml` preserves a narrowed next-round parameter-space suggestion. These files are simulation-only ranking artifacts, not physical validation and not proof of a completed multi-round optimizer.
+
 ## params.yaml
 
 用途：批量评价时描述每个 run 的参数和仿真条件。

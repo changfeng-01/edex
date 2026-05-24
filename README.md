@@ -189,6 +189,22 @@ python -m goa_eval.cli sky130-transient --split train --max-rows 5 --output-root
 
 本入口需要外部安装 `ngspice`，项目不会打包 SKY130 PDK 或 ngspice。若只想验证软件链路，可使用本地 mock 数据和 `--mock-ngspice`。所有输出仍是 `simulation_only`，只能证明公开仿真数据可进入评价/候选生成管线，不能写成实物测试通过或自动优化闭环完成。
 
+## SKY130 参数扫描
+
+`sky130-sweep` 在 `sky130-transient` 外层增加一轮显式参数扫描：读取 `config/sky130_sweep.yaml`，改写每个 run 目录里的 SPICE 拷贝，调用 `ngspice` 导出波形，然后继续评价、打分、推荐和生成候选。
+
+```bash
+python -m goa_eval.cli sky130-sweep \
+  --sweep config/sky130_sweep.yaml \
+  --pdk-root /path/to/sky130/pdk \
+  --split train \
+  --max-rows 1 \
+  --max-runs 20 \
+  --output-root outputs/sky130_sweep
+```
+
+`--pdk-root` 优先，其次读取 `PDK_ROOT` 或 `SKYWATER_PDK_ROOT`。项目只检测和传递外部 PDK 路径，不下载、不打包、不改写 PDK 模型文件。输出包括 `sky130_sweep_runs.csv`、`sky130_sweep_leaderboard.csv`、`sky130_sweep_sensitivity.csv` 和 `next_param_space.yaml`。这是一轮仿真扫描排序，不代表多轮自动优化已经完成。
+
 ## 固定公开 Demo Run
 
 仓库内置一套可复现的公开 demo，位于 [examples/demo_run](examples/demo_run)。它只使用 [examples/sample_waveform.csv](examples/sample_waveform.csv) 和 [examples/sample_params.yaml](examples/sample_params.yaml)，并用固定 mock DeepSeek 输出生成参数分析，所以不需要 `DEEPSEEK_API_KEY`，也不会调用外部网络。
