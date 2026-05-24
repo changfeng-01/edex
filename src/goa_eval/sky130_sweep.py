@@ -325,7 +325,11 @@ def _line_starts_with_device(line: str, device_name: str) -> bool:
     stripped = line.strip()
     if not stripped or stripped.startswith("*") or stripped.startswith("."):
         return False
-    return stripped.split()[0].lower() == device_name.lower()
+    actual = stripped.split()[0].lower()
+    expected = device_name.lower()
+    if actual == expected:
+        return True
+    return expected.startswith("m") and actual == f"x{expected}"
 
 
 def _values(spec: Any) -> list[object]:

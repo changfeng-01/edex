@@ -19,7 +19,7 @@ def score_real_evaluation(
     failures = [item["reason"] for item in hard_constraints.values() if not item["passed"]]
     warnings = warning_reasons(summary, spec)
     metric_penalties = evaluate_metric_penalties(summary, spec)
-    function_score = 100.0 if not failures else max(0.0, 100.0 - 20.0 * len(failures))
+    function_score = _function_score(failures, summary)
     quality_score = _quality_score(metric_penalties)
     stability_score = min(
         metric_penalties["Max_ripple"]["score"],
@@ -123,6 +123,16 @@ def evaluate_hard_constraints(summary: dict, spec: dict) -> dict[str, dict]:
         "reason": "VOH_min margin is below min_voh_margin_v",
     }
     return constraints
+
+
+def _function_score(failures: list[str], summary: dict) -> float:
+    if not failures:
+        return 100.0
+    base_score = max(0.0, 100.0 - 20.0 * len(failures))
+    activity = _finite(summary.get("WaveformActivityScore"))
+    if any("All_pulses_exist" in failure or "Seq_pass" in failure for failure in failures) and activity is not None:
+        return min(base_score, max(0.0, activity))
+    return base_score
 
 
 def warning_reasons(summary: dict, spec: dict) -> list[str]:

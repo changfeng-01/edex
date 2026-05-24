@@ -1,14 +1,14 @@
 max_runs: 50
 parameters:
   m1_width:
-    target: M1.W
-    values: ["0.8u", "1.0u", "1.2u"]
+    target: XM1.W
+    values: ["0.6u", "0.8u", "1.0u", "1.2u"]
   m2_width:
-    target: M2.W
-    values: ["0.8u", "1.0u", "1.2u"]
+    target: XM2.W
+    values: ["1.2u", "1.6u", "2.0u", "2.4u"]
   load_cap:
     target: CLOAD.C
-    values: ["0.5pF", "1.0pF", "2.0pF"]
+    values: ["3f", "5f", "8f", "12f"]
   vdd:
     target: VDD.dc_value
     values: ["1.6", "1.8"]

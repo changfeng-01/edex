@@ -58,6 +58,7 @@ def evaluate_waveform_metrics(
     ripples = []
     voltage_losses = []
     voltage_loss_ratios = []
+    waveform_activity_scores = []
 
     for index, node in enumerate(output_nodes, start=1):
         signal = frame[node].to_numpy(dtype=float)
@@ -77,6 +78,7 @@ def evaluate_waveform_metrics(
             voltage_losses.append(metrics["VoltageLoss"])
         if metrics["VoltageLossRatio"] is not None:
             voltage_loss_ratios.append(metrics["VoltageLossRatio"])
+        waveform_activity_scores.append(metrics["WaveformActivityScore"])
 
     delays = []
     overlaps = []
@@ -143,6 +145,9 @@ def evaluate_waveform_metrics(
         "All_pulses_exist": bool(all_pulses_exist),
         "FalseTriggerCount": int(false_trigger_count),
         "False_trigger_count": int(false_trigger_count),
+        "WaveformActivityScore": _safe_mean(waveform_activity_scores),
+        "SignalSwing_max": _safe_max([row.get("SignalSwing") for row in stage_rows]),
+        "HighCrossingCount_total": int(sum(int(row.get("HighCrossingCount", 0) or 0) for row in stage_rows)),
     }
     low_freq_stable, low_freq_note = _low_frequency_stability(summary, config)
     summary["LowFreqStable"] = low_freq_stable
@@ -162,6 +167,7 @@ def compute_stage_metrics(time: np.ndarray, signal: np.ndarray, config: RealEval
     legal_windows = detect_legal_pulse_windows(time, signal, config)
     window = legal_windows[0] if legal_windows else None
     pulse_exist = window is not None
+    diagnostics = _signal_diagnostics(time, signal, config)
     if not pulse_exist:
         return {
             "PulseExist": False,
@@ -196,6 +202,7 @@ def compute_stage_metrics(time: np.ndarray, signal: np.ndarray, config: RealEval
             "OverlapRatio": None,
             "overlap_with_next": None,
             "overlap_ratio": None,
+            **diagnostics,
         }
 
     start, end = window
@@ -209,7 +216,11 @@ def compute_stage_metrics(time: np.ndarray, signal: np.ndarray, config: RealEval
     v90 = low_level + 0.9 * (high_level - low_level)
     edge_search_start = start - max(config.min_pulse_width, 10.0 * _sample_step(time))
     rise_edge = _first_crossing(time, signal, config.high_threshold, "rising", after=edge_search_start)
+    if rise_edge is None and len(time) and start <= float(time[0]) and float(signal[0]) > config.high_threshold:
+        rise_edge = float(time[0])
     fall_edge = _first_crossing(time, signal, config.high_threshold, "falling", after=rise_edge)
+    if fall_edge is None and len(time) and end >= float(time[-1]) and float(signal[-1]) > config.high_threshold:
+        fall_edge = float(time[-1])
     false_mask = non_selected & (signal > config.high_threshold)
     false_windows = [
         pulse
@@ -257,6 +268,7 @@ def compute_stage_metrics(time: np.ndarray, signal: np.ndarray, config: RealEval
         "OverlapRatio": None,
         "overlap_with_next": None,
         "overlap_ratio": None,
+        **diagnostics,
     }
     return row
 
@@ -533,3 +545,56 @@ def _sample_step(time: np.ndarray) -> float:
     if len(time) < 2:
         return 0.0
     return float(np.nanmedian(np.diff(time)))
+
+
+def _signal_diagnostics(time: np.ndarray, signal: np.ndarray, config: RealEvalConfig) -> dict:
+    finite = signal[np.isfinite(signal)]
+    if len(finite) == 0:
+        return {
+            "SignalMin": None,
+            "SignalMax": None,
+            "SignalSwing": None,
+            "HighCrossingCount": 0,
+            "LowCrossingCount": 0,
+            "TimeAboveHighRatio": None,
+            "TimeBelowLowRatio": None,
+            "WaveformActivityScore": 0.0,
+        }
+    signal_min = float(np.nanmin(finite))
+    signal_max = float(np.nanmax(finite))
+    swing = signal_max - signal_min
+    high_crossings = _crossing_count(signal, config.high_threshold)
+    low_crossings = _crossing_count(signal, config.low_threshold)
+    duration = float(time[-1] - time[0]) if len(time) >= 2 else 0.0
+    above_ratio = _duration_ratio(time, signal > config.high_threshold, duration)
+    below_ratio = _duration_ratio(time, signal < config.low_threshold, duration)
+    swing_score = min(100.0, max(0.0, 100.0 * swing / config.high_threshold)) if config.high_threshold else 0.0
+    edge_score = min(100.0, 50.0 * max(high_crossings, low_crossings))
+    occupancy = max(above_ratio or 0.0, below_ratio or 0.0)
+    occupancy_score = min(100.0, max(0.0, 100.0 * occupancy))
+    activity_score = 0.45 * swing_score + 0.40 * edge_score + 0.15 * occupancy_score
+    return {
+        "SignalMin": signal_min,
+        "SignalMax": signal_max,
+        "SignalSwing": swing,
+        "HighCrossingCount": int(high_crossings),
+        "LowCrossingCount": int(low_crossings),
+        "TimeAboveHighRatio": above_ratio,
+        "TimeBelowLowRatio": below_ratio,
+        "WaveformActivityScore": float(_clamp_score(activity_score)),
+    }
+
+
+def _crossing_count(signal: np.ndarray, threshold: float) -> int:
+    above = signal > threshold
+    return int(np.count_nonzero(np.diff(above.astype(int))))
+
+
+def _duration_ratio(time: np.ndarray, mask: np.ndarray, duration: float) -> float | None:
+    if duration <= 0.0:
+        return None
+    return float(sum(end - start for start, end in boolean_intervals(time, mask)) / duration)
+
+
+def _clamp_score(value: float) -> float:
+    return max(0.0, min(100.0, float(value)))
