@@ -213,14 +213,26 @@ python -m goa_eval.cli optimize-rounds \
   --pdk-root /path/to/sky130/pdk \
   --split train \
   --max-rows 1 \
+  --strategy hybrid \
   --rounds 3 \
   --max-runs-per-round 5 \
   --output-root outputs/sky130_multi_round
 ```
 
+`--strategy` defaults to `adaptive` for backward compatibility. Advanced values
+are `genetic`, `bayesian`, `surrogate`, and `hybrid`. These strategies still
+sample only legal discrete values from the sweep YAML; they do not generate
+free-form SPICE parameters. `bayesian` uses Gaussian-process expected
+improvement, `surrogate` uses a random-forest score model, and `hybrid` combines
+rule candidates, genetic variation, model ranking, and diversity fallback.
+
 该命令写出 `round_001/`、`round_002/`、`optimization_history.json`、
 `optimization_leaderboard.csv`、`round_summary.csv`、`final_param_space.yaml`
 和 `best_next_candidates.csv`。
+其中 `optimization_leaderboard.csv` 会保留候选来源字段，例如
+`candidate_source`、`source_candidate_id`、`source_candidate_trigger_metric`
+和 `source_candidate_parameters_json`，并用 `rank_status` 稳定区分
+`evaluated`、`not_evaluable`、`skipped`、`failed`。
 
 `--pdk-root` 优先，其次读取 `PDK_ROOT` 或 `SKYWATER_PDK_ROOT`。项目只检测和传递外部 PDK 路径，不下载、不打包、不改写 PDK 模型文件。输出包括 `sky130_sweep_runs.csv`、`sky130_sweep_leaderboard.csv`、`sky130_sweep_sensitivity.csv` 和 `next_param_space.yaml`。这是一轮仿真扫描排序，不代表多轮自动优化已经完成。
 
@@ -229,6 +241,12 @@ python -m goa_eval.cli optimize-rounds \
 仓库内置一套可复现的公开 demo，位于 [examples/demo_run](examples/demo_run)。它只使用 [examples/sample_waveform.csv](examples/sample_waveform.csv) 和 [examples/sample_params.yaml](examples/sample_params.yaml)，并用固定 mock DeepSeek 输出生成参数分析，所以不需要 `DEEPSEEK_API_KEY`，也不会调用外部网络。
 
 重新生成 demo 和前端 dashboard 数据：
+
+Advanced strategy rows also include `optimizer_strategy`, `objective_score`,
+`model_status`, and optional `model_prediction`. When history has too few valid
+points or the objective has zero variance, the optimizer records a fallback
+status and chooses diverse untried grid points instead of pretending the model
+has learned a useful trend.
 
 ```bash
 python scripts/build_public_demo.py

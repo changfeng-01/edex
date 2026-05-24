@@ -282,14 +282,35 @@ already present in the accumulated history. The command is still bounded by
 `engineering_validity = simulation_only`; its outputs are search traces and next
 simulation suggestions, not physical-validation evidence.
 
+`--strategy` supports `adaptive`, `genetic`, `bayesian`, `surrogate`, and
+`hybrid`. Advanced strategies operate on the discrete sweep grid only.
+`bayesian` uses Gaussian-process expected improvement, `surrogate` uses a
+random-forest score model, and `hybrid` combines rule candidates, genetic
+variation, model ranking, and diversity fallback. If there are fewer than three
+valid history rows or the composite objective has zero variance, model-based
+strategies record a fallback status and choose diverse untried points.
+
 | File | Purpose |
 |---|---|
 | `round_001/`, `round_002/`, ... | Per-round `sky130-sweep` roots, each with the normal sweep outputs. |
-| `optimization_history.json` | Combined machine-readable round summaries and per-run history rows. |
-| `optimization_leaderboard.csv` | All attempted runs sorted by `overall_score`. |
+| `optimization_history.json` | Combined machine-readable round summaries and per-run history rows, including candidate provenance fields when a point came from `next_candidates.csv`. |
+| `optimization_leaderboard.csv` | All attempted runs sorted by stable `rank_status` first and `overall_score` second. |
 | `round_summary.csv` | One row per optimization round with `best_score`, `best_run_dir`, and `stop_reason`. |
 | `final_param_space.yaml` | Final explicit point list or narrowed sweep config used by the last round. |
 | `best_next_candidates.csv` | Candidate table copied from the best run when available. |
+
+The leaderboard keeps these candidate-result ingestion fields on each run row:
+`candidate_source`, `source_run_dir`, `source_candidate_id`,
+`source_candidate_trigger_metric`, `source_candidate_kind`,
+`source_candidate_score`, `source_candidate_parameters_json`, and
+`source_candidate_rationale`. `rank_status` normalizes run state for sorting:
+`evaluated` rows with numeric scores rank first, followed by `not_evaluable`,
+`skipped`, and `failed`.
+
+Advanced strategy rows may also include `optimizer_strategy`, `objective_score`,
+`model_status`, and `model_prediction`. The composite objective prioritizes
+fewer hard-constraint failures, then higher `overall_score`, fewer
+not-evaluable metrics, and available profile/analysis scores.
 
 ## params.yaml
 

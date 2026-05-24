@@ -12,6 +12,7 @@ dependencies = [
   "pandas",
   "matplotlib",
   "scipy",
+  "scikit-learn",
   "pyyaml",
   "tqdm",
   "beautifulsoup4",

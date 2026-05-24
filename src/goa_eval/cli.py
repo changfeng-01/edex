@@ -205,6 +205,7 @@ def main(argv: list[str] | None = None) -> int:
                 param_space_path=Path(args.param_space),
                 max_candidates=args.max_candidates,
                 seed=args.seed,
+                strategy=args.strategy,
             )
         except Sky130DependencyError as exc:
             print(str(exc), file=sys.stderr)
@@ -315,6 +316,7 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.add_argument("--max-candidates", type=int, default=10)
     optimize.add_argument("--seed", type=int, default=42)
     optimize.add_argument("--rounds", type=int, default=3)
+    optimize.add_argument("--strategy", choices=["adaptive", "genetic", "bayesian", "surrogate", "hybrid"], default="adaptive")
     optimize.add_argument("--max-runs-per-round", type=int, default=5)
     optimize.add_argument("--patience", type=int, default=2)
     optimize.add_argument("--min-improvement", type=float, default=0.0)
