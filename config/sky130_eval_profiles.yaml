@@ -1,0 +1,86 @@
+profiles:
+  default:
+    aliases: []
+    weights:
+      function_score: 0.35
+      quality_score: 0.25
+      stability_score: 0.15
+      consistency_score: 0.15
+      cost_score: 0.10
+    metrics: {}
+
+  ota:
+    aliases: ["two_stage_opamp", "opamp", "amplifier"]
+    weights:
+      function_score: 0.25
+      quality_score: 0.25
+      stability_score: 0.15
+      consistency_score: 0.10
+      cost_score: 0.10
+      profile_score: 0.15
+    metrics:
+      dc_gain_db:
+        source: ac_metrics
+        minimum: 40.0
+      bandwidth_3db_hz:
+        source: ac_metrics
+        minimum: 1000000.0
+      unity_gain_hz:
+        source: ac_metrics
+        minimum: 10000000.0
+      slew_rate_v_per_s:
+        source: tran_metrics
+        minimum: 10000000.0
+      output_swing_v:
+        source: dc_metrics
+        minimum: 1.0
+      static_power_w:
+        source: op_metrics
+        maximum: 0.01
+
+  comparator:
+    aliases: ["comp"]
+    weights:
+      function_score: 0.30
+      quality_score: 0.20
+      stability_score: 0.15
+      consistency_score: 0.10
+      cost_score: 0.10
+      profile_score: 0.15
+    metrics:
+      switching_threshold_v:
+        source: dc_metrics
+        target: 0.9
+        tolerance: 0.2
+      output_swing_v:
+        source: dc_metrics
+        minimum: 1.0
+      static_power_w:
+        source: op_metrics
+        maximum: 0.01
+
+  oscillator:
+    aliases: ["vco", "ring_oscillator"]
+    weights:
+      function_score: 0.30
+      quality_score: 0.20
+      stability_score: 0.20
+      consistency_score: 0.10
+      cost_score: 0.10
+      profile_score: 0.10
+    metrics:
+      frequency_hz:
+        source: tran_metrics
+        minimum: 1000000.0
+      period_std_s:
+        source: tran_metrics
+        maximum: 1.0e-9
+      output_swing_v:
+        source: tran_metrics
+        minimum: 1.0
+      startup_time_s:
+        source: tran_metrics
+        maximum: 1.0e-6
+      static_power_w:
+        source: op_metrics
+        maximum: 0.01

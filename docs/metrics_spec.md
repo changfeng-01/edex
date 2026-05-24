@@ -146,6 +146,18 @@ engineering_validity = simulation_only
 
 `propose-candidates --strategy constrained-random` 会读取这些惩罚项辅助排序：规则优先级决定基础方向，惩罚严重度和扣分提高当前主要失效指标的候选权重，两参数组合再扣除复杂度惩罚。
 
+## Topology-aware analysis metrics
+
+`config/sky130_eval_profiles.yaml` defines the first profile set: `default`, `ota`, `comparator`, and `oscillator`. Aliases map common topologies such as `two_stage_opamp` to `ota` and `vco` to `oscillator`.
+
+Profile metrics are stored in `analysis_metrics.json` and then summarized in `score_summary.json`:
+
+- OTA / two-stage op-amp: `dc_gain_db`, `bandwidth_3db_hz`, `unity_gain_hz`, `slew_rate_v_per_s`, `output_swing_v`, `static_power_w`.
+- Comparator: `switching_threshold_v`, `output_swing_v`, `static_power_w`, with hysteresis treated as a proxy when data is available.
+- Oscillator / VCO: `frequency_hz`, `period_std_s`, `output_swing_v`, `startup_time_s`, `static_power_w`.
+
+If OP/AC/DC/TRAN files are missing or unreadable, the metric is recorded under `not_evaluable`; the run can still complete and remain eligible for simulation-only sorting by available metrics.
+
 ## 参数元数据
 
 批量评价会把 `params.yaml` 中的参数拼接到指标表和榜单中。常见参数包括：

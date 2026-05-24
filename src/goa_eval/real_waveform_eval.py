@@ -5,6 +5,7 @@ import datetime as dt
 
 import pandas as pd
 
+from goa_eval.analysis_metrics import extract_analysis_metrics, write_analysis_metrics
 from goa_eval.config import load_real_spec
 from goa_eval.diagnosis import write_diagnosis_report
 from goa_eval.io_utils import write_json
@@ -22,6 +23,7 @@ from goa_eval.plotter import (
 )
 from goa_eval.reporter import write_optimization_dataset, write_real_manifest, write_real_metrics_csv, write_real_report, write_real_summary
 from goa_eval.scorer import score_real_evaluation
+from goa_eval.topology_profiles import load_eval_profiles, resolve_topology_profile
 from goa_eval.waveform_io import read_real_waveform
 
 
@@ -37,6 +39,8 @@ def run_real_waveform_evaluation(
     stage_count: int | None = None,
     output_node_pattern: str | None = None,
     stage_group_size: int | None = None,
+    topology: str | None = None,
+    analysis_metrics: dict | None = None,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     figure_dir = output_dir / "figures"
@@ -148,7 +152,18 @@ def run_real_waveform_evaluation(
         run_id=run_id,
         run_timestamp=run_timestamp,
     )
-    score_summary = score_real_evaluation(summary, evaluation.stage_rows, spec)
+    profiles = load_eval_profiles()
+    profile = resolve_topology_profile(topology, profiles)
+    analysis_metrics = analysis_metrics or extract_analysis_metrics(output_dir, topology_profile=profile["name"])
+    write_analysis_metrics(output_dir / "analysis_metrics.json", analysis_metrics)
+    score_summary = score_real_evaluation(
+        summary,
+        evaluation.stage_rows,
+        spec,
+        topology=topology,
+        analysis_metrics=analysis_metrics,
+        profiles=profiles,
+    )
     write_json(output_dir / "score_summary.json", score_summary)
     write_optimization_dataset(
         output_dir / "optimization_dataset.csv",

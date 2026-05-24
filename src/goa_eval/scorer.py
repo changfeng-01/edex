@@ -3,9 +3,18 @@ from __future__ import annotations
 import math
 
 from goa_eval.schemas import RESULT_VERSION, SCHEMA_VERSION
+from goa_eval.topology_profiles import load_eval_profiles, resolve_topology_profile
 
 
-def score_real_evaluation(summary: dict, stage_rows: list[dict], spec: dict) -> dict:
+def score_real_evaluation(
+    summary: dict,
+    stage_rows: list[dict],
+    spec: dict,
+    *,
+    topology: str | None = None,
+    analysis_metrics: dict | None = None,
+    profiles: dict | None = None,
+) -> dict:
     hard_constraints = evaluate_hard_constraints(summary, spec)
     failures = [item["reason"] for item in hard_constraints.values() if not item["passed"]]
     warnings = warning_reasons(summary, spec)
@@ -21,7 +30,10 @@ def score_real_evaluation(summary: dict, stage_rows: list[dict], spec: dict) -> 
         metric_penalties["Width_std"]["score"],
     )
     cost_score = 100.0
-    weights = spec.get("weights", {})
+    profile = resolve_topology_profile(topology, profiles or load_eval_profiles())
+    profile_scores, analysis_penalties, not_evaluable = evaluate_profile_metrics(analysis_metrics or {}, profile)
+    profile_score = _mean([item["score"] for item in profile_scores.values()])
+    weights = {**spec.get("weights", {}), **profile.get("weights", {})}
     weighted = {
         "function_score": function_score,
         "quality_score": quality_score,
@@ -29,6 +41,8 @@ def score_real_evaluation(summary: dict, stage_rows: list[dict], spec: dict) -> 
         "consistency_score": consistency_score,
         "cost_score": cost_score,
     }
+    if profile.get("name") != "default" or profile_scores:
+        weighted["profile_score"] = profile_score
     soft_scores = {
         key: {
             "score": _clamp(value),
@@ -48,6 +62,10 @@ def score_real_evaluation(summary: dict, stage_rows: list[dict], spec: dict) -> 
         "failure_reasons": failures,
         "warning_reasons": warnings,
         "metric_penalties": metric_penalties,
+        "analysis_metric_penalties": analysis_penalties,
+        "profile_metric_scores": profile_scores,
+        "not_evaluable_metrics": not_evaluable,
+        "topology_profile": profile.get("name", "default"),
         "soft_scores": soft_scores,
         "score_explanations": soft_scores,
         **{key: _clamp(value) for key, value in weighted.items()},
@@ -173,6 +191,34 @@ def evaluate_metric_penalties(summary: dict, spec: dict) -> dict[str, dict]:
     }
 
 
+def evaluate_profile_metrics(analysis_metrics: dict, profile: dict) -> tuple[dict[str, dict], dict[str, dict], dict[str, str]]:
+    scores: dict[str, dict] = {}
+    penalties: dict[str, dict] = {}
+    not_evaluable = dict(analysis_metrics.get("not_evaluable", {}) or {})
+    for metric, rule in (profile.get("metrics", {}) or {}).items():
+        source = str(rule.get("source", ""))
+        value = (analysis_metrics.get(source) or {}).get(metric) if source else None
+        if value is None:
+            not_evaluable[metric] = f"missing {source}.{metric}" if source else f"missing {metric}"
+            continue
+        if "minimum" in rule:
+            penalty = _lower_limit_penalty(metric, value, rule.get("minimum"), f"{metric} is below profile minimum")
+        elif "maximum" in rule:
+            penalty = _upper_limit_penalty(metric, value, rule.get("maximum"), f"{metric} exceeds profile maximum")
+        elif "target" in rule:
+            penalty = _target_penalty(metric, value, rule.get("target"), rule.get("tolerance"), f"{metric} deviates from profile target")
+        else:
+            penalty = _penalty(metric, _finite(value), None, "observed", 100.0, "pass", f"{metric} observed")
+        scores[metric] = {
+            "score": penalty["score"],
+            "current_value": penalty["current_value"],
+            "threshold": penalty["threshold"],
+            "source": source,
+        }
+        penalties[metric] = penalty
+    return scores, penalties, not_evaluable
+
+
 def _check_bool(value, expected: bool, reason: str) -> dict:
     passed = bool(value) is expected
     return {"passed": passed, "current_value": bool(value), "threshold": expected, "reason": reason}
@@ -249,6 +295,24 @@ def _lower_margin_penalty(metric: str, value, minimum, reason: str) -> dict:
     return _penalty(metric, value, minimum, "lower_margin", score, severity, reason, ratio=ratio)
 
 
+def _lower_limit_penalty(metric: str, value, minimum, reason: str) -> dict:
+    value = _finite(value)
+    minimum = _finite(minimum)
+    if value is None or minimum in (None, 0):
+        score = 100.0
+        ratio = None
+        severity = "unknown"
+    elif value >= minimum:
+        ratio = value / minimum
+        score = 100.0
+        severity = "pass"
+    else:
+        ratio = value / minimum
+        score = _clamp(100.0 * max(0.0, ratio))
+        severity = "fail"
+    return _penalty(metric, value, minimum, "lower_limit", score, severity, reason, ratio=ratio)
+
+
 def _ratio_score(ratio: float | None) -> float:
     if ratio is None:
         return 100.0
@@ -301,3 +365,7 @@ def _finite(value) -> float | None:
 
 def _clamp(value: float) -> float:
     return float(max(0.0, min(100.0, value)))
+
+
+def _mean(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 100.0

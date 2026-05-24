@@ -166,6 +166,8 @@ run_001/
 - `src/goa_eval/windowing.py`：窗口检测、合法脉冲、非选通区域、端点 overlap 积分。
 - `src/goa_eval/metrics.py`：逐级指标和级联摘要。
 - `src/goa_eval/scorer.py`：硬约束、软评分和总体评分。
+- `src/goa_eval/topology_profiles.py`：将 topology 映射到 `default` / `ota` / `comparator` / `oscillator` 评价 profile。
+- `src/goa_eval/analysis_metrics.py`：读取 OP/AC/DC/TRAN companion CSV 并生成 `analysis_metrics.json`。
 - `src/goa_eval/diagnosis.py`：面向人工复核的诊断语句。
 - `src/goa_eval/recommendation.py`：规则化下一轮参数建议。
 - `src/goa_eval/batch_eval.py`：多 run 汇总、榜单和批量推荐。

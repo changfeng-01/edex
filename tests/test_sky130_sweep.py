@@ -166,6 +166,8 @@ parameters:
     assert len(runs) == 2
     assert len(leaderboard) == 2
     assert {"m1_width", "load_cap", "overall_score", "status", "run_dir"} <= set(runs.columns)
+    assert {"topology_profile", "dc_gain_db", "static_power_w"} <= set(runs.columns)
+    assert "topology_profile" in leaderboard.columns
     assert {"parameter", "best_value", "score_delta"} <= set(sensitivity.columns)
     first_run = output_root / runs.loc[0, "run_dir"]
     assert (first_run / "params.yaml").exists()

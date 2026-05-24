@@ -90,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
             stage_count=args.stage_count,
             output_node_pattern=args.output_node_pattern,
             stage_group_size=args.stage_group_size,
+            topology=args.topology,
         )
         return 0
     if args.command == "recommend":
@@ -209,6 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
     real.add_argument("--stage-count", type=int)
     real.add_argument("--output-node-pattern")
     real.add_argument("--stage-group-size", type=int)
+    real.add_argument("--topology")
     recommend = sub.add_parser("recommend")
     recommend.add_argument("--summary", required=True)
     recommend.add_argument("--score")

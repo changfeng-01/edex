@@ -155,10 +155,12 @@ def process_sky130_row(
             output_dir=run_dir,
             spec_path=spec_path,
             output_nodes=list(node_map),
+            topology=row.get("topology"),
         )
         _write_sky130_metadata(run_dir, provenance, node_map, structure)
         _write_recommendations_and_candidates(run_dir, param_space_path, max_candidates=max_candidates, seed=seed)
         score = json.loads((run_dir / "score_summary.json").read_text(encoding="utf-8"))
+        analysis = json.loads((run_dir / "analysis_metrics.json").read_text(encoding="utf-8")) if (run_dir / "analysis_metrics.json").exists() else {}
         return _status(
             run_dir,
             provenance,
@@ -167,6 +169,8 @@ def process_sky130_row(
             overall_score=score.get("overall_score"),
             failure_reasons=score.get("failure_reasons", []),
             structure=structure,
+            score=score,
+            analysis=analysis,
         )
     except Sky130DependencyError as exc:
         return _status(run_dir, provenance, "failed", str(exc), structure=structure)
@@ -360,8 +364,13 @@ def _status(
     overall_score=None,
     failure_reasons: list[str] | None = None,
     structure: dict | None = None,
+    score: dict | None = None,
+    analysis: dict | None = None,
 ) -> dict:
     structure = structure or {}
+    score = score or {}
+    analysis = analysis or {}
+    analysis_flat = _analysis_summary_columns(analysis)
     payload = {
         **provenance,
         "status": status,
@@ -377,6 +386,8 @@ def _status(
         "source_netlist_path": structure.get("source_netlist_path"),
         "netlist_structure_path": structure.get("netlist_structure_path"),
         "structure_warning_count": structure.get("structure_warning_count"),
+        "topology_profile": score.get("topology_profile", analysis.get("topology_profile")),
+        **analysis_flat,
         **(structure.get("structure_scalar_features") or {}),
     }
     write_json(run_dir / "sky130_status.json", payload)
@@ -402,6 +413,13 @@ def _write_runs_summary(path: Path, rows: list[dict]) -> None:
         "structure_message",
         "source_netlist_field",
         "structure_warning_count",
+        "topology_profile",
+        "dc_gain_db",
+        "bandwidth_3db_hz",
+        "unity_gain_hz",
+        "static_power_w",
+        "switching_threshold_v",
+        "frequency_hz",
         "mos_count",
         "cap_count",
         "resistor_count",
@@ -443,6 +461,21 @@ def _walk_json(value: Any) -> Iterable[Any]:
     elif isinstance(value, list):
         for child in value:
             yield from _walk_json(child)
+
+
+def _analysis_summary_columns(analysis: dict) -> dict:
+    op = analysis.get("op_metrics", {}) or {}
+    ac = analysis.get("ac_metrics", {}) or {}
+    dc = analysis.get("dc_metrics", {}) or {}
+    tran = analysis.get("tran_metrics", {}) or {}
+    return {
+        "dc_gain_db": ac.get("dc_gain_db"),
+        "bandwidth_3db_hz": ac.get("bandwidth_3db_hz"),
+        "unity_gain_hz": ac.get("unity_gain_hz"),
+        "static_power_w": op.get("static_power_w"),
+        "switching_threshold_v": dc.get("switching_threshold_v"),
+        "frequency_hz": tran.get("frequency_hz"),
+    }
 
 
 def _select_source_netlist(row: dict) -> tuple[str, str] | None:
