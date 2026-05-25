@@ -92,6 +92,44 @@ def test_scorer_keeps_failed_candidates_rankable_with_metric_penalties():
     assert severe["metric_penalties"]["Max_overlap_ratio"]["severity"] == "critical"
 
 
+def test_scorer_uses_waveform_activity_to_rank_missing_pulse_failures():
+    spec = {
+        "max_overlap_ratio": 0.1,
+        "max_ripple_v": 0.5,
+        "max_voltage_loss_v": 0.5,
+        "max_delay_std": 0.5e-6,
+        "min_voh_margin_v": 1.0,
+        "target_pulse_width": 10e-6,
+        "pulse_width_tolerance": 1e-6,
+        "weights": {
+            "function_score": 0.35,
+            "quality_score": 0.25,
+            "stability_score": 0.15,
+            "consistency_score": 0.15,
+            "cost_score": 0.10,
+        },
+    }
+    base_summary = {
+        "Seq_pass": False,
+        "All_pulses_exist": False,
+        "FalseTriggerCount": 0,
+        "Max_overlap_ratio": None,
+        "Max_ripple": None,
+        "Max_voltage_loss": None,
+        "Delay_std": None,
+        "Width_std": None,
+        "VOH_min": None,
+        "high_threshold": 5.0,
+        "Width_mean": None,
+    }
+
+    active = score_real_evaluation({**base_summary, "WaveformActivityScore": 70.0}, [], spec)
+    inactive = score_real_evaluation({**base_summary, "WaveformActivityScore": 10.0}, [], spec)
+
+    assert active["function_score"] > inactive["function_score"]
+    assert active["overall_score"] > inactive["overall_score"]
+
+
 def test_metric_penalties_do_not_emit_non_finite_numbers_for_zero_thresholds():
     scores = score_real_evaluation(
         {

@@ -85,6 +85,33 @@ def test_ams_net_style_netlist_parses_sources_models_and_op(tmp_path):
     assert parsed.analysis_directives[0]["directive"] == ".OP"
 
 
+def test_sky130_xmos_devices_are_summarized_as_mos(tmp_path):
+    netlist = tmp_path / "sky130_xmos.spice"
+    netlist.write_text(
+        "\n".join(
+            [
+                "XM1 out in 0 0 sky130_fd_pr__nfet_01v8 W=0.8u L=0.15u",
+                "XM2 out in vdd vdd sky130_fd_pr__pfet_01v8 W=1.6u L=0.15u",
+                "CLOAD out 0 5f",
+                ".tran 20p 4n",
+                ".end",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_netlist(netlist)
+    summary = summarize_netlist_structure(parsed)
+
+    mos = [device for device in parsed.devices if device.kind == "mos"]
+    assert [device.name for device in mos] == ["XM1", "XM2"]
+    assert mos[0].nodes == ["out", "in", "0", "0"]
+    assert mos[0].model == "sky130_fd_pr__nfet_01v8"
+    assert summary["scalar_features"]["mos_count"] == 2
+    assert summary["scalar_features"]["transistor_width_sum"] == pytest.approx(2.4e-6)
+    assert "W=0.8u" not in summary["node_degrees"]
+
+
 def test_netlist_structure_summary_writes_scalar_features(tmp_path):
     netlist = tmp_path / "structure.spice"
     netlist.write_text(

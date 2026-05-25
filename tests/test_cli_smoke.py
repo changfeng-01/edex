@@ -481,6 +481,81 @@ parameters:
     assert "simulation_only" in output_md.read_text(encoding="utf-8")
 
 
+def test_cli_propose_candidates_uses_hard_constraint_failures(tmp_path):
+    summary_path = tmp_path / "real_summary.json"
+    score_path = tmp_path / "score_summary.json"
+    param_space_path = tmp_path / "param_space.yaml"
+    output_csv = tmp_path / "next_candidates.csv"
+    output_md = tmp_path / "next_candidates.md"
+
+    summary_path.write_text(
+        json.dumps(
+            {
+                "data_source": "real_simulation_csv",
+                "engineering_validity": "simulation_only",
+            }
+        ),
+        encoding="utf-8",
+    )
+    score_path.write_text(
+        json.dumps(
+            {
+                "hard_constraint_passed": False,
+                "hard_constraints": {
+                    "All_pulses_exist": {"passed": False, "current_value": False, "threshold": True},
+                    "Seq_pass": {"passed": False, "current_value": False, "threshold": True},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    param_space_path.write_text(
+        """
+parameters:
+  drive_resistance:
+    unit: ohm
+    values: [1000, 1500]
+  transistor_width:
+    unit: m
+    values: [8.0e-7, 1.0e-6]
+  load_cap:
+    unit: F
+    values: [8.0e-13, 1.0e-12]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "goa_eval.cli",
+            "propose-candidates",
+            "--summary",
+            str(summary_path),
+            "--score",
+            str(score_path),
+            "--param-space",
+            str(param_space_path),
+            "--output-csv",
+            str(output_csv),
+            "--output-md",
+            str(output_md),
+        ],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    table = pd.read_csv(output_csv)
+    assert not table.empty
+    assert {"All_pulses_exist", "Seq_pass"} & set(table["trigger_metric"])
+    assert {"drive_resistance", "transistor_width", "load_cap"} & set(table["parameter"])
+    assert set(table["engineering_validity"]) == {"simulation_only"}
+
+
 def test_cli_analyze_params_writes_mock_deepseek_outputs(tmp_path):
     summary_path = tmp_path / "real_summary.json"
     score_path = tmp_path / "score_summary.json"

@@ -98,6 +98,17 @@ def test_rewrite_spice_parameters_updates_param_devices_and_sources():
     assert "I1 ibias_node 0 DC 15uA" in result.text
 
 
+def test_rewrite_spice_parameters_allows_mos_target_to_match_sky130_xmos_name():
+    result = rewrite_spice_parameters(
+        "XM1 out in 0 0 sky130_fd_pr__nfet_01v8 W=0.8u L=0.15u\n.end\n",
+        {"m1_width": "1.2u"},
+        {"m1_width": {"target": "M1.W"}},
+    )
+
+    assert result.success
+    assert "XM1 out in 0 0 sky130_fd_pr__nfet_01v8 W=1.2u L=0.15u" in result.text
+
+
 def test_rewrite_spice_parameters_reports_missing_target():
     result = rewrite_spice_parameters(
         "M1 out in vdd vdd PMOS W=1u L=0.15u\n.end\n",

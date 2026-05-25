@@ -60,6 +60,28 @@ def test_sequence_pass():
     assert result.summary["Seq_pass"] is True
 
 
+def test_short_sky130_window_starting_high_is_detected_as_single_pulse():
+    time = np.arange(0.0, 4.1e-9, 0.1e-9)
+    signal = np.where(time < 0.8e-9, 1.8, 0.0)
+    frame = pd.DataFrame({"time": time, "o1": signal})
+    config = RealEvalConfig(
+        high_threshold=0.9,
+        low_threshold=0.3,
+        target_pulse_width=0.8e-9,
+        pulse_width_tolerance=0.4e-9,
+        min_pulse_width=0.05e-9,
+        false_trigger_min_duration=0.05e-9,
+    )
+
+    result = evaluate_waveform_metrics(frame, config, output_nodes=["o1"])
+
+    assert result.stage_rows[0]["PulseExist"] is True
+    assert result.stage_rows[0]["rise_edge_time"] == pytest.approx(0.0)
+    assert result.summary["All_pulses_exist"] is True
+    assert result.summary["Seq_pass"] is True
+    assert result.summary["Width_mean"] == pytest.approx(0.8e-9)
+
+
 def test_false_trigger_detection():
     time = np.arange(0, 20, dtype=float) * 1e-6
     o1 = np.where((time >= 2e-6) & (time < 6e-6), 6.0, 0.0)
@@ -96,6 +118,29 @@ def test_summary_contains_validity_labels(tmp_path: Path):
     summary = pd.read_json(tmp_path / "outputs" / "real_summary.json", typ="series")
     assert summary["data_source"] == "real_simulation_csv"
     assert summary["engineering_validity"] == "simulation_only"
+
+
+def test_single_output_real_waveform_evaluation_writes_stacked_plot(tmp_path: Path):
+    waveform = tmp_path / "single_output.csv"
+    time = np.arange(0, 10, dtype=float) * 1e-6
+    rows = pd.DataFrame(
+        {
+            "XVAL": time,
+            "v(o1)": np.where((time >= 1e-6) & (time < 4e-6), 6.0, 0.0),
+        }
+    )
+    rows.to_csv(waveform, index=False)
+
+    run_real_waveform_evaluation(
+        waveform_path=waveform,
+        internal_waveform_path=None,
+        output_dir=tmp_path / "outputs",
+        high_threshold=5.0,
+        low_threshold=1.0,
+        output_nodes=["o1"],
+    )
+
+    assert (tmp_path / "outputs" / "figures" / "o1_o8_stacked.png").exists()
 
 
 def test_real_report_lists_optimized_figures_and_validity_labels(tmp_path: Path):

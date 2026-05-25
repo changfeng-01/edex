@@ -224,6 +224,11 @@ These metrics are simulation-only analysis helpers. Missing OP/AC/DC data should
 
 候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。当 `score_summary.json` 提供 `metric_penalties` 或 `analysis_metric_penalties` 时，严重超限指标会得到更高搜索权重；两参数组合会保留组合惩罚，避免过早偏向复杂改动。Topology-aware candidate generation uses `config/sky130_eval_profiles.yaml` `candidate_rules` to map active profile metrics such as `dc_gain_db`, `static_power_w`, `switching_threshold_v`, or `frequency_hz` onto parameters that exist in the current parameter space. If a profile rule references parameters that are absent from the current parameter space, those entries are skipped.
 
+Hard-constraint failures such as `All_pulses_exist` and `Seq_pass` can also
+produce recovery candidates for drive-strength, load, and threshold-review
+parameters when those names exist in the parameter space. These candidates are
+simulation-only next-run suggestions, not physical-validation evidence.
+
 ## next_candidates.md
 
 用途：面向人工阅读的下一轮候选参数说明。
@@ -268,6 +273,44 @@ These metrics are simulation-only analysis helpers. Missing OP/AC/DC data should
 | `next_candidates.csv` | Existing constrained-random next-candidate output for the run. |
 
 At the sweep root, `sky130_sweep_runs.csv` summarizes every sweep point, `sky130_sweep_leaderboard.csv` sorts evaluated points by score, `sky130_sweep_sensitivity.csv` reports coarse one-parameter score deltas, and `next_param_space.yaml` preserves a narrowed next-round parameter-space suggestion. These files are simulation-only ranking artifacts, not physical validation and not proof of a completed multi-round optimizer.
+
+## optimize-rounds outputs
+
+`optimize-rounds` runs `sky130-sweep` repeatedly and adapts each later round from
+the best previous run's `next_candidates.csv`, while skipping parameter points
+already present in the accumulated history. The command is still bounded by
+`engineering_validity = simulation_only`; its outputs are search traces and next
+simulation suggestions, not physical-validation evidence.
+
+`--strategy` supports `adaptive`, `genetic`, `bayesian`, `surrogate`, and
+`hybrid`. Advanced strategies operate on the discrete sweep grid only.
+`bayesian` uses Gaussian-process expected improvement, `surrogate` uses a
+random-forest score model, and `hybrid` combines rule candidates, genetic
+variation, model ranking, and diversity fallback. If there are fewer than three
+valid history rows or the composite objective has zero variance, model-based
+strategies record a fallback status and choose diverse untried points.
+
+| File | Purpose |
+|---|---|
+| `round_001/`, `round_002/`, ... | Per-round `sky130-sweep` roots, each with the normal sweep outputs. |
+| `optimization_history.json` | Combined machine-readable round summaries and per-run history rows, including candidate provenance fields when a point came from `next_candidates.csv`. |
+| `optimization_leaderboard.csv` | All attempted runs sorted by stable `rank_status` first and `overall_score` second. |
+| `round_summary.csv` | One row per optimization round with `best_score`, `best_run_dir`, and `stop_reason`. |
+| `final_param_space.yaml` | Final explicit point list or narrowed sweep config used by the last round. |
+| `best_next_candidates.csv` | Candidate table copied from the best run when available. |
+
+The leaderboard keeps these candidate-result ingestion fields on each run row:
+`candidate_source`, `source_run_dir`, `source_candidate_id`,
+`source_candidate_trigger_metric`, `source_candidate_kind`,
+`source_candidate_score`, `source_candidate_parameters_json`, and
+`source_candidate_rationale`. `rank_status` normalizes run state for sorting:
+`evaluated` rows with numeric scores rank first, followed by `not_evaluable`,
+`skipped`, and `failed`.
+
+Advanced strategy rows may also include `optimizer_strategy`, `objective_score`,
+`model_status`, and `model_prediction`. The composite objective prioritizes
+fewer hard-constraint failures, then higher `overall_score`, fewer
+not-evaluable metrics, and available profile/analysis scores.
 
 ## params.yaml
 

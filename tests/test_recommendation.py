@@ -105,6 +105,35 @@ def test_build_recommendations_adds_topology_specific_analysis_guidance():
     assert all(item["engineering_validity"] == "simulation_only" for item in recommendations)
 
 
+def test_build_recommendations_adds_hard_constraint_failure_guidance():
+    score = {
+        "hard_constraint_passed": False,
+        "hard_constraints": {
+            "All_pulses_exist": {"passed": False, "current_value": False, "threshold": True},
+            "Seq_pass": {"passed": False, "current_value": False, "threshold": True},
+        },
+    }
+
+    recommendations = build_recommendations(
+        {
+            "data_source": "real_simulation_csv",
+            "engineering_validity": "simulation_only",
+        },
+        score,
+        pd.DataFrame(),
+    )
+    by_metric = {item["trigger_metric"]: item for item in recommendations}
+
+    assert "All_pulses_exist" in by_metric
+    assert "Seq_pass" in by_metric
+    assert by_metric["All_pulses_exist"]["recommendation_id"] == "missing_pulse_recovery_review"
+    assert by_metric["Seq_pass"]["recommendation_id"] == "sequence_order_recovery_review"
+    assert by_metric["All_pulses_exist"]["current_value"] is False
+    assert by_metric["Seq_pass"]["threshold"] is True
+    assert "no_rule_failure_detected" not in {item["recommendation_id"] for item in recommendations}
+    assert all(item["engineering_validity"] == "simulation_only" for item in recommendations)
+
+
 def test_write_recommendations_markdown_keeps_simulation_only_boundary(tmp_path: Path):
     summary_path = tmp_path / "real_summary.json"
     score_path = tmp_path / "score_summary.json"

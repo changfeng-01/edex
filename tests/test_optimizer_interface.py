@@ -291,6 +291,39 @@ def test_constrained_random_profile_candidates_score_power_above_mild_gain():
     assert best_power > best_gain
 
 
+def test_hard_constraint_recommendations_generate_recovery_candidates():
+    recommendations = [
+        {
+            "recommendation_id": "missing_pulse_recovery_review",
+            "trigger_metric": "All_pulses_exist",
+            "data_source": "real_simulation_csv",
+            "engineering_validity": "simulation_only",
+        },
+        {
+            "recommendation_id": "sequence_order_recovery_review",
+            "trigger_metric": "Seq_pass",
+            "data_source": "real_simulation_csv",
+            "engineering_validity": "simulation_only",
+        },
+    ]
+    param_space = {
+        "drive_resistance": {"unit": "ohm", "values": [1000, 1500]},
+        "transistor_width": {"unit": "m", "values": [8.0e-7, 1.0e-6]},
+        "load_cap": {"unit": "F", "values": [8.0e-13, 1.0e-12]},
+    }
+
+    candidates = constrained_random_candidates(param_space, recommendations, max_candidates=6, seed=5)
+
+    assert candidates
+    assert {"All_pulses_exist", "Seq_pass"} <= {
+        metric for candidate in candidates for metric in str(candidate["trigger_metric"]).split(";")
+    }
+    assert {"drive_resistance", "transistor_width"} & {
+        parameter for candidate in candidates for parameter in str(candidate["changed_parameters"]).split(";")
+    }
+    assert all(candidate["engineering_validity"] == "simulation_only" for candidate in candidates)
+
+
 def test_profile_candidate_rules_skip_unknown_profiles_and_missing_rules():
     recommendations = [
         {"recommendation_id": "custom_review", "trigger_metric": "dc_gain_db", "topology_profile": "unknown_filter"},

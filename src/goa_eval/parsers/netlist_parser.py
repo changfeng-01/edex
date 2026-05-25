@@ -159,7 +159,7 @@ def _parse_device_line(
     elif prefix == "i":
         device = _parse_source(tokens, "current_source")
     elif prefix == "x":
-        device = _parse_subckt_instance(tokens, subckts)
+        device = _parse_mos(tokens) if _looks_like_parameterized_mos(tokens) else _parse_subckt_instance(tokens, subckts)
     else:
         device = Device(name=name, kind="unknown", nodes=tokens[1:])
     device.raw_line = raw_line
@@ -240,6 +240,17 @@ def _parse_subckt_instance(tokens: list[str], subckts: dict[str, SubcktDef]) -> 
     if subckt:
         port_map = {port: node for port, node in zip(subckt.ports, nodes)}
     return Device(tokens[0], "subckt_instance", nodes, model=model, port_map=port_map)
+
+
+def _looks_like_parameterized_mos(tokens: list[str]) -> bool:
+    params = [token for token in tokens[1:] if "=" in token]
+    positional = [token for token in tokens[1:] if "=" not in token]
+    if len(positional) < 5:
+        return False
+    if not any(token.split("=", 1)[0].upper() in {"W", "L"} for token in params):
+        return False
+    model = positional[-1].lower()
+    return "fet" in model or "mos" in model
 
 
 def _parse_params(tokens: list[str]) -> tuple[dict[str, str], dict[str, float]]:

@@ -87,6 +87,7 @@ def build_recommendations(summary: dict, score: dict | None = None, metrics: pd.
             )
         )
 
+    _add_hard_constraint_recommendations(recommendations, score, summary, data_source, engineering_validity)
     if summary.get("LowFreqStable") == "not_evaluable_with_current_waveform":
         recommendations.append(
             _item(
@@ -217,6 +218,70 @@ def _add_topology_profile_recommendations(
         recommendation = _profile_recommendation(profile, str(metric), penalty, data_source, engineering_validity)
         if recommendation is not None:
             recommendations.append(recommendation)
+
+
+def _add_hard_constraint_recommendations(
+    recommendations: list[dict],
+    score: dict,
+    summary: dict,
+    data_source: str,
+    engineering_validity: str,
+) -> None:
+    failed = _failed_hard_constraints(score, summary)
+    if "All_pulses_exist" in failed:
+        recommendations.append(
+            _item(
+                "missing_pulse_recovery_review",
+                "high",
+                "All_pulses_exist",
+                failed["All_pulses_exist"].get("current_value", False),
+                failed["All_pulses_exist"].get("threshold", True),
+                "One or more expected output pulses were not detected in the simulation window; likely causes include insufficient drive strength, excessive load, threshold/window settings, or an output alias mismatch.",
+                "For the next sweep, prioritize drive-strength and load changes, then re-check output-node mapping and pulse-detection windows before treating the score as circuit behavior.",
+                True,
+                "All_pulses_exist failed. Generate recovery candidates for drive strength, load, and detection-window review before advancing to higher-level optimization.",
+                data_source,
+                engineering_validity,
+            )
+        )
+    if "Seq_pass" in failed:
+        recommendations.append(
+            _item(
+                "sequence_order_recovery_review",
+                "high",
+                "Seq_pass",
+                failed["Seq_pass"].get("current_value", False),
+                failed["Seq_pass"].get("threshold", True),
+                "The observed pulse sequence did not pass the configured order check; likely causes include stage delay imbalance, missing intermediate pulses, excessive loading, or threshold/window settings.",
+                "For the next sweep, prioritize timing and drive/load candidates, and keep the result marked simulation_only until the waveform sequence is directly reviewed.",
+                True,
+                "Seq_pass failed. Generate next-run candidates for timing recovery and drive/load balance before using advanced optimizers.",
+                data_source,
+                engineering_validity,
+            )
+        )
+
+
+def _failed_hard_constraints(score: dict, summary: dict) -> dict[str, dict]:
+    failed: dict[str, dict] = {}
+    hard_constraints = score.get("hard_constraints", {}) if isinstance(score, dict) else {}
+    if isinstance(hard_constraints, dict):
+        for metric, details in hard_constraints.items():
+            if not isinstance(details, dict):
+                continue
+            if details.get("passed") is False:
+                failed[str(metric)] = details
+    failures = score.get("hard_constraint_failures", []) if isinstance(score, dict) else []
+    if isinstance(failures, list):
+        for reason in failures:
+            text = str(reason)
+            for metric in ["All_pulses_exist", "Seq_pass"]:
+                if metric in text:
+                    failed.setdefault(metric, {"current_value": False, "threshold": True, "reason": text})
+    for metric in ["All_pulses_exist", "Seq_pass"]:
+        if summary.get(metric) is False:
+            failed.setdefault(metric, {"current_value": False, "threshold": True})
+    return failed
 
 
 def _profile_recommendation(
