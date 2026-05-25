@@ -252,6 +252,12 @@ def _rewrite_one(text: str, target: str, value: str) -> str | None:
     if target.startswith(".param:") or target.startswith("param:"):
         name = target.split(":", 1)[1]
         return _rewrite_param(text, name, value)
+    if target.lower() == ".temp":
+        return _rewrite_temperature(text, value)
+    if target.lower() in {".tran:stop", "tran:stop"}:
+        return _rewrite_tran_stop(text, value)
+    if target.lower() in {".lib:corner", "lib:corner"}:
+        return _rewrite_lib_corner(text, value)
     if "." not in target:
         return None
     device_name, field = target.split(".", 1)
@@ -265,16 +271,40 @@ def _rewrite_one(text: str, target: str, value: str) -> str | None:
     return None
 
 
-def _rewrite_param(text: str, name: str, value: str) -> str:
-    pattern = re.compile(rf"^(\s*\.param\s+{re.escape(name)}\s*=\s*)(\S+)(.*)$", re.IGNORECASE | re.MULTILINE)
+def _rewrite_temperature(text: str, value: str) -> str:
+    pattern = re.compile(r"^(\s*\.temp\s+)(\S+)(.*)$", re.IGNORECASE | re.MULTILINE)
     if pattern.search(text):
         return pattern.sub(rf"\g<1>{value}\g<3>", text, count=1)
+    return _insert_before_end(text, f".temp {value}")
+
+
+def _rewrite_tran_stop(text: str, value: str) -> str | None:
+    pattern = re.compile(r"^(\s*\.tran\s+\S+\s+)(\S+)(.*)$", re.IGNORECASE | re.MULTILINE)
+    if not pattern.search(text):
+        return None
+    return pattern.sub(rf"\g<1>{value}\g<3>", text, count=1)
+
+
+def _rewrite_lib_corner(text: str, value: str) -> str | None:
+    pattern = re.compile(r"^(\s*\.lib\s+)(\S+)(\s+)(\S+)(.*)$", re.IGNORECASE | re.MULTILINE)
+    if not pattern.search(text):
+        return None
+    return pattern.sub(rf"\g<1>\g<2>\g<3>{value}\g<5>", text, count=1)
+
+
+def _insert_before_end(text: str, insertion: str) -> str:
     lines = text.splitlines()
-    insertion = f".param {name}={value}"
     for index, line in enumerate(lines):
         if line.strip().lower() == ".end":
             return "\n".join([*lines[:index], insertion, *lines[index:]]) + "\n"
     return text.rstrip() + "\n" + insertion + "\n"
+
+
+def _rewrite_param(text: str, name: str, value: str) -> str:
+    pattern = re.compile(rf"^(\s*\.param\s+{re.escape(name)}\s*=\s*)(\S+)(.*)$", re.IGNORECASE | re.MULTILINE)
+    if pattern.search(text):
+        return pattern.sub(rf"\g<1>{value}\g<3>", text, count=1)
+    return _insert_before_end(text, f".param {name}={value}")
 
 
 def _rewrite_key_value_device(text: str, device_name: str, key: str, value: str) -> str | None:
@@ -382,7 +412,7 @@ def _resolve_pdk_root(pdk_root: Path | None, *, mock_ngspice: bool) -> Path | No
     raw = pdk_root or os.environ.get("PDK_ROOT") or os.environ.get("SKYWATER_PDK_ROOT")
     if raw is None:
         raise Sky130DependencyError("PDK root not found. Pass --pdk-root or set PDK_ROOT/SKYWATER_PDK_ROOT.")
-    path = Path(raw)
+    path = Path(raw).resolve()
     if not path.exists():
         raise Sky130DependencyError(f"PDK root does not exist: {path}")
     return path

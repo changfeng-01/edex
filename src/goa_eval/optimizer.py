@@ -98,6 +98,9 @@ def propose_candidates(param_space: dict[str, list[object]], recommendations: li
         if "overlap" in rec_id or metric == "Max_overlap_ratio":
             _append_if_available(candidates, param_space, "R_driver", "review_timing", 85, recommendation)
             _append_if_available(candidates, param_space, "drive_resistance", "review_timing", 85, recommendation)
+            _append_if_available(candidates, param_space, "m1_width", "review_timing", 82, recommendation)
+            _append_if_available(candidates, param_space, "m2_width", "review_timing", 82, recommendation)
+            _append_if_available(candidates, param_space, "load_cap", "decrease", 80, recommendation)
         if "false_trigger" in rec_id or metric == "FalseTriggerCount":
             _append_if_available(candidates, param_space, "VDD", "review_threshold", 75, recommendation)
             _append_if_available(candidates, param_space, "vdd", "review_threshold", 75, recommendation)
