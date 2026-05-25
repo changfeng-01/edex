@@ -32,6 +32,7 @@ from goa_eval.report.reporter import write_report_md
 from goa_eval.report.summary_writer import write_metric_table, write_metrics_csv, write_summary_json
 from goa_eval.real_waveform_eval import run_real_waveform_evaluation
 from goa_eval.recommendation import build_recommendations, write_recommendations_markdown
+from goa_eval.sky130_mainline import run_sky130_mainline
 from goa_eval.sky130_sweep import run_sky130_sweep
 from goa_eval.sky130_transient import Sky130DependencyError, run_sky130_transient
 from goa_eval.visualization.comparison_plotter import plot_v1_v8_comparison
@@ -335,6 +336,38 @@ def main(argv: list[str] | None = None) -> int:
             print(str(exc), file=sys.stderr)
             return 2
         return 0
+    if args.command == "sky130-mainline":
+        try:
+            run_sky130_mainline(
+                sweep_path=Path(args.sweep),
+                output_root=Path(args.output_root),
+                validation_config_path=Path(args.validation_config) if args.validation_config else None,
+                rounds=args.rounds,
+                max_runs_per_round=args.max_runs_per_round,
+                patience=args.patience,
+                min_improvement=args.min_improvement,
+                exploration_ratio=args.exploration_ratio,
+                pdk_root=Path(args.pdk_root) if args.pdk_root else None,
+                split=args.split,
+                max_rows=args.max_rows,
+                topology=args.topology,
+                source_dataset=args.source_dataset,
+                dataset_name=args.dataset,
+                mock_dataset_json=Path(args.mock_dataset_json) if args.mock_dataset_json else None,
+                mock_ngspice=args.mock_ngspice,
+                mock_if_unavailable=args.mock_if_unavailable,
+                ngspice_cmd=args.ngspice_cmd,
+                spec_path=Path(args.spec),
+                param_space_path=Path(args.param_space),
+                max_candidates=args.max_candidates,
+                seed=args.seed,
+                strategy=args.strategy,
+                full_validation=args.full_validation,
+            )
+        except Sky130DependencyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        return 0
     parser.print_help()
     return 2
 
@@ -480,6 +513,33 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.add_argument("--ngspice-cmd", default="ngspice")
     optimize.add_argument("--mock-dataset-json")
     optimize.add_argument("--mock-ngspice", action="store_true")
+    mainline = sub.add_parser("sky130-mainline")
+    mainline.add_argument("--sweep", default="config/sky130_candidate_sweep.yaml")
+    mainline.add_argument("--pdk-root")
+    mainline.add_argument("--dataset", default="pphilip/analog-circuits-sky130")
+    mainline.add_argument("--split", choices=["train", "validation", "test"], default="train")
+    mainline.add_argument("--max-rows", type=int, default=1)
+    mainline.add_argument("--topology")
+    mainline.add_argument("--source-dataset")
+    mainline.add_argument("--output-root", default="outputs/sky130_mainline")
+    mainline.add_argument("--spec", default="config/sky130_transient_spec.yaml")
+    mainline.add_argument("--param-space", default="examples/sample_params.yaml")
+    mainline.add_argument("--max-candidates", type=int, default=10)
+    mainline.add_argument("--seed", type=int, default=42)
+    mainline.add_argument("--rounds", type=int, default=1)
+    mainline.add_argument("--strategy", choices=["adaptive", "genetic", "bayesian", "surrogate", "hybrid"], default="adaptive")
+    mainline.add_argument("--max-runs-per-round", type=int, default=3)
+    mainline.add_argument("--patience", type=int, default=2)
+    mainline.add_argument("--min-improvement", type=float, default=0.0)
+    mainline.add_argument("--exploration-ratio", type=float, default=0.25)
+    mainline.add_argument("--validation-config", default="config/sky130_validation.yaml")
+    mainline.add_argument("--ngspice-cmd", default="ngspice")
+    mainline.add_argument("--mock-dataset-json", default="examples/sky130_candidate_chain_row.json")
+    mainline.add_argument("--mock-ngspice", action="store_true")
+    mainline.add_argument("--lightweight", action="store_true", default=True)
+    mainline.add_argument("--full-validation", action="store_true")
+    mainline.add_argument("--mock-if-unavailable", dest="mock_if_unavailable", action="store_true", default=True)
+    mainline.add_argument("--no-mock-if-unavailable", dest="mock_if_unavailable", action="store_false")
     return parser
 
 

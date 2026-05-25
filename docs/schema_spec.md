@@ -383,6 +383,35 @@ Advanced strategy rows may also include `optimizer_strategy`, `objective_score`,
 fewer hard-constraint failures, then higher `overall_score`, fewer
 not-evaluable metrics, and available profile/analysis scores.
 
+## sky130-mainline outputs
+
+`sky130-mainline` is a lightweight facade over `optimize-rounds` for quick
+SKY130/ngspice smoke closure. By default it runs a small nominal search and
+writes a mainline bundle; `--full-validation` enables configured extended
+validation cases. The command keeps the same boundary:
+`engineering_validity = simulation_only`.
+
+| File | Purpose |
+|---|---|
+| `mainline_validation.json` | Machine-readable preflight, target status, best run, artifact paths, and validation-case statuses. |
+| `sky130_mainline_report.md` | Compact human-readable summary of the same mainline status. |
+| `validation_summary.csv` | One row per configured validation case. Lightweight mode skips full-matrix cases such as `pvt_load`; full mode records executed case status. |
+| `optimization_leaderboard.csv` / `optimization_history.json` | Existing multi-round search outputs reused by the mainline facade. |
+| `best_next_candidates.csv` | Candidate table copied from the best run when available. |
+
+Stable `mainline_validation.json` fields:
+
+| Field | Meaning |
+|---|---|
+| `mode` | `lightweight` or `full_validation`. |
+| `full_validation` | Boolean mirror of `--full-validation`. |
+| `data_source` | `real_simulation_csv`. |
+| `engineering_validity` | `simulation_only`. |
+| `target` | Primary target metric, threshold, value, and pass/status fields. |
+| `best_run` | Best run directory, score, rank status, and candidate provenance. |
+| `preflight` | PDK/ngspice/mock availability and fallback metadata. |
+| `validation_cases` | Per-case status, skip reason, output directory, run count, and target-value range. |
+
 ## params.yaml
 
 用途：批量评价时描述每个 run 的参数和仿真条件。

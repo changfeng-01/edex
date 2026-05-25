@@ -491,6 +491,35 @@ The validation target is configured in `config/sky130_validation.yaml`. The curr
 
 The local fixture `examples/sky130_candidate_chain_row.json` provides a three-output SKY130 chain-style testbench so overlap can be evaluated. During preparation, the workflow generates a small local `sky130_minimal.lib.spice` per run that references the real SKY130 1.8 V nfet/pfet model files without loading the full PDK library.
 
+### Lightweight SKY130 Mainline
+
+For a faster end-to-end check, use the lightweight mainline facade. It keeps the
+default run small, writes a compact validation bundle, and only enables the full
+validation matrix when requested:
+
+```powershell
+python -m goa_eval.cli sky130-mainline `
+  --sweep config/sky130_candidate_sweep.yaml `
+  --validation-config config/sky130_validation.yaml `
+  --pdk-root tools/volare-pdks/sky130A `
+  --source-dataset local_external_ngspice `
+  --rounds 1 `
+  --max-runs-per-round 3 `
+  --output-root outputs/sky130_mainline
+```
+
+If the local PDK or `ngspice` is unavailable, the command defaults to
+`--mock-if-unavailable` and falls back to a mock smoke run so the software chain
+can still be exercised. Add `--full-validation` to run the configured extended
+validation cases such as PVT/load coverage; without it, full-matrix cases are
+recorded as skipped by lightweight policy.
+
+Mainline outputs include `mainline_validation.json`,
+`sky130_mainline_report.md`, `optimization_leaderboard.csv`,
+`best_next_candidates.csv`, and `validation_summary.csv`. These artifacts remain
+`engineering_validity=simulation_only` and are not physical, lab, or silicon
+evidence.
+
 ## License
 
 MIT License. See `LICENSE`.
