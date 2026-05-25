@@ -10,7 +10,9 @@ from typing import Any
 import pandas as pd
 import yaml
 
+from goa_eval.circuit_profiles import DEFAULT_CIRCUIT_PROFILE_PATH, load_circuit_profiles, resolve_circuit_profile
 from goa_eval.param_space import parse_engineering_value
+from goa_eval.parameter_semantics import affected_parameters_for_rule, load_parameter_semantics
 from goa_eval.schemas import RESULT_VERSION, SCHEMA_VERSION
 from goa_eval.topology_profiles import load_eval_profiles
 
@@ -34,6 +36,18 @@ CANDIDATE_COLUMNS = [
     "parameters_json",
     "search_score",
     "rationale",
+    "parameter_group",
+    "semantic_tags",
+    "affected_metrics",
+    "risk_tags",
+    "risk_level",
+    "expected_tradeoff",
+    "requires_user_confirmation",
+    "must_resimulate",
+    "source_metric",
+    "source_rule",
+    "ai_review_status",
+    "provenance",
 ]
 
 
@@ -79,9 +93,16 @@ def load_baseline_params(path: Path) -> dict[str, object]:
     return dict(raw.get("parameters", raw) or {})
 
 
-def propose_candidates(param_space: dict[str, list[object]], recommendations: list[dict]) -> list[dict]:
+def propose_candidates(
+    param_space: dict[str, list[object]],
+    recommendations: list[dict],
+    *,
+    profile_file: Path | None = None,
+    parameter_semantics: dict[str, Any] | None = None,
+) -> list[dict]:
     candidates: list[dict] = []
-    profiles = load_eval_profiles()
+    profiles = load_circuit_profiles(profile_file or DEFAULT_CIRCUIT_PROFILE_PATH) if profile_file else load_eval_profiles()
+    parameter_semantics = parameter_semantics or {}
     for recommendation in recommendations:
         rec_id = str(recommendation.get("recommendation_id", ""))
         metric = str(recommendation.get("trigger_metric", ""))
@@ -122,7 +143,7 @@ def propose_candidates(param_space: dict[str, list[object]], recommendations: li
             _append_if_available(candidates, param_space, "W_pmos", "increase", 84, recommendation)
             _append_if_available(candidates, param_space, "load_cap", "decrease", 80, recommendation)
             _append_if_available(candidates, param_space, "capacitance", "decrease", 74, recommendation)
-        _append_profile_rule_candidates(candidates, param_space, recommendation, profiles)
+        _append_profile_rule_candidates(candidates, param_space, recommendation, profiles, parameter_semantics)
     return candidates
 
 
@@ -131,12 +152,17 @@ def _append_profile_rule_candidates(
     param_space: dict[str, list[object]],
     recommendation: dict,
     profiles: dict,
+    parameter_semantics: dict[str, Any] | None = None,
 ) -> None:
     profile_name = str(recommendation.get("topology_profile", "") or "")
+    profile_name = str(recommendation.get("circuit_profile", profile_name) or "")
     metric = str(recommendation.get("trigger_metric", "") or "")
     if not profile_name or not metric:
         return
     profile = profiles.get(profile_name)
+    if not isinstance(profile, dict):
+        profile = resolve_circuit_profile(profile_name, profiles)
+        profile_name = str(profile.get("name", profile_name))
     if not isinstance(profile, dict):
         return
     rules = (profile.get("candidate_rules", {}) or {}).get(metric, [])
@@ -144,8 +170,20 @@ def _append_profile_rule_candidates(
         rules = [rules]
     if not isinstance(rules, list):
         return
-    for rule in rules:
+    for index, rule in enumerate(rules):
         if not isinstance(rule, dict):
+            continue
+        if parameter_semantics and rule.get("semantic_tags"):
+            _append_semantic_rule_candidates(
+                candidates,
+                param_space,
+                recommendation,
+                profile_name,
+                metric,
+                index,
+                rule,
+                parameter_semantics,
+            )
             continue
         parameters = rule.get("parameters", [])
         if isinstance(parameters, str):
@@ -165,6 +203,64 @@ def _append_profile_rule_candidates(
             )
 
 
+def _append_semantic_rule_candidates(
+    candidates: list[dict],
+    param_space: dict[str, list[object]],
+    recommendation: dict,
+    profile_name: str,
+    metric: str,
+    rule_index: int,
+    rule: dict,
+    parameter_semantics: dict[str, Any],
+) -> None:
+    direction = str(rule.get("direction", "review") or "review")
+    priority = int(rule.get("priority", 50) or 50)
+    rationale = str(rule.get("rationale", "") or "")
+    source_rule = f"{profile_name}.candidate_rules.{metric}[{rule_index}]"
+    for match in affected_parameters_for_rule(rule, parameter_semantics):
+        affected = [parameter for parameter in match["affected_parameters"] if parameter in param_space]
+        if not affected:
+            continue
+        values, unit = _values_and_unit(param_space[affected[0]])
+        for value in values:
+            parameters_json = {parameter: value for parameter in affected}
+            candidates.append(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "result_version": RESULT_VERSION,
+                    "parameter": ";".join(affected),
+                    "parameter_group": match.get("parameter_group", ""),
+                    "direction": direction,
+                    "candidate_value": value,
+                    "candidate_unit": unit,
+                    "priority": priority,
+                    "source_recommendation": recommendation.get("recommendation_id"),
+                    "trigger_metric": recommendation.get("trigger_metric"),
+                    "data_source": recommendation.get("data_source", "real_simulation_csv"),
+                    "engineering_validity": recommendation.get("engineering_validity", "simulation_only"),
+                    "strategy": "rule",
+                    "candidate_kind": "parameter_group" if match.get("parameter_group") else "single_parameter",
+                    "changed_parameters": ";".join(affected),
+                    "parameters_json": parameters_json,
+                    "search_score": priority,
+                    "metric_penalty_severity": recommendation.get("metric_penalty_severity"),
+                    "metric_penalty_deduction": recommendation.get("metric_penalty_deduction"),
+                    "rationale": rationale or match.get("expected_tradeoff") or f"{';'.join(affected)} {direction}",
+                    "semantic_tags": ";".join(match.get("semantic_tags", [])),
+                    "affected_metrics": ";".join(match.get("affected_metrics", [])),
+                    "risk_tags": ";".join(match.get("risk_tags", [])),
+                    "risk_level": match.get("risk_level", ""),
+                    "expected_tradeoff": match.get("expected_tradeoff", ""),
+                    "requires_user_confirmation": match.get("requires_user_confirmation", True),
+                    "must_resimulate": match.get("must_resimulate", True),
+                    "source_metric": metric,
+                    "source_rule": source_rule,
+                    "ai_review_status": "not_reviewed",
+                    "provenance": {"profile": profile_name, "source_rule": source_rule, "semantic_tags": match.get("semantic_tags", [])},
+                }
+            )
+
+
 def constrained_random_candidates(
     param_space: dict[str, list[object]],
     recommendations: list[dict],
@@ -172,11 +268,18 @@ def constrained_random_candidates(
     max_candidates: int = 10,
     seed: int = 42,
     baseline_params: dict[str, object] | None = None,
+    profile_file: Path | None = None,
+    parameter_semantics: dict[str, Any] | None = None,
 ) -> list[dict]:
     baseline_params = baseline_params or {}
     rule_candidates = [
         candidate
-        for candidate in propose_candidates(param_space, recommendations)
+        for candidate in propose_candidates(
+            param_space,
+            recommendations,
+            profile_file=profile_file,
+            parameter_semantics=parameter_semantics,
+        )
         if _matches_direction(candidate, baseline_params)
     ]
     single_candidates = [_search_candidate([candidate], "single_parameter") for candidate in rule_candidates]
@@ -275,6 +378,7 @@ def _rows_with_ids(candidates: list[dict]) -> list[dict]:
         row["candidate_kind"] = row["candidate_kind"] or "single_parameter"
         row["changed_parameters"] = row["changed_parameters"] or row["parameter"]
         row["parameters_json"] = _json_cell(row["parameters_json"] or {row["parameter"]: row["candidate_value"]})
+        row["provenance"] = _json_cell(row["provenance"] or {})
         row["search_score"] = row["search_score"] if row["search_score"] != "" else row["priority"]
         row["rationale"] = row["rationale"] or f"{row['parameter']} {row['direction']}"
         rows.append(row)
@@ -314,6 +418,11 @@ def _candidate_markdown(rows: list[dict]) -> str:
                 f"- direction: `{row['direction']}`",
                 f"- candidate_value: `{value_text}`",
                 f"- changed_parameters: `{row['changed_parameters']}`",
+                f"- parameter_group: `{row['parameter_group']}`",
+                f"- semantic_tags: `{row['semantic_tags']}`",
+                f"- risk_level: `{row['risk_level']}`",
+                f"- requires_user_confirmation: `{row['requires_user_confirmation']}`",
+                f"- must_resimulate: `{row['must_resimulate']}`",
                 f"- search_score: `{row['search_score']}`",
                 f"- source_recommendation: `{row['source_recommendation']}`",
                 f"- trigger_metric: `{row['trigger_metric']}`",
@@ -358,6 +467,24 @@ def _search_candidate(parts: list[dict], kind: str) -> dict:
         "parameters_json": parameters,
         "search_score": search_score,
         "rationale": _rationale(parts, kind),
+        "parameter_group": ";".join(_unique(part.get("parameter_group", "") for part in parts)),
+        "semantic_tags": ";".join(_unique_tags(parts, "semantic_tags")),
+        "affected_metrics": ";".join(_unique_tags(parts, "affected_metrics")),
+        "risk_tags": ";".join(_unique_tags(parts, "risk_tags")),
+        "risk_level": _max_risk_level(parts),
+        "expected_tradeoff": "; ".join(_unique(part.get("expected_tradeoff", "") for part in parts)),
+        "requires_user_confirmation": any(_truthy(part.get("requires_user_confirmation")) for part in parts),
+        "must_resimulate": any(_truthy(part.get("must_resimulate")) for part in parts),
+        "source_metric": ";".join(_unique(part.get("source_metric", part.get("trigger_metric", "")) for part in parts)),
+        "source_rule": ";".join(_unique(part.get("source_rule", "") for part in parts)),
+        "ai_review_status": "not_reviewed" if any(part.get("ai_review_status") for part in parts) else "",
+        "provenance": {
+            "parts": [
+                part.get("provenance")
+                for part in parts
+                if part.get("provenance")
+            ]
+        },
     }
 
 
@@ -429,3 +556,29 @@ def _json_cell(value) -> str:
     if isinstance(value, str):
         return value
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _unique(values) -> list[str]:
+    return sorted({str(value) for value in values if str(value or "")})
+
+
+def _unique_tags(parts: list[dict], key: str) -> list[str]:
+    values: set[str] = set()
+    for part in parts:
+        raw = part.get(key, "")
+        if isinstance(raw, str):
+            values.update(item for item in raw.split(";") if item)
+        elif isinstance(raw, list):
+            values.update(str(item) for item in raw if str(item))
+    return sorted(values)
+
+
+def _max_risk_level(parts: list[dict]) -> str:
+    order = {"": 0, "low": 1, "medium": 2, "high": 3}
+    return max((str(part.get("risk_level", "")) for part in parts), key=lambda item: order.get(item, 0), default="")
+
+
+def _truthy(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"true", "1", "yes"}

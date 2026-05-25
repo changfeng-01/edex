@@ -1,0 +1,101 @@
+schema_version: "1.0"
+
+profiles:
+  default:
+    aliases: []
+    boundary:
+      data_source: "real_simulation_csv"
+      engineering_validity: "simulation_only"
+    metrics: {}
+
+  ota_general:
+    type: "analog_amplifier"
+    aliases:
+      - ota
+      - opamp
+      - two_stage_opamp
+      - amplifier
+    boundary:
+      data_source: "real_simulation_artifacts"
+      engineering_validity: "simulation_only"
+    required_analyses:
+      - op
+      - ac
+      - tran
+    optional_analyses:
+      - dc
+      - noise
+    metrics:
+      dc_gain_db:
+        source: ac_metrics
+        source_analysis: ac
+        unit: dB
+        minimum: 60dB
+        direction: larger_better
+      unity_gain_hz:
+        source: ac_metrics
+        source_analysis: ac
+        unit: Hz
+        minimum: 20MHz
+        direction: larger_better
+      phase_margin_deg:
+        source: ac_metrics
+        source_analysis: ac
+        unit: deg
+        minimum: 55deg
+        direction: target_or_larger
+      static_power_w:
+        source: op_metrics
+        source_analysis: op
+        unit: W
+        maximum: 5mW
+        direction: smaller_better
+      slew_rate_v_per_s:
+        source: tran_metrics
+        source_analysis: tran
+        unit: V/s
+        minimum: 10000000.0
+        direction: larger_better
+    hard_constraints:
+      phase_margin_deg:
+        minimum: 55deg
+      static_power_w:
+        maximum: 5mW
+    objective:
+      scalarization:
+        method: weighted_sum
+        missing_metric_policy: not_evaluable
+      weights:
+        dc_gain_db: 0.25
+        unity_gain_hz: 0.20
+        phase_margin_deg: 0.15
+        static_power_w: 0.20
+        slew_rate_v_per_s: 0.20
+    candidate_rules:
+      dc_gain_db:
+        - semantic_tags:
+            - input_pair_width
+            - gain_device_width
+            - gm_control
+          direction: increase
+          priority: 92
+          rationale: "Increase effective transconductance or gain-device dimensions for gain recovery."
+      unity_gain_hz:
+        - semantic_tags:
+            - bias_current
+            - speed_power_tradeoff
+          direction: increase
+          priority: 88
+          rationale: "Increasing bias current may improve bandwidth but increases static power."
+      static_power_w:
+        - semantic_tags:
+            - bias_current
+          direction: decrease
+          priority: 96
+          rationale: "Reduce bias current when static power dominates."
+      phase_margin_deg:
+        - semantic_tags:
+            - compensation_capacitance
+          direction: increase
+          priority: 85
+          rationale: "Increasing compensation capacitance may improve phase margin but reduce bandwidth."

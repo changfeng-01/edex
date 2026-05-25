@@ -10,6 +10,7 @@ import pandas as pd
 
 from goa_eval.config import load_configs
 from goa_eval.batch_eval import run_batch_evaluation
+from goa_eval.circuit_profiles import validate_profile_references
 from goa_eval.evaluation.feature_extractor import extract_waveform_features
 from goa_eval.evaluation.mock_waveform import generate_mock_waveform
 from goa_eval.evaluation.scoring import compute_metric_results
@@ -17,6 +18,7 @@ from goa_eval.io_utils import copy_initial_raw_inputs, ensure_run_dirs, extract_
 from goa_eval.llm_analysis import run_llm_parameter_analysis
 from goa_eval.multi_round_optimizer import run_multi_round_optimization
 from goa_eval.optimizer import constrained_random_candidates, load_baseline_params, load_param_space, propose_candidates, write_candidate_outputs
+from goa_eval.parameter_semantics import load_parameter_semantics
 from goa_eval.parsers.design_parser import build_design_version, discover_design_roots
 from goa_eval.parsers.mapping_parser import parse_mapping
 from goa_eval.parsers.metric_table_parser import parse_metric_table
@@ -92,6 +94,8 @@ def main(argv: list[str] | None = None) -> int:
             output_node_pattern=args.output_node_pattern,
             stage_group_size=args.stage_group_size,
             topology=args.topology,
+            circuit_profile=args.circuit_profile,
+            profile_file=Path(args.profile_file) if args.profile_file else None,
         )
         return 0
     if args.command == "recommend":
@@ -111,8 +115,14 @@ def main(argv: list[str] | None = None) -> int:
         metrics = pd.read_csv(Path(args.metrics)) if args.metrics else pd.DataFrame()
         recommendations = build_recommendations(summary, score, metrics)
         param_space = load_param_space(Path(args.param_space))
+        semantics = load_parameter_semantics(Path(args.params)) if args.params else None
         if args.strategy == "rule":
-            candidates = propose_candidates(param_space, recommendations)
+            candidates = propose_candidates(
+                param_space,
+                recommendations,
+                profile_file=Path(args.profile_file) if args.profile_file else None,
+                parameter_semantics=semantics,
+            )
         else:
             candidates = constrained_random_candidates(
                 param_space,
@@ -120,8 +130,17 @@ def main(argv: list[str] | None = None) -> int:
                 max_candidates=args.max_candidates,
                 seed=args.seed,
                 baseline_params=load_baseline_params(Path(args.baseline_params)) if args.baseline_params else None,
+                profile_file=Path(args.profile_file) if args.profile_file else None,
+                parameter_semantics=semantics,
             )
         write_candidate_outputs(candidates, csv_path=Path(args.output_csv), markdown_path=Path(args.output_md))
+        return 0
+    if args.command == "validate-config":
+        validate_profile_references(
+            profile_file=Path(args.profile_file),
+            semantics_file=Path(args.params) if args.params else None,
+        )
+        print(f"validated {args.profile_file}" + (f" with {args.params}" if args.params else ""))
         return 0
     if args.command == "analyze-params":
         run_llm_parameter_analysis(
@@ -242,6 +261,8 @@ def build_parser() -> argparse.ArgumentParser:
     real.add_argument("--output-node-pattern")
     real.add_argument("--stage-group-size", type=int)
     real.add_argument("--topology")
+    real.add_argument("--circuit-profile")
+    real.add_argument("--profile-file")
     recommend = sub.add_parser("recommend")
     recommend.add_argument("--summary", required=True)
     recommend.add_argument("--score")
@@ -259,8 +280,13 @@ def build_parser() -> argparse.ArgumentParser:
     candidates.add_argument("--max-candidates", type=int, default=10)
     candidates.add_argument("--seed", type=int, default=42)
     candidates.add_argument("--baseline-params")
+    candidates.add_argument("--profile-file")
+    candidates.add_argument("--params")
     candidates.add_argument("--output-csv", default="outputs/next_candidates.csv")
     candidates.add_argument("--output-md", default="outputs/next_candidates.md")
+    validate = sub.add_parser("validate-config")
+    validate.add_argument("--profile-file", required=True)
+    validate.add_argument("--params")
     analyze = sub.add_parser("analyze-params")
     analyze.add_argument("--summary", required=True)
     analyze.add_argument("--score")

@@ -33,6 +33,12 @@ def score_real_evaluation(
     profile = resolve_topology_profile(topology, profiles or load_eval_profiles())
     profile_scores, analysis_penalties, not_evaluable = evaluate_profile_metrics(analysis_metrics or {}, profile)
     profile_score = _mean([item["score"] for item in profile_scores.values()])
+    objective_score = profile_score
+    objective_breakdown = {
+        "profile_metric_score": profile_score,
+        "missing_required_metric_penalty": float(len(_not_evaluable_required_metrics(profile, not_evaluable))),
+        "risk_penalty": 0.0,
+    }
     weights = {**spec.get("weights", {}), **profile.get("weights", {})}
     weighted = {
         "function_score": function_score,
@@ -65,7 +71,12 @@ def score_real_evaluation(
         "analysis_metric_penalties": analysis_penalties,
         "profile_metric_scores": profile_scores,
         "not_evaluable_metrics": not_evaluable,
+        "not_evaluable_required_metrics": _not_evaluable_required_metrics(profile, not_evaluable),
         "topology_profile": profile.get("name", "default"),
+        "circuit_profile": profile.get("name", "default"),
+        "profile_source": profile.get("profile_source"),
+        "objective_score": _clamp(objective_score),
+        "objective_breakdown": objective_breakdown,
         "soft_scores": soft_scores,
         "score_explanations": soft_scores,
         **{key: _clamp(value) for key, value in weighted.items()},
@@ -227,6 +238,22 @@ def evaluate_profile_metrics(analysis_metrics: dict, profile: dict) -> tuple[dic
         }
         penalties[metric] = penalty
     return scores, penalties, not_evaluable
+
+
+def _not_evaluable_required_metrics(profile: dict, not_evaluable: dict[str, str]) -> list[str]:
+    required = {str(item) for item in profile.get("required_analyses", []) or []}
+    if not required:
+        return []
+    missing = set()
+    for key in not_evaluable:
+        lowered = str(key).lower()
+        for analysis in required:
+            if lowered == f"{analysis}_metrics" or lowered.startswith(f"missing {analysis}_metrics"):
+                missing.add(key)
+    for metric, rule in (profile.get("metrics", {}) or {}).items():
+        if str(rule.get("source_analysis", "")).lower() in required and metric in not_evaluable:
+            missing.add(metric)
+    return sorted(missing)
 
 
 def _check_bool(value, expected: bool, reason: str) -> dict:

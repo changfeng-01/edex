@@ -23,6 +23,7 @@ from goa_eval.plotter import (
 )
 from goa_eval.reporter import write_optimization_dataset, write_real_manifest, write_real_metrics_csv, write_real_report, write_real_summary
 from goa_eval.scorer import score_real_evaluation
+from goa_eval.circuit_profiles import load_circuit_profiles
 from goa_eval.topology_profiles import load_eval_profiles, resolve_topology_profile
 from goa_eval.waveform_io import read_real_waveform
 
@@ -40,6 +41,8 @@ def run_real_waveform_evaluation(
     output_node_pattern: str | None = None,
     stage_group_size: int | None = None,
     topology: str | None = None,
+    circuit_profile: str | None = None,
+    profile_file: Path | None = None,
     analysis_metrics: dict | None = None,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -152,15 +155,16 @@ def run_real_waveform_evaluation(
         run_id=run_id,
         run_timestamp=run_timestamp,
     )
-    profiles = load_eval_profiles()
-    profile = resolve_topology_profile(topology, profiles)
+    profiles = load_circuit_profiles(profile_file) if profile_file else load_eval_profiles()
+    resolved_profile_name = circuit_profile or topology
+    profile = resolve_topology_profile(resolved_profile_name, profiles)
     analysis_metrics = analysis_metrics or extract_analysis_metrics(output_dir, topology_profile=profile["name"])
     write_analysis_metrics(output_dir / "analysis_metrics.json", analysis_metrics)
     score_summary = score_real_evaluation(
         summary,
         evaluation.stage_rows,
         spec,
-        topology=topology,
+        topology=resolved_profile_name,
         analysis_metrics=analysis_metrics,
         profiles=profiles,
     )

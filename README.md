@@ -43,8 +43,9 @@ engineering_validity = simulation_only
 - `propose-candidates` 默认使用 `constrained-random`，支持单参数和两参数组合候选，并保留固定 seed 以便复现。
 - 候选生成会读取 waveform penalty 和 topology-aware penalty，提高主要失效指标对应参数的搜索权重。
 - Profile candidate rules 可将 `dc_gain_db`、`static_power_w`、`frequency_hz` 等 profile 指标映射到参数空间中的 `m1_width`、`m2_width`、`load_cap`、`ibias` 等候选。
+- 新增 `config/circuit_profiles.yaml` 和 `config/parameter_semantics.yaml`，支持把候选生成从固定参数名匹配扩展为语义标签匹配，例如 `input_pair_width`、`bias_current`、`compensation_capacitance`。
 - `All_pulses_exist`、`Seq_pass` 等硬约束失败也能生成恢复候选，例如驱动能力、负载、电平阈值复核类建议。
-- `next_candidates.csv` 增加 `strategy`、`candidate_kind`、`changed_parameters`、`parameters_json`、`search_score`、`rationale` 等字段。
+- `next_candidates.csv` 增加 `strategy`、`candidate_kind`、`changed_parameters`、`parameters_json`、`search_score`、`rationale`、`parameter_group`、`semantic_tags`、`must_resimulate` 等字段。
 
 ### 4. 多轮优化驱动
 
@@ -78,6 +79,8 @@ engineering_validity = simulation_only
 
 ```text
 config/
+├── circuit_profiles.yaml        # 通用 circuit profile、目标、硬约束和语义候选规则
+├── parameter_semantics.yaml     # 参数 target、单位、语义标签、风险和参数组
 ├── spec.yaml                    # 默认阈值、评分权重和级联配置
 ├── sky130_eval_profiles.yaml    # topology profile、profile metrics 和候选规则
 ├── sky130_sweep.yaml            # SKY130 参数扫描示例
@@ -203,6 +206,32 @@ python -m goa_eval.cli propose-candidates \
 ```
 
 `--strategy rule` 只输出规则映射的单参数候选；`constrained-random` 会生成单参数和两参数组合候选。
+
+### 语义标签驱动候选参数
+
+当电路已经有 circuit profile 和参数语义配置时，可以让候选生成优先按工程含义匹配，而不是只按参数名匹配：
+
+```bash
+python -m goa_eval.cli propose-candidates \
+  --summary outputs/example/real_summary.json \
+  --score outputs/example/score_summary.json \
+  --param-space config/parameter_semantics.yaml \
+  --profile-file config/circuit_profiles.yaml \
+  --params config/parameter_semantics.yaml \
+  --strategy rule \
+  --output-csv outputs/example/next_candidates.csv \
+  --output-md outputs/example/next_candidates.md
+```
+
+例如 `dc_gain_db` 低于 profile 目标时，`ota_general` 的规则会匹配 `input_pair_width` / `gm_control` 等语义标签，并生成 `input_pair` 参数组候选。候选仍然只是下一轮仿真建议，`must_resimulate=true`，不表示参数已经被物理验证。
+
+配置校验入口：
+
+```bash
+python -m goa_eval.cli validate-config \
+  --profile-file config/circuit_profiles.yaml \
+  --params config/parameter_semantics.yaml
+```
 
 ### 批量评价多个 run
 

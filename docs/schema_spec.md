@@ -110,6 +110,63 @@ Topology-aware scoring adds optional fields without changing the existing wavefo
 | `analysis_metric_penalties` | object | Penalty details for profile metrics such as gain, bandwidth, switching threshold, frequency, startup, output swing, or static power. |
 | `not_evaluable_metrics` | object | Missing or unreadable analysis inputs. These do not fail the run; they only mark profile metrics as unavailable. |
 | `profile_score` | number/null | Weighted profile-specific score when a non-default profile is active or profile metrics are present. |
+| `circuit_profile` | string | Backward-compatible profile name field for the new circuit-profile path. |
+| `profile_source` | string/null | Profile file used when a circuit profile was loaded. |
+| `objective_score` | number/null | Current profile/objective score used by the generalized path. |
+| `objective_breakdown` | object | Compact score components, including profile score and missing required metric count. |
+| `not_evaluable_required_metrics` | array | Required profile metrics or analyses that could not be evaluated. |
+
+## circuit_profiles.yaml
+
+Purpose: generic circuit profile configuration for the minimum engineering-generalization loop. `config/sky130_eval_profiles.yaml` remains a compatible fallback for existing SKY130/topology workflows.
+
+Stable top-level shape:
+
+```yaml
+schema_version: "1.0"
+profiles:
+  ota_general:
+    aliases: ["ota", "opamp"]
+    boundary:
+      data_source: "real_simulation_artifacts"
+      engineering_validity: "simulation_only"
+    required_analyses: ["op", "ac", "tran"]
+    metrics:
+      unity_gain_hz:
+        source: ac_metrics
+        source_analysis: ac
+        unit: Hz
+        minimum: 20MHz
+    objective:
+      scalarization:
+        method: weighted_sum
+      weights:
+        unity_gain_hz: 0.20
+    candidate_rules:
+      unity_gain_hz:
+        - semantic_tags: ["bias_current"]
+          direction: increase
+          priority: 88
+```
+
+Numeric thresholds may use explicit units such as `5mW`, `20MHz`, `55deg`, `10uA`, `0.8um`, or `1pF`. Ambiguous suffix-only values such as `5u`, `10m`, or `20M` should not be used in public configs.
+
+## parameter_semantics.yaml
+
+Purpose: define adjustable parameter meaning separately from parameter names so candidate rules can match engineering tags.
+
+Stable fields:
+
+| Field | Description |
+|---|---|
+| `parameters.<name>.target` | Optional simulator/netlist target such as `XM1.W`. |
+| `unit` / `values` | Candidate unit and explicit candidate values. |
+| `semantic_tags` | Engineering tags used by profile candidate rules. |
+| `affects` | Metrics likely affected by this parameter. |
+| `risk_tags` | Human-review risk categories such as power, area, mismatch, or stability. |
+| `parameter_groups` | Coupled parameter sets such as matched input-pair devices. |
+
+Semantic candidates generated from this file keep `requires_user_confirmation = true` and `must_resimulate = true`.
 
 ## analysis_metrics.json
 
@@ -221,8 +278,22 @@ These metrics are simulation-only analysis helpers. Missing OP/AC/DC data should
 | `parameters_json` | 本候选的参数键值 JSON。 |
 | `search_score` | 约束搜索排序分数，综合规则优先级、指标惩罚严重度和组合复杂度。 |
 | `rationale` | 生成该候选的简要原因。 |
+| `parameter_group` | 语义参数组，例如 `input_pair`；单参数候选可为空。 |
+| `semantic_tags` | 触发本候选的语义标签，多个标签以分号分隔。 |
+| `affected_metrics` | 参数语义配置中声明的潜在影响指标。 |
+| `risk_tags` | 参数语义配置中声明的风险标签。 |
+| `risk_level` | `low`、`medium` 或 `high`。 |
+| `expected_tradeoff` | 候选规则或语义匹配给出的权衡说明。 |
+| `requires_user_confirmation` | 是否需要人工确认；语义候选默认为 `true`。 |
+| `must_resimulate` | 是否必须重新仿真；语义候选默认为 `true`。 |
+| `source_metric` | 触发候选的 profile 指标。 |
+| `source_rule` | 匹配到的 profile 规则路径。 |
+| `ai_review_status` | AI 审阅状态，当前默认为 `not_reviewed` 或空。 |
+| `provenance` | JSON 字符串，记录 profile、source_rule 或组合候选来源。 |
 
 候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。当 `score_summary.json` 提供 `metric_penalties` 或 `analysis_metric_penalties` 时，严重超限指标会得到更高搜索权重；两参数组合会保留组合惩罚，避免过早偏向复杂改动。Topology-aware candidate generation uses `config/sky130_eval_profiles.yaml` `candidate_rules` to map active profile metrics such as `dc_gain_db`, `static_power_w`, `switching_threshold_v`, or `frequency_hz` onto parameters that exist in the current parameter space. If a profile rule references parameters that are absent from the current parameter space, those entries are skipped.
+
+When `--profile-file config/circuit_profiles.yaml --params config/parameter_semantics.yaml` is provided, candidate generation first matches `semantic_tags`, expands coupled `parameter_groups`, and writes risk/provenance fields. If no semantic tags or semantic config are available, the old parameter-name fallback remains active.
 
 Hard-constraint failures such as `All_pulses_exist` and `Seq_pass` can also
 produce recovery candidates for drive-strength, load, and threshold-review

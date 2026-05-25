@@ -9,6 +9,7 @@ The demo exercises the current CircuitPilot workflow end to end:
 - `evaluate-real` reads the public waveform CSV and writes metrics, score, reports, manifest, and figures.
 - `recommend` turns the score and metric summary into a human-readable recommendation report.
 - `propose-candidates` generates 10 deterministic constrained-random next-run candidates with `seed=42`.
+- The generalized semantic-candidate path is documented in `README.md` and `docs/schema_spec.md`; the fixed public demo keeps the smaller legacy sample inputs so it remains lightweight and deterministic.
 - `analyze-params` writes a DeepSeek-compatible parameter analysis using a fixed mock response, so no API key or network call is required.
 - Dashboard data in `frontend/public/data/` is refreshed from the same run.
 
