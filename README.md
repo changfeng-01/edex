@@ -3,87 +3,123 @@
 中文名：芯智调参：基于仿真数据的电路参数智能推荐系统  
 English name: CircuitPilot: Simulation-Driven Intelligent Parameter Recommendation for Circuit Design
 
-CircuitPilot 是一个面向电路仿真结果的评价、诊断和规则化参数推荐原型。项目从 8T1C / GOA 级联波形分析流程中抽取出可复用的软件部分，Python 包名保留为 `goa_eval`，便于兼容已有脚本和测试。
+CircuitPilot 是一个面向电路仿真结果的评价、诊断、参数候选生成和仿真调度原型。项目最早来自 8T1C / GOA 级联波形分析流程，当前已扩展到 SKY130/ngspice 数据接入、拓扑感知评分、参数扫描和多轮候选搜索。Python 包名仍保留为 `goa_eval`，用于兼容已有脚本和测试；公开项目名使用 CircuitPilot。
 
 ## 项目定位
 
-当前版本处理的是仿真 CSV 文件，不是实物测试平台，也不是已经闭环接入外部 SPICE 的全自动优化系统。它完成的核心工作是：
-
-- 读取外部仿真导出的 CSV 波形；
-- 归一化 `XVAL` / `TIME`、`v(o1)`、`v(xs4.pu)` 等常见列名；
-- 自动识别 `o1~oN` 输出节点的合法扫描窗口；
-- 计算电压、时序、级间重叠、纹波、保持损失和误触发等指标；
-- 生成 CSV / JSON / Markdown / PNG 评价包；
-- 按硬约束、软评分和失败原因生成诊断结果；
-- 基于当前指标给出保守的下一轮参数调整建议；
-- 基于规则建议和参数空间生成下一轮仿真候选参数表；
-- 支持 `runs/run_001`、`runs/run_002` 形式的批量评价入口。
-
-所有真实 CSV 评价输出必须保留以下边界标记：
+当前版本处理的是仿真数据和仿真器输出文件，不是实物测试平台。所有真实 CSV 评价输出必须保留：
 
 ```text
 data_source = real_simulation_csv
 engineering_validity = simulation_only
 ```
 
-这些标记表示结果来自电路仿真 CSV，只能作为 simulation-only 工程分析依据，不能表述为物理样机或实验室测试结论。
+这表示结果只能作为仿真分析、下一轮参数建议和软件链路验证依据，不能写成芯片、样机或实验室实测结论。`optimize-rounds` 能调度多轮仿真扫描并生成候选，但仍然是 simulation-only 搜索轨迹，不等同于已经完成物理验证的自动优化闭环。
 
-## 为什么做这个项目
+## 最近更新总结
 
-电路迭代过程中通常会产生大量波形 CSV、截图和手工记录。若只依赖人工查看，后续很难稳定比较不同参数组合，也难以把评价结果接入参数搜索或优化算法。CircuitPilot 的目标是把仿真结果整理为固定字段、固定单位、可复核的数据包，让后续的参数空间搜索、规则推荐和优化器接口可以基于结构化数据继续演进。
+本轮项目更新的重点是把早期的单次波形评价工具，扩展为更接近“仿真评价 + 参数候选 + 多轮搜索”的完整软件链路。
 
-## 当前已实现功能
+### 1. SKY130 / ngspice 链路
 
-- 识别 `XVAL` / `TIME` 时间列，以及 `v(o1)`、`v(o2)`、`v(xs4.pu)` 等波形列名。
-- 对 `o1~oN` 输出节点做逐级扫描窗口识别；当 CSV 只有 `o1~o8` 时按 8 级兼容评价。
-- 支持 720 级级联配置接口；这表示框架可扩展，不表示示例数据已经包含 720 级真实仿真结果。
-- 区分合法重复扫描脉冲和真正误触发，避免把周期性扫描误判为异常。
-- overlap 使用时间区间端点交集累计，适配非均匀采样。
-- ripple 在 hold / non-selected 窗口计算，并排除上升沿和下降沿区域。
-- 低频保持时长不足时输出 `not_evaluable_with_current_waveform`，不硬判低频稳定性失败。
-- 评分结果区分 `hard_constraints`、`soft_scores`、`failure_reasons` 和 `warning_reasons`。
-- 批量评价输出 `all_metrics.csv`、`all_scores.csv`、`leaderboard.csv` 和 `recommendations.md`。
-- 输出 `optimization_dataset.csv`，保留固定列和 provenance 字段，方便后续参数搜索流程读取。
-- 输出 `next_candidates.csv` / `next_candidates.md`，把规则建议转换成可复现的约束感知随机搜索候选。
+- 新增 `sky130-transient`，可从公开 SKY130 数据集 testbench 读取 SPICE，调用本机 `ngspice`，并转换为 `TIME,v(o1),...` 兼容波形。
+- 新增 `sky130-sweep`，读取 `config/sky130_sweep.yaml`，改写 SPICE 参数，批量运行仿真、评价、打分和候选生成。
+- 每个 SKY130 run 会保留 `source_netlist.spice`、`testbench.spice`、`waveform.csv`、`analysis_metrics.json`、`netlist_structure.json`、`sky130_metadata.json` 和状态文件。
+- 根目录汇总 `sky130_runs.csv`、`sky130_sweep_runs.csv`、`sky130_sweep_leaderboard.csv`、`sky130_sweep_sensitivity.csv` 和 `next_param_space.yaml`。
+- 支持 `--mock-ngspice` 和 mock 数据入口，用于没有 PDK/ngspice 时验证软件流程。
+
+### 2. 拓扑感知评价与结构特征
+
+- 新增 `config/sky130_eval_profiles.yaml`，内置 `default`、`ota`、`comparator`、`oscillator` profile，并支持 `two_stage_opamp`、`vco` 等别名。
+- 新增 OP/AC/DC/TRAN companion metrics，写入 `analysis_metrics.json`，并在 `score_summary.json` 中形成 `profile_score`、`analysis_metric_penalties` 和 `not_evaluable_metrics`。
+- OTA 关注 `dc_gain_db`、`bandwidth_3db_hz`、`unity_gain_hz`、`slew_rate_v_per_s`、`output_swing_v`、`static_power_w`。
+- Comparator 关注 `switching_threshold_v`、`output_swing_v`、`static_power_w`。
+- Oscillator / VCO 关注 `frequency_hz`、`period_std_s`、`output_swing_v`、`startup_time_s`、`static_power_w`。
+- 新增 SPICE netlist 结构解析，提取 MOS、电容、电阻、电流源、模型和节点数量等压缩摘要字段，作为 companion metadata，不直接作为物理通过证据。
+
+### 3. 评分、推荐和候选生成增强
+
+- `score_summary.json` 现在更清楚地区分 `hard_constraints`、`hard_constraint_failures`、`soft_scores`、`failure_reasons`、`warning_reasons` 和 `metric_penalties`。
+- `propose-candidates` 默认使用 `constrained-random`，支持单参数和两参数组合候选，并保留固定 seed 以便复现。
+- 候选生成会读取 waveform penalty 和 topology-aware penalty，提高主要失效指标对应参数的搜索权重。
+- Profile candidate rules 可将 `dc_gain_db`、`static_power_w`、`frequency_hz` 等 profile 指标映射到参数空间中的 `m1_width`、`m2_width`、`load_cap`、`ibias` 等候选。
+- `All_pulses_exist`、`Seq_pass` 等硬约束失败也能生成恢复候选，例如驱动能力、负载、电平阈值复核类建议。
+- `next_candidates.csv` 增加 `strategy`、`candidate_kind`、`changed_parameters`、`parameters_json`、`search_score`、`rationale` 等字段。
+
+### 4. 多轮优化驱动
+
+- 新增 `optimize-rounds`，在 `sky130-sweep` 外层运行多轮搜索，并把上一轮最佳 run 的 `next_candidates.csv` 反馈到下一轮参数空间。
+- 支持 `adaptive`、`genetic`、`bayesian`、`surrogate`、`hybrid` 策略。
+- `bayesian` 使用 Gaussian-process expected improvement；`surrogate` 使用 random-forest score model；`hybrid` 组合规则候选、遗传变异、模型排序和多样性回退。
+- 当历史样本不足或目标分数无有效方差时，模型策略会记录 fallback 状态，并选择未尝试过的多样化网格点，避免伪装成模型已学到规律。
+- 输出 `optimization_history.json`、`optimization_leaderboard.csv`、`round_summary.csv`、`final_param_space.yaml` 和 `best_next_candidates.csv`。
+- Leaderboard 保留候选来源字段，包括 `candidate_source`、`source_candidate_id`、`source_candidate_trigger_metric`、`source_candidate_parameters_json` 和 `rank_status`。
+
+### 5. 公开 demo、DeepSeek 分析和文档 schema
+
+- 公开 demo 位于 `examples/demo_run/`，可由 `scripts/build_public_demo.py` 固定重建。
+- `analyze-params` 可在已有 summary、score、metrics、candidates 基础上调用 DeepSeek V4 生成中文参数分析；真实 key 只应放在本地 `.env` 或当前进程环境变量中。
+- `docs/schema_spec.md`、`docs/metrics_spec.md` 和 `docs/project_overview.md` 已补充 topology-aware metrics、SKY130 输出、多轮优化输出和候选字段约定。
+- 单节点或少节点波形绘图逻辑已加固，避免小规模输出时图表生成失败。
+
+## 已实现能力
+
+- 读取外部仿真导出的 CSV 波形，归一化 `XVAL` / `TIME`、`v(o1)`、`v(xs4.pu)` 等常见列名。
+- 自动识别 `o1~oN` 输出节点扫描窗口，兼容 `o1~o8` 小样例和大规模级联配置。
+- 计算电压、脉宽、延迟、重叠、纹波、保持损失、误触发和级联摘要指标。
+- 区分合法重复扫描脉冲和真正误触发。
+- 在波形时长不足时将低频保持标为 `not_evaluable_with_current_waveform`，不强行判定通过或失败。
+- 生成 CSV / JSON / Markdown / PNG 评价包。
+- 输出批量榜单、推荐报告、优化数据集和下一轮参数候选表。
+- 接入 SKY130/ngspice 仿真扫描，并保留 SPICE 结构摘要和 profile companion metrics。
+- 调度多轮离散参数搜索，并保留候选来源、跳过原因和模型 fallback 状态。
 
 ## 仓库结构
 
 ```text
 config/
-└── spec.yaml                  # 默认阈值、权重和级联规模配置
+├── spec.yaml                    # 默认阈值、评分权重和级联配置
+├── sky130_eval_profiles.yaml    # topology profile、profile metrics 和候选规则
+├── sky130_sweep.yaml            # SKY130 参数扫描示例
+└── sky130_transient_spec.yaml   # SKY130 transient 评价配置
 docs/
-├── project_overview.md         # 项目总览、数据流和扩展边界
-├── metrics_spec.md             # 指标定义、单位和判定策略
-├── schema_spec.md              # 输出文件 schema 与字段约定
+├── project_overview.md          # 项目总览、数据流和扩展边界
+├── metrics_spec.md              # 指标定义、单位和判定策略
+├── schema_spec.md               # 输出文件 schema 与字段约定
 ├── public_demo_run.md           # 固定公开 demo run 的重建说明
 ├── reproduce_results.md         # 复现公开结果的最短步骤
-└── github_upload_checklist.md  # 上传 GitHub 前的检查清单
+└── profile_closed_loop_example.md
 examples/
-├── sample_waveform.csv         # 可公开的小型示例波形
-├── sample_params.yaml          # 可公开的示例参数
-└── demo_run/                   # 由公开样例生成的固定 demo 输出包
-scripts/                        # 辅助脚本，核心逻辑不放在这里
-src/goa_eval/                   # CircuitPilot 核心包
-tests/                          # pytest 回归测试
+├── sample_waveform.csv          # 可公开的小型示例波形
+├── sample_params.yaml           # 可公开的示例参数空间
+├── profile_closed_loop_params.yaml
+└── demo_run/                    # 固定 demo 输出包
+scripts/                         # 辅助脚本，核心逻辑不放在这里
+src/goa_eval/                    # CircuitPilot 核心包
+tests/                           # pytest 回归测试
 ```
 
 核心模块：
 
 ```text
 src/goa_eval/
-├── cli.py              # evaluate-real / recommend / evaluate-batch
-├── waveform_io.py      # 仿真 CSV 读取与列名归一化
-├── windowing.py        # 脉冲窗口、重复扫描窗口、边沿区域、overlap 积分
-├── metrics.py          # 单次波形指标计算和级联摘要
-├── scorer.py           # 硬约束与软评分
-├── diagnosis.py        # 诊断报告
-├── recommendation.py   # 规则化参数建议
-├── batch_eval.py       # 多 run 批量评价
-├── param_space.py      # run 参数与参数空间读取
-├── optimizer.py        # 后续优化器接口
-├── reporter.py         # CSV / JSON / Markdown 输出
-├── plotter.py          # PNG 图表
-└── schemas.py          # schema_version、字段名和基础校验
+├── cli.py                       # 命令行入口
+├── waveform_io.py               # 仿真 CSV 读取与列名归一化
+├── windowing.py                 # 脉冲窗口、重复扫描窗口、边沿区域、overlap 积分
+├── metrics.py                   # 单次波形指标计算和级联摘要
+├── scorer.py                    # 硬约束、软评分和 profile score
+├── analysis_metrics.py          # OP/AC/DC/TRAN companion metrics
+├── topology_profiles.py         # topology 到 profile 的解析
+├── diagnosis.py                 # 诊断报告
+├── recommendation.py            # 规则化参数建议
+├── optimizer.py                 # 候选参数生成和搜索打分
+├── sky130_transient.py          # SKY130 数据集/ngspice transient 接入
+├── sky130_sweep.py              # SKY130 参数扫描
+├── multi_round_optimizer.py     # 多轮搜索驱动
+├── parsers/netlist_parser.py    # SPICE netlist 结构摘要
+├── reporter.py                  # CSV / JSON / Markdown 输出
+├── plotter.py                   # PNG 图表
+└── schemas.py                   # schema_version、字段名和基础校验
 ```
 
 ## 安装
@@ -97,7 +133,7 @@ python -m pip install -U pip
 python -m pip install -e ".[test]"
 ```
 
-Windows PowerShell 可使用：
+Windows PowerShell：
 
 ```powershell
 python -m venv .venv
@@ -106,21 +142,42 @@ python -m pip install -U pip
 python -m pip install -e ".[test]"
 ```
 
-运行测试：
+SKY130 数据集入口需要额外依赖：
 
 ```bash
-python -m pytest -q
+python -m pip install -e ".[test,sky130]"
+```
+
+可执行入口：
+
+```bash
+python -m goa_eval.cli --help
+circuitpilot --help
 ```
 
 ## 快速开始
 
-运行公开示例波形：
+### 单次仿真 CSV 评价
 
 ```bash
-python -m goa_eval.cli evaluate-real --waveform examples/sample_waveform.csv --output-dir outputs/example
+python -m goa_eval.cli evaluate-real \
+  --waveform examples/sample_waveform.csv \
+  --output-dir outputs/example
 ```
 
-生成单次推荐报告：
+常见输出：
+
+- `real_metrics.csv`
+- `real_summary.json`
+- `score_summary.json`
+- `analysis_metrics.json`
+- `diagnosis_report.md`
+- `real_waveform_report.md`
+- `optimization_dataset.csv`
+- `run_manifest_real.json`
+- `figures/`
+
+### 生成推荐报告
 
 ```bash
 python -m goa_eval.cli recommend \
@@ -130,7 +187,7 @@ python -m goa_eval.cli recommend \
   --output outputs/example/recommendations.md
 ```
 
-生成下一轮参数候选：
+### 生成下一轮候选参数
 
 ```bash
 python -m goa_eval.cli propose-candidates \
@@ -145,53 +202,52 @@ python -m goa_eval.cli propose-candidates \
   --output-md outputs/example/next_candidates.md
 ```
 
-Windows PowerShell：
+`--strategy rule` 只输出规则映射的单参数候选；`constrained-random` 会生成单参数和两参数组合候选。
 
-```powershell
-python -m goa_eval.cli recommend `
-  --summary outputs/example/real_summary.json `
-  --score outputs/example/score_summary.json `
-  --metrics outputs/example/real_metrics.csv `
-  --output outputs/example/recommendations.md
-```
-
-```powershell
-python -m goa_eval.cli propose-candidates `
-  --summary outputs/example/real_summary.json `
-  --score outputs/example/score_summary.json `
-  --metrics outputs/example/real_metrics.csv `
-  --param-space examples/sample_params.yaml `
-  --strategy constrained-random `
-  --max-candidates 10 `
-  --seed 42 `
-  --output-csv outputs/example/next_candidates.csv `
-  --output-md outputs/example/next_candidates.md
-```
-
-批量评价多个 run：
+### 批量评价多个 run
 
 ```bash
 python -m goa_eval.cli evaluate-batch --runs-dir runs --output-dir outputs_batch
 ```
 
-## SKY130 / ngspice 小闭环
+输入目录约定：
 
-可选入口 `sky130-transient` 用于把公开 SKY130 SPICE testbench 数据接入现有评价链路：
-
-```bash
-python -m pip install -e ".[test,sky130]"
-python -m goa_eval.cli sky130-transient --split train --max-rows 5 --output-root outputs/sky130_smoke
+```text
+runs/
+├── run_001/
+│   ├── waveform.csv
+│   └── params.yaml
+└── run_002/
+    ├── waveform.csv
+    └── params.yaml
 ```
 
-该命令读取 Hugging Face `pphilip/analog-circuits-sky130` 的 `with_testbench` 配置，调用本机 `ngspice` 生成 transient 波形，再导出 `TIME,v(o1),...` 兼容 CSV，并继续生成 `real_summary.json`、`score_summary.json`、`optimization_dataset.csv`、`recommendations.md` 和 `next_candidates.csv`。
+批量输出包括 `all_metrics.csv`、`all_scores.csv`、`leaderboard.csv`、`recommendations.md` 和 `run_manifest_batch.json`。
 
-每个样本目录还会写入 `source_netlist.spice` 和 `netlist_structure.json`，用于保存 AMS-Net 风格的 SPICE 结构特征。总表 `sky130_runs.csv` 会附带 `mos_count`、`cap_count`、`resistor_count`、`current_source_count`、`model_count`、`node_count` 等压缩摘要列；这些字段只作为 companion analysis metadata，不表示结构驱动优化已经完成。
+## SKY130 / ngspice 使用
 
-本入口需要外部安装 `ngspice`，项目不会打包 SKY130 PDK 或 ngspice。若只想验证软件链路，可使用本地 mock 数据和 `--mock-ngspice`。所有输出仍是 `simulation_only`，只能证明公开仿真数据可进入评价/候选生成管线，不能写成实物测试通过或自动优化闭环完成。
+### transient 数据接入
 
-## SKY130 参数扫描
+```bash
+python -m goa_eval.cli sky130-transient \
+  --split train \
+  --max-rows 5 \
+  --output-root outputs/sky130_smoke
+```
 
-`sky130-sweep` 在 `sky130-transient` 外层增加一轮显式参数扫描：读取 `config/sky130_sweep.yaml`，改写每个 run 目录里的 SPICE 拷贝，调用 `ngspice` 导出波形，然后继续评价、打分、推荐和生成候选。
+该命令读取 Hugging Face `pphilip/analog-circuits-sky130` 的 `with_testbench` 配置，调用本机 `ngspice`，导出兼容 CSV，并继续运行评价、打分、推荐和候选生成。
+
+如果只验证软件链路：
+
+```bash
+python -m goa_eval.cli sky130-transient \
+  --split train \
+  --max-rows 2 \
+  --mock-ngspice \
+  --output-root outputs/sky130_mock
+```
+
+### 参数扫描
 
 ```bash
 python -m goa_eval.cli sky130-sweep \
@@ -203,9 +259,9 @@ python -m goa_eval.cli sky130-sweep \
   --output-root outputs/sky130_sweep
 ```
 
-多轮优化驱动可以复用同一个 sweep 文件，并把每轮最佳 run 的 `next_candidates.csv`
-反馈到下一轮扫描。它仍然只生成 `simulation_only` 排序工件：这是可复现的闭环搜索调度，
-不是实物验证。
+`--pdk-root` 优先，其次读取 `PDK_ROOT` 或 `SKYWATER_PDK_ROOT`。项目只检测和传递外部 PDK 路径，不下载、不打包、不改写 PDK 模型文件。
+
+### 多轮搜索
 
 ```bash
 python -m goa_eval.cli optimize-rounds \
@@ -219,135 +275,49 @@ python -m goa_eval.cli optimize-rounds \
   --output-root outputs/sky130_multi_round
 ```
 
-`--strategy` defaults to `adaptive` for backward compatibility. Advanced values
-are `genetic`, `bayesian`, `surrogate`, and `hybrid`. These strategies still
-sample only legal discrete values from the sweep YAML; they do not generate
-free-form SPICE parameters. `bayesian` uses Gaussian-process expected
-improvement, `surrogate` uses a random-forest score model, and `hybrid` combines
-rule candidates, genetic variation, model ranking, and diversity fallback.
+可选策略：
 
-该命令写出 `round_001/`、`round_002/`、`optimization_history.json`、
-`optimization_leaderboard.csv`、`round_summary.csv`、`final_param_space.yaml`
-和 `best_next_candidates.csv`。
-其中 `optimization_leaderboard.csv` 会保留候选来源字段，例如
-`candidate_source`、`source_candidate_id`、`source_candidate_trigger_metric`
-和 `source_candidate_parameters_json`，并用 `rank_status` 稳定区分
-`evaluated`、`not_evaluable`、`skipped`、`failed`。
+- `adaptive`：默认策略，基于上一轮最佳候选收窄参数空间。
+- `genetic`：对离散合法参数值做变异和组合。
+- `bayesian`：在离散网格上用 Gaussian-process expected improvement 排序。
+- `surrogate`：用 random-forest score model 排序。
+- `hybrid`：组合规则候选、遗传变异、模型排序和多样性回退。
 
-`--pdk-root` 优先，其次读取 `PDK_ROOT` 或 `SKYWATER_PDK_ROOT`。项目只检测和传递外部 PDK 路径，不下载、不打包、不改写 PDK 模型文件。输出包括 `sky130_sweep_runs.csv`、`sky130_sweep_leaderboard.csv`、`sky130_sweep_sensitivity.csv` 和 `next_param_space.yaml`。这是一轮仿真扫描排序，不代表多轮自动优化已经完成。
+所有策略都只在 sweep YAML 给出的合法离散值上采样，不生成自由形式 SPICE 参数。
 
-## 固定公开 Demo Run
+## 拓扑感知闭环示例
 
-仓库内置一套可复现的公开 demo，位于 [examples/demo_run](examples/demo_run)。它只使用 [examples/sample_waveform.csv](examples/sample_waveform.csv) 和 [examples/sample_params.yaml](examples/sample_params.yaml)，并用固定 mock DeepSeek 输出生成参数分析，所以不需要 `DEEPSEEK_API_KEY`，也不会调用外部网络。
+项目内置一个不依赖外部 PDK 的 profile-aware 示例：
+
+```bash
+python scripts/run_profile_closed_loop_example.py
+```
+
+默认输出：
+
+```text
+outputs/profile_closed_loop_example/
+```
+
+该示例会运行 `evaluate-real --topology two_stage_opamp`，写出 `analysis_metrics.json`、`score_summary.json`、`recommendations.md`、`next_candidates.csv` 和 `closed_loop_validation.json`。它证明 profile metrics 可以驱动下一轮候选生成，但仍是 simulation-only 软件链路验证。
+
+## 公开 Demo Run
+
+仓库内置一套可复现的公开 demo，位于 `examples/demo_run/`。它只使用 `examples/sample_waveform.csv` 和 `examples/sample_params.yaml`，并用固定 mock DeepSeek 输出生成参数分析，不需要 `DEEPSEEK_API_KEY`。
 
 重新生成 demo 和前端 dashboard 数据：
-
-Advanced strategy rows also include `optimizer_strategy`, `objective_score`,
-`model_status`, and optional `model_prediction`. When history has too few valid
-points or the objective has zero variance, the optimizer records a fallback
-status and chooses diverse untried grid points instead of pretending the model
-has learned a useful trend.
 
 ```bash
 python scripts/build_public_demo.py
 ```
 
-如果要用本机真实 DeepSeek key 重新生成 AI 分析，复制 `.env.example` 为 `.env` 并填入 `DEEPSEEK_API_KEY`，然后运行：
+最短复现步骤见 `docs/reproduce_results.md`，完整说明见 `docs/public_demo_run.md`。
 
-```powershell
-.\scripts\run_real_deepseek.ps1
-```
+## DeepSeek V4 参数分析
 
-最短复现步骤见 [docs/reproduce_results.md](docs/reproduce_results.md)，完整说明见 [docs/public_demo_run.md](docs/public_demo_run.md)。该 demo 仍然保留 `data_source = real_simulation_csv` 和 `engineering_validity = simulation_only`，只能说明仿真 CSV 分析、候选参数生成和 mock AI 解释链路可复现，不能写成实物测试结论或已完成自动优化闭环。
+`analyze-params` 可以把已有结构化输出交给 DeepSeek V4，生成面向汇报和人工复核的中文参数分析。该功能不会替代硬指标、评分器或规则推荐器。
 
-## 单次评价输出
-
-`evaluate-real` 会在指定输出目录中生成：
-
-- `real_metrics.csv`：逐级指标表，每行对应一个输出节点或级。
-- `real_summary.json`：整次评价摘要，包括通过状态、最差级、分段摘要和关键统计值。
-- `score_summary.json`：硬约束、软评分、失败原因和警告原因。
-- `diagnosis_report.md`：面向人工复核的诊断报告。
-- `real_waveform_report.md`：波形评价 Markdown 报告。
-- `optimization_dataset.csv`：面向后续参数搜索的一行结构化数据。
-- `next_candidates.csv` / `next_candidates.md`：基于当前规则建议、参数空间和约束感知随机搜索生成的下一轮候选参数。
-- `run_manifest_real.json`：输入文件、配置、阈值、版本和有效性边界记录。
-- `figures/`：波形总览、趋势图、热力图和内部节点图。
-
-字段细节见 [docs/schema_spec.md](docs/schema_spec.md)，指标定义见 [docs/metrics_spec.md](docs/metrics_spec.md)。
-
-## 批量评价约定
-
-批量入口读取 `runs/run_xxx` 目录。每个 run 至少需要一个 `waveform.csv`，可选 `params.yaml`。
-
-```text
-runs/
-├── run_001/
-│   ├── params.yaml
-│   └── waveform.csv
-└── run_002/
-    ├── params.yaml
-    └── waveform.csv
-```
-
-`params.yaml` 示例：
-
-```yaml
-run_id: run_001
-circuit_version: goa_8t1c_v1
-parameters:
-  C_store: 1pF
-  R_driver: 10k
-  W_pmos: 2u
-  W_nmos: 1u
-  VDD: 15
-  load_cap: 5pF
-conditions:
-  temp: 25
-  corner: TT
-```
-
-`evaluate-batch` 主要输出：
-
-- `all_metrics.csv`：所有 run 的逐级指标合并表，并附带参数字段。
-- `all_scores.csv`：所有 run 的评分摘要。
-- `leaderboard.csv`：按 `overall_score` 排序的候选结果表。
-- `recommendations.md`：按 run 分组的下一轮参数建议。
-- `run_manifest_batch.json`：批量评价元数据。
-
-## 配置说明
-
-默认配置位于 [config/spec.yaml](config/spec.yaml)。其中：
-
-- `thresholds` 定义高低电平阈值、目标脉宽、最大 overlap ratio、最大 ripple、电压损失、延迟一致性和目标刷新率。
-- `cascade` 定义级数、输出节点命名模式、分段大小和抽样绘图节点。
-- `weights` 定义功能、质量、稳定性、一致性和成本评分权重。
-
-命令行可覆盖部分阈值和级联配置，例如：
-
-```bash
-python -m goa_eval.cli evaluate-real \
-  --waveform examples/sample_waveform.csv \
-  --output-dir outputs/example \
-  --stage-count 8 \
-  --output-node-pattern "o{index}"
-```
-
-如果配置要求 720 级但当前 CSV 只包含 `o1~o8`，程序会按实际可识别输出节点兼容评价，并在报告中记录说明。
-
-## 当前边界
-
-CircuitPilot 当前只处理仿真数据。推荐器是规则系统，不训练深度学习模型，不直接调度外部 SPICE，也不声明已经完成全自动闭环优化。建议内容用于指导下一轮仿真设计和指标复核。
-
-`propose-candidates` 默认使用 `constrained-random` 策略，生成单参数和两参数组合候选；也可以用 `--strategy rule` 只输出规则映射的单参数候选。该命令不调用外部 SPICE、不训练模型，也不代表已经完成自动优化闭环。候选需要经过下一轮外部仿真和人工复核后才能进入新的评价流程。
-
-公开仓库不应上传私有或大体积仿真数据。上传前请查看 [docs/github_upload_checklist.md](docs/github_upload_checklist.md) 和 `.gitignore`。
-
-## DeepSeek V4 参数分析层
-
-`analyze-params` 可以把现有结构化输出交给 DeepSeek V4 做人工可读的参数分析。该功能不会替代硬指标、评分器或规则推荐器，只在已有 `real_summary.json`、`score_summary.json`、`real_metrics.csv`、`next_candidates.csv` 和可选 `params.yaml` 基础上生成解释。
-
-默认模型是 `deepseek-v4-pro`。真实调用前需要在环境变量中设置 API key：
+真实调用前设置 API key：
 
 ```powershell
 $env:DEEPSEEK_API_KEY = "your_deepseek_api_key"
@@ -367,25 +337,111 @@ python -m goa_eval.cli analyze-params `
   --output-json outputs/example/llm_parameter_analysis.json
 ```
 
-输出：
+更安全的本地运行方式是复制 `.env.example` 为 `.env`，填入 `DEEPSEEK_API_KEY`，再运行：
 
-- `llm_parameter_analysis.md`：面向汇报和人工复核的中文参数分析。
-- `llm_parameter_analysis.json`：保留模型、边界、输入文件和分析正文的结构化结果。
+```powershell
+.\scripts\run_real_deepseek.ps1
+```
 
-该分析仍然必须保留 `data_source = real_simulation_csv` 和 `engineering_validity = simulation_only`，不能写成实物测试结论，也不能写成已经完成外部 SPICE/AETHER 自动闭环优化。
+`.env` 不应提交到公开仓库。
+
+## 关键输出文件
+
+### 单次评价输出
+
+| 文件 | 说明 |
+|---|---|
+| `real_metrics.csv` | 逐级指标表，每行对应一个输出节点或级。 |
+| `real_summary.json` | 整体摘要、最差级、分段摘要和关键统计值。 |
+| `score_summary.json` | 硬约束、软评分、惩罚项、profile score 和失败/警告原因。 |
+| `analysis_metrics.json` | OP/AC/DC/TRAN companion metrics 与不可评价原因。 |
+| `diagnosis_report.md` | 面向人工复核的诊断报告。 |
+| `real_waveform_report.md` | 波形评价 Markdown 报告。 |
+| `optimization_dataset.csv` | 面向后续搜索的一行结构化数据。 |
+| `next_candidates.csv` | 下一轮参数候选表。 |
+| `run_manifest_real.json` | 输入文件、阈值、命令、版本和边界记录。 |
+| `figures/` | 波形总览、趋势图、热力图和内部节点图。 |
+
+### 多轮搜索输出
+
+| 文件 | 说明 |
+|---|---|
+| `round_001/`, `round_002/`, ... | 每轮 `sky130-sweep` 输出目录。 |
+| `optimization_history.json` | 机器可读的轮次摘要和 run 历史。 |
+| `optimization_leaderboard.csv` | 所有尝试 run 的统一榜单。 |
+| `round_summary.csv` | 每轮最佳分数、最佳 run 和停止原因。 |
+| `final_param_space.yaml` | 最后一轮使用的参数空间。 |
+| `best_next_candidates.csv` | 从最佳 run 复制出的候选参数表。 |
+
+字段细节见 `docs/schema_spec.md`，指标定义见 `docs/metrics_spec.md`。
+
+## 配置说明
+
+默认配置位于 `config/spec.yaml`。
+
+- `thresholds`：高低电平阈值、目标脉宽、最大 overlap ratio、最大 ripple、电压损失、延迟一致性和目标刷新率。
+- `cascade`：级数、输出节点命名模式、分段大小和抽样绘图节点。
+- `weights`：功能、质量、稳定性、一致性和成本评分权重。
+
+命令行可覆盖部分阈值和级联配置：
+
+```bash
+python -m goa_eval.cli evaluate-real \
+  --waveform examples/sample_waveform.csv \
+  --output-dir outputs/example \
+  --stage-count 8 \
+  --output-node-pattern "o{index}"
+```
+
+如果配置要求 720 级但当前 CSV 只包含 `o1~o8`，程序会按实际可识别输出节点兼容评价，并在报告中记录说明。
+
+## 当前边界和非目标
+
+当前版本可以做：
+
+- 仿真 CSV 评价、打分和报告生成；
+- 公开 SKY130/ngspice 数据接入；
+- 规则化推荐和下一轮候选生成；
+- 离散参数扫描与多轮搜索调度；
+- DeepSeek V4 辅助解释。
+
+当前版本不做以下声明：
+
+- 不声明实物测试通过；
+- 不声明芯片或样机验证完成；
+- 不自动下载或打包 SKY130 PDK；
+- 不把 DeepSeek 分析当作指标真值；
+- 不把规则候选当作已经完成的自动优化结果；
+- 不把 `PASS_BASIC_SIMULATION_CHECK` 写成物理验证通过；
+- 不上传私有大型仿真 CSV、`.tr0`、PDK 文件或本地报告压缩包。
+
+## 测试
+
+```bash
+python -m pytest -q
+```
+
+公开仓库上传前建议同时检查：
+
+```bash
+python scripts/build_public_demo.py
+python scripts/run_profile_closed_loop_example.py
+```
+
+GitHub 上传清单见 `docs/github_upload_checklist.md`。
 
 ## Roadmap
 
-- 固定更多输出 schema 与公开示例数据。
-- 扩展参数空间定义和候选生成策略。
-- 增加 PVT、Monte Carlo、负载变化和功耗指标。
-- 在积累足够多参数-结果数据后，再评估贝叶斯优化、进化算法或机器学习模型。
+- 继续固定输出 schema 和公开示例数据。
+- 增加更多 topology profile 和更细的 OP/AC/DC/TRAN companion metrics。
+- 扩展 PVT、Monte Carlo、负载变化和功耗指标。
+- 在积累足够多参数-结果数据后，再评估更稳健的代理模型和优化策略。
 - 增加外部仿真器调度接口，同时保持仿真结果与实物验证边界清晰。
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+MIT License. See `LICENSE`.
 
 ## Acknowledgement
 
-This project started from an 8T1C / GOA circuit simulation review workflow. The open-source version preserves the reusable software parts: simulation-data parsing, metric extraction, structured reporting, diagnosis, and conservative rule-based recommendations.
+This project started from an 8T1C / GOA circuit simulation review workflow. The open-source version preserves the reusable software parts: simulation-data parsing, metric extraction, structured reporting, diagnosis, conservative rule-based recommendations, and simulation-only parameter search.
