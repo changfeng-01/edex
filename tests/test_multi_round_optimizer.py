@@ -13,6 +13,7 @@ from goa_eval.multi_round_optimizer import (
     encode_parameter_points,
     enrich_history_row,
     stable_leaderboard,
+    target_metric_status,
     should_stop_optimization,
 )
 
@@ -86,6 +87,16 @@ def test_stable_leaderboard_adds_rank_status_and_sorts_failures_last():
 
     assert list(leaderboard["run_dir"]) == ["run_high", "run_low", "run_unknown", "run_failed"]
     assert list(leaderboard["rank_status"]) == ["evaluated", "evaluated", "not_evaluable", "failed"]
+
+
+def test_target_metric_status_requires_evaluable_overlap_and_threshold():
+    passing = {"status": "evaluated", "stage_count": 3, "Max_overlap_ratio": 0.08}
+    failing = {"status": "evaluated", "stage_count": 3, "Max_overlap_ratio": 0.18}
+    single_node = {"status": "evaluated", "stage_count": 1, "Max_overlap_ratio": 0.0}
+
+    assert target_metric_status(passing, metric="Max_overlap_ratio", threshold=0.1)["target_passed"] is True
+    assert target_metric_status(failing, metric="Max_overlap_ratio", threshold=0.1)["target_passed"] is False
+    assert target_metric_status(single_node, metric="Max_overlap_ratio", threshold=0.1)["target_status"] == "not_evaluable"
 
 
 def test_enrich_history_row_reads_score_and_analysis_artifacts(tmp_path: Path):
@@ -309,6 +320,75 @@ parameters:
     assert "parameters" in final_space
 
 
+def test_optimize_rounds_cli_mock_records_top_candidate_round_and_target_fields(tmp_path: Path):
+    rows_path = tmp_path / "rows.json"
+    rows_path.write_text(json.dumps([_row()]), encoding="utf-8")
+    sweep_path = tmp_path / "sweep.yaml"
+    sweep_path.write_text(
+        """
+parameters:
+  m1_width:
+    target: M1.W
+    values: ["1u", "2u", "3u"]
+  load_cap:
+    target: CLOAD.C
+    values: ["1pF", "2pF", "3pF"]
+""",
+        encoding="utf-8",
+    )
+    validation_path = tmp_path / "validation.yaml"
+    validation_path.write_text(
+        """
+target:
+  metric: Max_overlap_ratio
+  threshold: 0.1
+candidate_replay:
+  top_n: 3
+""",
+        encoding="utf-8",
+    )
+    output_root = tmp_path / "candidate_rounds"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "goa_eval.cli",
+            "optimize-rounds",
+            "--mock-dataset-json",
+            str(rows_path),
+            "--mock-ngspice",
+            "--sweep",
+            str(sweep_path),
+            "--validation-config",
+            str(validation_path),
+            "--rounds",
+            "2",
+            "--max-runs-per-round",
+            "3",
+            "--output-root",
+            str(output_root),
+            "--strategy",
+            "adaptive",
+        ],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    leaderboard = pd.read_csv(output_root / "optimization_leaderboard.csv")
+    assert {"target_metric", "target_threshold", "target_passed", "target_status"} <= set(leaderboard.columns)
+    second_round = leaderboard[leaderboard["round_index"].eq(2)]
+    assert not second_round.empty
+    assert "next_candidates" in set(second_round["candidate_source"])
+    assert len(second_round[second_round["candidate_source"].eq("next_candidates")]) == 3
+    assert second_round["source_candidate_id"].notna().any()
+    assert set(second_round["target_metric"]) == {"Max_overlap_ratio"}
+    assert set(pd.to_numeric(second_round["target_threshold"])) == {0.1}
+
+
 def _row() -> dict:
     testbench = "\n".join(
         [
@@ -328,5 +408,11 @@ def _row() -> dict:
         "pdk": "sky130",
         "spice_netlist": testbench,
         "testbench_spice": testbench,
-        "netlist_json": {"ports": [{"name": "vout", "role": "output_v"}]},
+        "netlist_json": {
+            "ports": [
+                {"name": "vout", "role": "output_v"},
+                {"name": "vaux", "role": "output_v"},
+                {"name": "vthird", "role": "output_v"},
+            ]
+        },
     }

@@ -1,0 +1,14 @@
+max_runs: 12
+parameters:
+  m1_width:
+    target: XM1.W
+    values: ["0.8", "1.0", "1.2"]
+  m2_width:
+    target: XM2.W
+    values: ["1.6", "2.0", "2.4"]
+  load_cap:
+    target: CLOAD.C
+    values: ["3f", "5f", "8f"]
+  vdd:
+    target: VDD.dc_value
+    values: ["1.6", "1.8"]

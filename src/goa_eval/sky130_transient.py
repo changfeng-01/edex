@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -21,6 +23,8 @@ from goa_eval.recommendation import build_recommendations, write_recommendations
 
 DEFAULT_DATASET = "pphilip/analog-circuits-sky130"
 DEFAULT_CONFIG = "with_testbench"
+LOCAL_EXTERNAL_SOURCE = "local_external_ngspice"
+LOCAL_EXTERNAL_FIXTURE = Path("examples/sky130_candidate_chain_row.json")
 
 
 class Sky130DependencyError(RuntimeError):
@@ -54,7 +58,8 @@ def run_sky130_transient(
     skip_netlist_structure: bool = False,
 ) -> list[dict]:
     output_root.mkdir(parents=True, exist_ok=True)
-    if not mock_ngspice and shutil.which(ngspice_cmd) is None:
+    resolved_ngspice_cmd = resolve_ngspice_executable(ngspice_cmd)
+    if not mock_ngspice and resolved_ngspice_cmd is None:
         raise Sky130DependencyError(f'ngspice executable not found: "{ngspice_cmd}". Install ngspice or use --mock-ngspice for tests.')
     rows = load_sky130_rows(
         split=split,
@@ -73,7 +78,7 @@ def run_sky130_transient(
             split=split,
             index=index,
             mock_ngspice=mock_ngspice,
-            ngspice_cmd=ngspice_cmd,
+            ngspice_cmd=resolved_ngspice_cmd or ngspice_cmd,
             spec_path=spec_path,
             param_space_path=param_space_path,
             max_candidates=max_candidates,
@@ -96,6 +101,9 @@ def load_sky130_rows(
 ) -> list[dict]:
     if mock_dataset_json is not None:
         raw = json.loads(mock_dataset_json.read_text(encoding="utf-8"))
+        rows = raw if isinstance(raw, list) else [raw]
+    elif source_dataset == LOCAL_EXTERNAL_SOURCE:
+        raw = json.loads(LOCAL_EXTERNAL_FIXTURE.read_text(encoding="utf-8"))
         rows = raw if isinstance(raw, list) else [raw]
     else:
         try:
@@ -205,7 +213,8 @@ def prepare_testbench(row: dict, run_dir: Path, node_map: dict[str, str]) -> Pre
     waveform_path = run_dir / "waveform.csv"
     write_json(run_dir / "dataset_row.json", row)
     write_json(run_dir / "node_map.json", node_map)
-    testbench = ensure_waveform_control(str(row.get("testbench_spice", "")), node_map, raw_waveform_path.name)
+    testbench = resolve_pdk_library_paths(str(row.get("testbench_spice", "")), run_dir=run_dir)
+    testbench = ensure_waveform_control(testbench, node_map, raw_waveform_path.name)
     testbench_path.write_text(testbench, encoding="utf-8")
     return PreparedSky130Run(
         run_dir=run_dir,
@@ -245,6 +254,89 @@ def write_netlist_structure_artifacts(row: dict, run_dir: Path, *, skip: bool = 
     }
 
 
+def resolve_pdk_library_paths(testbench: str, *, run_dir: Path | None = None) -> str:
+    pdk_root = _pdk_root_from_env()
+    if pdk_root is None:
+        return testbench
+    candidates = [
+        pdk_root / "libs.tech" / "ngspice" / "sky130.lib.spice",
+        pdk_root / "libs.tech" / "combined" / "sky130.lib.spice",
+    ]
+    library = next((path for path in candidates if path.exists()), None)
+    if library is None:
+        return testbench
+    pattern = re.compile(r'(\.lib\s+)["\']?sky130\.lib\.spice["\']?(\s+\S+)', re.IGNORECASE)
+    replacement = library.as_posix()
+    if run_dir is not None and pattern.search(testbench):
+        replacement = _write_minimal_sky130_library(run_dir, pdk_root).name
+    return pattern.sub(rf'\1"{replacement}"\2', testbench)
+
+
+def _write_minimal_sky130_library(run_dir: Path, pdk_root: Path) -> Path:
+    safe_root = _ngspice_safe_pdk_root(pdk_root)
+    library_path = run_dir / "sky130_minimal.lib.spice"
+    ngspice_dir = safe_root / "libs.tech" / "ngspice"
+    device_dir = safe_root / "libs.ref" / "sky130_fd_pr" / "spice"
+    lines = [
+        "* Minimal SKY130 library for GOA candidate validation.",
+        "* Uses real sky130_fd_pr 1.8V nfet/pfet model files without loading the full PDK library.",
+    ]
+    for corner in ("tt", "ss", "ff", "sf", "fs"):
+        lines.extend(
+            [
+                f".lib {corner}",
+                ".option scale=1.0u",
+                ".param mc_mm_switch=0",
+                ".param mc_pr_switch=0",
+                f'.include "{(ngspice_dir / "parameters" / "lod.spice").as_posix()}"',
+                f'.include "{(ngspice_dir / "parameters" / "invariant.spice").as_posix()}"',
+                f'.include "{(device_dir / f"sky130_fd_pr__nfet_01v8__{corner}.corner.spice").as_posix()}"',
+                f'.include "{(device_dir / "sky130_fd_pr__nfet_01v8__mismatch.corner.spice").as_posix()}"',
+                f'.include "{(device_dir / f"sky130_fd_pr__pfet_01v8__{corner}.corner.spice").as_posix()}"',
+                f'.include "{(device_dir / "sky130_fd_pr__pfet_01v8__mismatch.corner.spice").as_posix()}"',
+                f".endl {corner}",
+                "",
+            ]
+        )
+    library_path.write_text("\n".join(lines), encoding="ascii")
+    return library_path
+
+
+def _ngspice_safe_pdk_root(pdk_root: Path) -> Path:
+    resolved = pdk_root.resolve()
+    if os.name != "nt" or _is_ascii(str(resolved)):
+        return resolved
+    temp_root = Path(os.environ.get("TEMP", str(Path.cwd()))) / "goa_eval_pdk_links"
+    temp_root.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha1(str(resolved).encode("utf-8")).hexdigest()[:12]
+    link = temp_root / f"sky130A_{digest}"
+    if link.exists():
+        return link
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(resolved)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return link if result.returncode == 0 and link.exists() else resolved
+
+
+def _is_ascii(value: str) -> bool:
+    try:
+        value.encode("ascii")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def _pdk_root_from_env() -> Path | None:
+    raw = os.environ.get("PDK_ROOT") or os.environ.get("SKYWATER_PDK_ROOT")
+    if not raw:
+        return None
+    path = Path(raw)
+    return path if path.exists() else None
+
+
 def ensure_waveform_control(testbench: str, node_map: dict[str, str], output_name: str) -> str:
     lower = testbench.lower()
     if ".control" in lower and "wrdata" in lower:
@@ -273,10 +365,11 @@ def ensure_waveform_control(testbench: str, node_map: dict[str, str], output_nam
 
 
 def run_ngspice(prepared: PreparedSky130Run, *, ngspice_cmd: str = "ngspice") -> None:
-    if shutil.which(ngspice_cmd) is None:
+    executable = resolve_ngspice_executable(ngspice_cmd)
+    if executable is None:
         raise Sky130DependencyError(f'ngspice executable not found: "{ngspice_cmd}". Install ngspice or use --mock-ngspice for tests.')
     result = subprocess.run(
-        [ngspice_cmd, "-b", prepared.testbench_path.name],
+        [executable, "-b", prepared.testbench_path.name],
         cwd=prepared.run_dir,
         text=True,
         capture_output=True,
@@ -287,6 +380,18 @@ def run_ngspice(prepared: PreparedSky130Run, *, ngspice_cmd: str = "ngspice") ->
         raise RuntimeError(f"ngspice failed with exit code {result.returncode}")
     if not prepared.raw_waveform_path.exists() or prepared.raw_waveform_path.stat().st_size == 0:
         raise RuntimeError("ngspice did not produce waveform_raw.txt")
+
+
+def resolve_ngspice_executable(ngspice_cmd: str) -> str | None:
+    resolved = shutil.which(ngspice_cmd)
+    if resolved is None:
+        return None
+    path = Path(resolved)
+    if path.name.lower() == "ngspice.exe":
+        console = path.with_name("ngspice_con.exe")
+        if console.exists():
+            return str(console)
+    return str(path)
 
 
 def convert_ngspice_waveform(raw_path: Path, waveform_path: Path, node_map: dict[str, str]) -> None:

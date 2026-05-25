@@ -206,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_candidates=args.max_candidates,
                 seed=args.seed,
                 strategy=args.strategy,
+                validation_config_path=Path(args.validation_config) if args.validation_config else None,
             )
         except Sky130DependencyError as exc:
             print(str(exc), file=sys.stderr)
@@ -321,6 +322,7 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.add_argument("--patience", type=int, default=2)
     optimize.add_argument("--min-improvement", type=float, default=0.0)
     optimize.add_argument("--exploration-ratio", type=float, default=0.25)
+    optimize.add_argument("--validation-config")
     optimize.add_argument("--ngspice-cmd", default="ngspice")
     optimize.add_argument("--mock-dataset-json")
     optimize.add_argument("--mock-ngspice", action="store_true")

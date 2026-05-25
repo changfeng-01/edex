@@ -1,0 +1,29 @@
+target:
+  metric: Max_overlap_ratio
+  threshold: 0.1
+
+candidate_replay:
+  top_n: 3
+
+validation_matrix:
+  - name: long_hold
+    max_runs: 1
+    parameters:
+      tran_stop:
+        target: .tran:stop
+        values: ["20n"]
+  - name: pvt_load
+    max_runs: 24
+    parameters:
+      corner:
+        target: .lib:corner
+        values: ["tt", "ss", "ff"]
+      temperature:
+        target: .temp
+        values: ["-40", "25", "125"]
+      vdd:
+        target: VDD.dc_value
+        values: ["1.6", "1.8"]
+      load_cap:
+        target: CLOAD.C
+        values: ["3f", "5f", "8f"]

@@ -25,6 +25,7 @@ def build_adaptive_sweep_config(
     max_runs: int,
     seed: int = 42,
     exploration_ratio: float = 0.25,
+    candidate_limit: int | None = None,
 ) -> dict:
     parameters = dict(base_config.get("parameters", {}) or {})
     baseline = _best_parameter_row(history, parameters)
@@ -32,8 +33,12 @@ def build_adaptive_sweep_config(
     points: list[dict[str, object]] = []
     point_metadata: list[dict[str, object]] = []
 
+    accepted_candidates = 0
     for candidate, metadata in _candidate_points(best_run_dir, baseline):
-        _append_unique_point(points, point_metadata, candidate, metadata, parameters, seen, max_runs)
+        if _append_unique_point(points, point_metadata, candidate, metadata, parameters, seen, max_runs):
+            accepted_candidates += 1
+        if candidate_limit is not None and accepted_candidates >= max(0, int(candidate_limit)):
+            break
 
     exploration_count = max(0, int(round(max_runs * max(0.0, min(1.0, exploration_ratio)))))
     exploration_pool = _all_points(parameters)
@@ -67,6 +72,7 @@ def build_strategy_sweep_config(
     seed: int = 42,
     exploration_ratio: float = 0.25,
     strategy: str = "adaptive",
+    candidate_limit: int | None = None,
 ) -> dict:
     if strategy == "adaptive":
         result = build_adaptive_sweep_config(
@@ -76,6 +82,7 @@ def build_strategy_sweep_config(
             max_runs=max_runs,
             seed=seed,
             exploration_ratio=exploration_ratio,
+            candidate_limit=candidate_limit,
         )
         result["config"]["optimizer_strategy"] = "adaptive"
         for metadata in result["config"].get("point_metadata", []):
@@ -92,9 +99,13 @@ def build_strategy_sweep_config(
     rng = random.Random(seed)
 
     if strategy in {"hybrid", "genetic"}:
+        accepted_candidates = 0
         for candidate, metadata in _candidate_points(best_run_dir, _best_parameter_row(history, parameters)):
             metadata = {**metadata, "optimizer_strategy": strategy, "model_status": "rule_seed"}
-            _append_unique_point(points, point_metadata, candidate, metadata, parameters, seen, max_runs)
+            if _append_unique_point(points, point_metadata, candidate, metadata, parameters, seen, max_runs):
+                accepted_candidates += 1
+            if candidate_limit is not None and accepted_candidates >= max(0, int(candidate_limit)):
+                break
 
     if strategy in {"genetic", "hybrid"} and len(points) < max_runs:
         for point, metadata in _genetic_points(parameters, history, max_runs=max_runs, seed=seed):
@@ -143,6 +154,36 @@ def composite_objective(row: pd.Series | dict) -> float:
         ]
     )
     return -10000.0 * hard_failures + 100.0 * score - 100.0 * not_evaluable + profile_score + analysis_bonus
+
+
+def target_metric_status(row: pd.Series | dict, *, metric: str, threshold: float) -> dict[str, object]:
+    metric_value = _as_float(row.get(metric))
+    stage_count = _as_float(row.get("stage_count"))
+    status = str(row.get("status", "") or "").lower()
+    if metric == "Max_overlap_ratio" and (stage_count is None or stage_count < 2):
+        return {
+            "target_metric": metric,
+            "target_threshold": threshold,
+            "target_value": metric_value,
+            "target_passed": "",
+            "target_status": "not_evaluable",
+        }
+    if status != "evaluated" or metric_value is None:
+        return {
+            "target_metric": metric,
+            "target_threshold": threshold,
+            "target_value": metric_value,
+            "target_passed": "",
+            "target_status": "not_evaluable",
+        }
+    passed = metric_value < threshold
+    return {
+        "target_metric": metric,
+        "target_threshold": threshold,
+        "target_value": metric_value,
+        "target_passed": bool(passed),
+        "target_status": "passed" if passed else "failed",
+    }
 
 
 def encode_parameter_points(points: list[dict[str, object]], parameters: dict[str, Any]) -> np.ndarray:
@@ -199,9 +240,15 @@ def run_multi_round_optimization(
     max_candidates: int = 10,
     seed: int = 42,
     strategy: str = "adaptive",
+    validation_config_path: Path | None = None,
 ) -> list[dict]:
     output_root.mkdir(parents=True, exist_ok=True)
     base_config = yaml.safe_load(sweep_path.read_text(encoding="utf-8")) or {}
+    validation_config = _load_validation_config(validation_config_path)
+    target_config = validation_config.get("target", {})
+    target_metric = str(target_config.get("metric", "Max_overlap_ratio"))
+    target_threshold = float(target_config.get("threshold", 0.1))
+    candidate_limit = _candidate_replay_limit(validation_config)
     history_rows: list[dict] = []
     round_rows: list[dict] = []
     current_config = {**base_config, "optimizer_strategy": strategy}
@@ -212,6 +259,7 @@ def run_multi_round_optimization(
         round_dir = output_root / f"round_{round_index:03d}"
         round_sweep_path = output_root / f"round_{round_index:03d}_sweep.yaml"
         round_sweep_path.write_text(yaml.safe_dump(current_config, sort_keys=False, allow_unicode=True), encoding="utf-8")
+        round_param_space_path = _write_round_param_space(output_root / f"round_{round_index:03d}_param_space.yaml", current_config, fallback=param_space_path)
         summaries = run_sky130_sweep(
             sweep_path=round_sweep_path,
             output_root=round_dir,
@@ -225,7 +273,7 @@ def run_multi_round_optimization(
             mock_ngspice=mock_ngspice,
             ngspice_cmd=ngspice_cmd,
             spec_path=spec_path,
-            param_space_path=param_space_path,
+            param_space_path=round_param_space_path,
             max_candidates=max_candidates,
             seed=seed + round_index - 1,
             max_runs=max_runs_per_round,
@@ -238,7 +286,9 @@ def run_multi_round_optimization(
                     **_metadata_for_summary(current_config, row),
                     **row,
                     "run_dir": str(absolute_run_dir),
-                }
+                },
+                target_metric=target_metric,
+                target_threshold=target_threshold,
             ))
 
         history = pd.DataFrame(history_rows)
@@ -270,6 +320,7 @@ def run_multi_round_optimization(
             max_runs=max_runs_per_round,
             seed=seed + round_index,
             exploration_ratio=exploration_ratio,
+            candidate_limit=candidate_limit,
         ) if strategy == "adaptive" else build_strategy_sweep_config(
             base_config=base_config,
             history=history,
@@ -278,6 +329,7 @@ def run_multi_round_optimization(
             seed=seed + round_index,
             exploration_ratio=exploration_ratio,
             strategy=strategy,
+            candidate_limit=candidate_limit,
         )
         current_config = adaptive["config"]
         if adaptive["stop_reason"]:
@@ -285,6 +337,7 @@ def run_multi_round_optimization(
             break
 
     _write_multi_round_outputs(output_root, history_rows, round_rows, current_config, best_run_dir)
+    _write_validation_summary(output_root, validation_config, history_rows)
     return round_rows
 
 
@@ -312,6 +365,32 @@ def _write_multi_round_outputs(
         shutil.copyfile(best_candidates, target)
     else:
         pd.DataFrame().to_csv(target, index=False, encoding="utf-8-sig")
+
+
+def _write_validation_summary(output_root: Path, validation_config: dict, history_rows: list[dict]) -> None:
+    matrix = validation_config.get("validation_matrix", [])
+    if not isinstance(matrix, list) or not matrix:
+        return
+    leaderboard = stable_leaderboard(pd.DataFrame(history_rows))
+    best = leaderboard.iloc[0].to_dict() if not leaderboard.empty else {}
+    target_passed = best.get("target_passed") is True or str(best.get("target_passed")).lower() == "true"
+    rows = []
+    for item in matrix:
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "validation_name": item.get("name", "validation"),
+                "validation_status": "pending" if target_passed else "skipped",
+                "skip_reason": "" if target_passed else "target metric not passed",
+                "source_run_dir": best.get("run_dir", ""),
+                "target_metric": best.get("target_metric", ""),
+                "target_threshold": best.get("target_threshold", ""),
+                "target_value": best.get("target_value", ""),
+                "target_passed": best.get("target_passed", ""),
+            }
+        )
+    pd.DataFrame(rows).to_csv(output_root / "validation_summary.csv", index=False, encoding="utf-8-sig")
 
 
 def _model_ranked_points(
@@ -500,11 +579,16 @@ def stable_leaderboard(history: pd.DataFrame) -> pd.DataFrame:
     return ranked.drop(columns=["_score", "_status_order", "_round", "_run"])
 
 
-def enrich_history_row(row: dict) -> dict:
+def enrich_history_row(row: dict, *, target_metric: str | None = None, target_threshold: float | None = None) -> dict:
     enriched = dict(row)
     run_dir = Path(str(enriched.get("run_dir", "")))
+    summary = _read_json(run_dir / "real_summary.json")
     score = _read_json(run_dir / "score_summary.json")
     analysis = _read_json(run_dir / "analysis_metrics.json")
+    if summary:
+        for key in ["stage_count", "Max_overlap_ratio", "Max_ripple", "Max_voltage_loss", "Delay_std", "LowFreqStable", "Overall_status"]:
+            if key in summary:
+                enriched[key] = summary.get(key)
     if score:
         failures = score.get("hard_constraint_failures", [])
         enriched["hard_constraint_failure_count"] = int(_failure_count(failures))
@@ -523,6 +607,8 @@ def enrich_history_row(row: dict) -> dict:
         if scores:
             enriched["profile_metric_score_mean"] = float(np.mean(scores))
     enriched.setdefault("not_evaluable_metric_count", 0)
+    if target_metric is not None and target_threshold is not None:
+        enriched.update(target_metric_status(enriched, metric=target_metric, threshold=target_threshold))
     return enriched
 
 
@@ -535,7 +621,7 @@ def _candidate_points(best_run_dir: Path | None, baseline: dict[str, object]) ->
     frame = pd.read_csv(path)
     if "search_score" in frame:
         frame["_score"] = pd.to_numeric(frame["search_score"], errors="coerce").fillna(0)
-        frame = frame.sort_values("_score", ascending=False)
+        frame = frame.sort_values("_score", ascending=False, kind="mergesort")
     points: list[tuple[dict[str, object], dict[str, object]]] = []
     for _, row in frame.iterrows():
         changes = _candidate_change_dict(row)
@@ -553,6 +639,42 @@ def _candidate_points(best_run_dir: Path | None, baseline: dict[str, object]) ->
         )
         points.append(({**baseline, **changes}, metadata))
     return points
+
+
+def _load_validation_config(path: Path | None) -> dict:
+    if path is None or not path.exists():
+        return {}
+    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _candidate_replay_limit(validation_config: dict) -> int | None:
+    replay = validation_config.get("candidate_replay", {})
+    if not isinstance(replay, dict) or "top_n" not in replay:
+        return None
+    try:
+        return int(replay["top_n"])
+    except (TypeError, ValueError):
+        return None
+
+
+def _write_round_param_space(path: Path, config: dict, *, fallback: Path) -> Path:
+    parameters = config.get("parameters", {})
+    if not isinstance(parameters, dict) or not parameters:
+        return fallback
+    payload = {"parameters": {}}
+    for name, spec in parameters.items():
+        values = _values(spec)
+        if not values:
+            continue
+        entry: dict[str, object] = {"values": values}
+        if isinstance(spec, dict) and spec.get("unit"):
+            entry["unit"] = spec.get("unit")
+        payload["parameters"][name] = entry
+    if not payload["parameters"]:
+        return fallback
+    path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return path
 
 
 def _candidate_change_dict(row: pd.Series) -> dict[str, object]:
@@ -618,16 +740,17 @@ def _append_unique_point(
     parameters: dict[str, Any],
     seen: set[tuple],
     max_runs: int,
-) -> None:
+) -> bool:
     normalized = {name: point[name] for name in parameters if name in point}
     if len(normalized) != len(parameters):
-        return
+        return False
     key = tuple(normalized[name] for name in parameters)
     existing = {tuple(item[name] for name in parameters) for item in points}
     if key in seen or key in existing or len(points) >= max_runs:
-        return
+        return False
     points.append(normalized)
     point_metadata.append(metadata)
+    return True
 
 
 def _metadata_for_summary(config: dict, row: dict) -> dict[str, object]:

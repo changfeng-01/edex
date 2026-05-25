@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from goa_eval.sky130_sweep import generate_sweep_points, rewrite_spice_parameters
+from goa_eval.sky130_sweep import generate_sweep_points, rewrite_spice_parameters, _resolve_pdk_root
 
 
 def _row() -> dict:
@@ -60,6 +60,16 @@ def test_generate_sweep_points_is_reproducible_and_limited():
     ]
 
 
+def test_resolve_pdk_root_returns_absolute_path_for_relative_input(tmp_path, monkeypatch):
+    pdk = tmp_path / "pdk"
+    pdk.mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    resolved = _resolve_pdk_root(Path("pdk"), mock_ngspice=False)
+
+    assert resolved == pdk.resolve()
+
+
 def test_rewrite_spice_parameters_updates_param_devices_and_sources():
     text = _row()["testbench_spice"]
     targets = {
@@ -107,6 +117,45 @@ def test_rewrite_spice_parameters_allows_mos_target_to_match_sky130_xmos_name():
 
     assert result.success
     assert "XM1 out in 0 0 sky130_fd_pr__nfet_01v8 W=1.2u L=0.15u" in result.text
+
+
+def test_rewrite_spice_parameters_updates_corner_temperature_and_transient_stop():
+    text = "\n".join(
+        [
+            ".title validation matrix fixture",
+            '.lib "sky130.lib.spice" tt',
+            ".temp 25",
+            ".tran 20p 4n",
+            ".end",
+        ]
+    )
+
+    result = rewrite_spice_parameters(
+        text,
+        {"corner": "ss", "temperature": "-40", "tran_stop": "20n"},
+        {
+            "corner": {"target": ".lib:corner"},
+            "temperature": {"target": ".temp"},
+            "tran_stop": {"target": ".tran:stop"},
+        },
+    )
+
+    assert result.success
+    assert '.lib "sky130.lib.spice" ss' in result.text
+    assert ".temp -40" in result.text
+    assert ".tran 20p 20n" in result.text
+
+
+def test_rewrite_spice_parameters_inserts_missing_temperature_before_end():
+    result = rewrite_spice_parameters(
+        ".title validation matrix fixture\n.tran 20p 4n\n.end\n",
+        {"temperature": "125"},
+        {"temperature": {"target": ".temp"}},
+    )
+
+    assert result.success
+    assert ".temp 125" in result.text
+    assert result.text.index(".temp 125") < result.text.lower().index(".end")
 
 
 def test_rewrite_spice_parameters_reports_missing_target():
