@@ -472,3 +472,64 @@ conditions:
 | `engineering_validity` | 固定为 `simulation_only`。 |
 
 推荐报告必须说明其基于仿真数据，不是实物测试结果，也不是自动优化闭环已经完成的证明。
+## Generalized metric provenance and simulation facades
+
+New generalized outputs are additive and keep the existing
+`real_simulation_csv` / `simulation_only` boundary.
+
+`analysis_metrics.json` now may include:
+
+| Field | Type | Description |
+|---|---|---|
+| `not_evaluable_metrics` | object | Alias of `not_evaluable` for downstream optimizer code. |
+| `metric_provenance` | object | Source metadata keyed as `<analysis>.<metric>`, for example `ac_metrics.dc_gain_db`. |
+
+Each `metric_provenance` entry contains `unit`, `source_file`,
+`source_analysis`, `source_column`, `parser`, `normalization`, and
+`not_evaluable_reason`. `score_summary.json` carries the provenance for profile
+metrics, and `optimization_dataset.csv` keeps a JSON `metric_provenance` cell.
+
+`objective_score` is now hard-constraint gated for profile objectives. If any
+hard constraint fails, the profile objective score is `0.0`; otherwise profile
+objective weights from `circuit_profiles.yaml` are used when available. The
+older `profile_score`, `overall_score`, and soft score fields remain present.
+
+### csv-import / simulate-run / simulate-sweep
+
+`csv-import` and `simulate-run --adapter csv-import` import an existing
+simulator-export directory. Required input:
+
+| File | Required | Purpose |
+|---|---|---|
+| `waveform.csv` | yes | Time-domain waveform consumed by the existing evaluator. |
+| `op_metrics.csv` | no | Operating-point companion metrics. |
+| `ac_metrics.csv` | no | AC companion metrics. |
+| `dc_metrics.csv` | no | DC companion metrics. |
+| `tran_metrics.csv` | no | Transient companion metrics; `waveform.csv` remains the transient fallback. |
+| `source_netlist.spice` | no | Optional source netlist copy for audit. |
+| `simulation_metadata.json/yaml` or `metadata.json/yaml` | no | Simulator, corner, temperature, and source metadata. |
+
+Imported run directories keep the normal single-run outputs and add
+`simulation_metadata.json` plus `adapter_status.json`.
+
+`simulate-sweep --adapter csv-import` treats each child directory of
+`--input-root` as one imported run and writes `simulate_sweep_runs.csv` and
+`simulate_sweep_leaderboard.csv` at the sweep root.
+
+### ai-profile-assistant
+
+`ai-profile-assistant` reads a circuit description plus optional existing
+profiles, parameter semantics, score, and metrics. It can run with
+`--mock-response` or call the configured DeepSeek-compatible client.
+
+Stable outputs:
+
+| File | Purpose |
+|---|---|
+| `profile_draft.yaml` | Auditable circuit-profile draft. |
+| `parameter_semantics_draft.yaml` | Auditable parameter-semantics draft. |
+| `ai_profile_assistant.json` | Machine-readable analysis, boundary, metadata, and draft paths. |
+| `ai_profile_assistant.md` | Human-readable summary. |
+
+Draft files must pass `validate-config` before they are used by scoring or
+candidate generation. AI output remains advisory and simulation-only.

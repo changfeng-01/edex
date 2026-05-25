@@ -33,9 +33,17 @@ def score_real_evaluation(
     profile = resolve_topology_profile(topology, profiles or load_eval_profiles())
     profile_scores, analysis_penalties, not_evaluable = evaluate_profile_metrics(analysis_metrics or {}, profile)
     profile_score = _mean([item["score"] for item in profile_scores.values()])
-    objective_score = profile_score
+    objective_score, objective_details = _profile_objective_score(profile_scores, profile)
+    hard_gate = "passed" if not failures else "failed"
+    if failures:
+        objective_score = 0.0
     objective_breakdown = {
         "profile_metric_score": profile_score,
+        "profile_objective_score": objective_score,
+        "objective_method": objective_details["method"],
+        "metric_objective_scores": objective_details["metric_scores"],
+        "objective_weight_sum": objective_details["weight_sum"],
+        "hard_constraint_gate": hard_gate,
         "missing_required_metric_penalty": float(len(_not_evaluable_required_metrics(profile, not_evaluable))),
         "risk_penalty": 0.0,
     }
@@ -72,6 +80,7 @@ def score_real_evaluation(
         "profile_metric_scores": profile_scores,
         "not_evaluable_metrics": not_evaluable,
         "not_evaluable_required_metrics": _not_evaluable_required_metrics(profile, not_evaluable),
+        "metric_provenance": _score_metric_provenance(analysis_metrics or {}, profile_scores),
         "topology_profile": profile.get("name", "default"),
         "circuit_profile": profile.get("name", "default"),
         "profile_source": profile.get("profile_source"),
@@ -238,6 +247,55 @@ def evaluate_profile_metrics(analysis_metrics: dict, profile: dict) -> tuple[dic
         }
         penalties[metric] = penalty
     return scores, penalties, not_evaluable
+
+
+def _profile_objective_score(profile_scores: dict[str, dict], profile: dict) -> tuple[float, dict]:
+    objective = profile.get("objective", {}) or {}
+    weights = (objective.get("weights", {}) or {}) if isinstance(objective, dict) else {}
+    if not profile_scores:
+        return 100.0, {"method": "none", "metric_scores": {}, "weight_sum": 0.0}
+    if not weights:
+        score = _mean([item["score"] for item in profile_scores.values()])
+        return score, {
+            "method": "unweighted_mean",
+            "metric_scores": {metric: item["score"] for metric, item in profile_scores.items()},
+            "weight_sum": float(len(profile_scores)),
+        }
+    weighted = 0.0
+    weight_sum = 0.0
+    metric_scores = {}
+    for metric, item in profile_scores.items():
+        score = float(item.get("score", 100.0))
+        weight = float(weights.get(metric, 0.0))
+        metric_scores[metric] = {"score": score, "weight": weight}
+        if weight <= 0:
+            continue
+        weighted += score * weight
+        weight_sum += weight
+    if weight_sum <= 0:
+        score = _mean([item["score"] for item in profile_scores.values()])
+        return score, {"method": "unweighted_mean", "metric_scores": metric_scores, "weight_sum": 0.0}
+    return weighted / weight_sum, {"method": "weighted_sum", "metric_scores": metric_scores, "weight_sum": weight_sum}
+
+
+def _score_metric_provenance(analysis_metrics: dict, profile_scores: dict[str, dict]) -> dict[str, dict]:
+    source = analysis_metrics.get("metric_provenance", {}) if isinstance(analysis_metrics, dict) else {}
+    provenance = {}
+    for metric, score in profile_scores.items():
+        source_key = f"{score.get('source')}.{metric}" if score.get("source") else metric
+        provenance[metric] = source.get(
+            source_key,
+            {
+                "unit": "",
+                "source_file": "",
+                "source_analysis": score.get("source", ""),
+                "source_column": metric,
+                "parser": "score_real_evaluation",
+                "normalization": "profile_metric_score",
+                "not_evaluable_reason": "",
+            },
+        )
+    return provenance
 
 
 def _not_evaluable_required_metrics(profile: dict, not_evaluable: dict[str, str]) -> list[str]:

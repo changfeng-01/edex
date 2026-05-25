@@ -495,6 +495,71 @@ The local fixture `examples/sky130_candidate_chain_row.json` provides a three-ou
 
 MIT License. See `LICENSE`.
 
+## Generalized CSV Adapter and AI Profile Assistant
+
+This repository also provides generalized facades above the older SKY130-named
+entrypoints. They keep the same boundary:
+
+```text
+data_source = real_simulation_csv
+engineering_validity = simulation_only
+```
+
+Import an existing simulator-export directory:
+
+```bash
+python -m goa_eval.cli simulate-run \
+  --adapter csv-import \
+  --input-dir path/to/csv_run \
+  --output-dir outputs/csv_run \
+  --circuit-profile ota_general \
+  --profile-file config/circuit_profiles.yaml \
+  --params config/parameter_semantics.yaml
+```
+
+The input directory must contain `waveform.csv` and may include
+`op_metrics.csv`, `ac_metrics.csv`, `dc_metrics.csv`, `tran_metrics.csv`,
+`source_netlist.spice`, and `simulation_metadata.json/yaml`. The output run
+keeps the normal evaluation artifacts and adds `adapter_status.json` plus
+`simulation_metadata.json`.
+
+Batch import child directories with:
+
+```bash
+python -m goa_eval.cli simulate-sweep \
+  --adapter csv-import \
+  --input-root path/to/csv_runs \
+  --output-root outputs/csv_sweep \
+  --circuit-profile ota_general \
+  --profile-file config/circuit_profiles.yaml \
+  --params config/parameter_semantics.yaml
+```
+
+The sweep facade writes `simulate_sweep_runs.csv` and
+`simulate_sweep_leaderboard.csv`.
+
+Generate auditable AI profile drafts with:
+
+```bash
+python -m goa_eval.cli ai-profile-assistant \
+  --description docs/my_circuit_description.md \
+  --profile-file config/circuit_profiles.yaml \
+  --params config/parameter_semantics.yaml \
+  --mock-response '{"analysis":"draft only"}' \
+  --output-dir outputs/ai_profile_assistant
+```
+
+The assistant writes `profile_draft.yaml`,
+`parameter_semantics_draft.yaml`, `ai_profile_assistant.json`, and
+`ai_profile_assistant.md`. Drafts must pass `validate-config` before they are
+used by scoring or candidate generation. AI output is advisory and does not
+replace the evaluator, simulator, or human review.
+
+Profile metric outputs now include additive `metric_provenance` metadata in
+`analysis_metrics.json`, `score_summary.json`, and `optimization_dataset.csv`.
+The metadata records units, source files, source columns, parser names, and
+normalization notes for auditability.
+
 ## Acknowledgement
 
 This project started from an 8T1C / GOA circuit simulation review workflow. The open-source version preserves the reusable software parts: simulation-data parsing, metric extraction, structured reporting, diagnosis, conservative rule-based recommendations, and simulation-only parameter search.

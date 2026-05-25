@@ -141,6 +141,7 @@ OPTIMIZATION_DATASET_COLUMNS = [
     "hard_constraint_passed",
     "overall_status",
     "overall_score",
+    "metric_provenance",
     "data_source",
     "engineering_validity",
 ]
