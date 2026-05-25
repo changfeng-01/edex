@@ -12,6 +12,8 @@ from goa_eval.sky130_transient import (
     load_sky130_rows,
     prepare_testbench,
     run_ngspice,
+    resolve_ngspice_executable,
+    resolve_pdk_library_paths,
     write_netlist_structure_artifacts,
 )
 
@@ -66,6 +68,29 @@ def test_prepare_testbench_writes_artifacts_and_control_block(tmp_path):
     assert "v(vout_aux)" in text
 
 
+def test_prepare_testbench_expands_local_sky130_library_path(tmp_path, monkeypatch):
+    pdk = tmp_path / "pdk"
+    library = pdk / "libs.tech" / "ngspice" / "sky130.lib.spice"
+    library.parent.mkdir(parents=True)
+    library.write_text("* pdk lib\n", encoding="utf-8")
+    monkeypatch.setenv("PDK_ROOT", str(pdk))
+    row = {**_row(), "testbench_spice": '.lib "sky130.lib.spice" tt\n.end\n'}
+
+    prepared = prepare_testbench(row, tmp_path / "run", build_output_node_map(row))
+
+    text = prepared.testbench_path.read_text(encoding="utf-8")
+    generated_library = tmp_path / "run" / "sky130_minimal.lib.spice"
+    assert '.lib "sky130_minimal.lib.spice" tt' in text
+    assert generated_library.exists()
+    assert library.parent.as_posix() in generated_library.read_text(encoding="ascii")
+
+
+def test_resolve_pdk_library_paths_leaves_unknown_libraries_unchanged(tmp_path, monkeypatch):
+    monkeypatch.setenv("PDK_ROOT", str(tmp_path / "missing"))
+
+    assert resolve_pdk_library_paths('.lib "custom.lib" tt\n') == '.lib "custom.lib" tt\n'
+
+
 def test_write_netlist_structure_artifacts_uses_source_netlist(tmp_path):
     structure = write_netlist_structure_artifacts(_row(), tmp_path)
 
@@ -92,6 +117,17 @@ def test_run_ngspice_reports_missing_binary(tmp_path):
         run_ngspice(prepared, ngspice_cmd="definitely_missing_ngspice")
 
 
+def test_resolve_ngspice_executable_prefers_windows_console_binary(tmp_path, monkeypatch):
+    (tmp_path / "ngspice.exe").write_text("", encoding="utf-8")
+    console = tmp_path / "ngspice_con.exe"
+    console.write_text("", encoding="utf-8")
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    resolved = resolve_ngspice_executable("ngspice")
+
+    assert Path(resolved).name == "ngspice_con.exe"
+
+
 def test_load_sky130_rows_filters_mock_rows_by_topology_and_source(tmp_path):
     rows = [
         {**_row(), "circuit_id": "keep", "topology": "ota", "source_dataset": "alpha"},
@@ -111,6 +147,21 @@ def test_load_sky130_rows_filters_mock_rows_by_topology_and_source(tmp_path):
     )
 
     assert [row["circuit_id"] for row in selected] == ["keep"]
+
+
+def test_load_sky130_rows_uses_local_external_fixture_without_datasets():
+    selected = load_sky130_rows(
+        split="train",
+        max_rows=1,
+        topology=None,
+        source_dataset="local_external_ngspice",
+        dataset_name="unused",
+        mock_dataset_json=None,
+    )
+
+    assert [row["circuit_id"] for row in selected] == ["sky130_candidate_chain"]
+    assert selected[0]["source_dataset"] == "local_external_ngspice"
+    assert len(build_output_node_map(selected[0])) >= 3
 
 
 def test_sky130_transient_cli_mock_writes_small_closed_loop(tmp_path):

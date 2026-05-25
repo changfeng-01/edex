@@ -438,6 +438,30 @@ GitHub 上传清单见 `docs/github_upload_checklist.md`。
 - 在积累足够多参数-结果数据后，再评估更稳健的代理模型和优化策略。
 - 增加外部仿真器调度接口，同时保持仿真结果与实物验证边界清晰。
 
+## SKY130 Candidate Validation
+
+This workflow keeps the repository private and focuses on local, simulation-only SKY130/ngspice evidence. It does not download or commit a PDK. By default the local PDK path is `tools/volare-pdks/sky130A`, and `--pdk-root` can override it.
+
+Run the current two-round candidate validation with:
+
+```powershell
+python -m goa_eval.cli optimize-rounds `
+  --sweep config/sky130_candidate_sweep.yaml `
+  --validation-config config/sky130_validation.yaml `
+  --pdk-root tools/volare-pdks/sky130A `
+  --source-dataset local_external_ngspice `
+  --strategy adaptive `
+  --rounds 2 `
+  --max-runs-per-round 3 `
+  --output-root outputs/sky130_candidate_validation
+```
+
+The first round runs the initial SKY130 sweep. The second round replays the top runnable candidates from the previous best run's `next_candidates.csv` before falling back to exploration. Candidate-sourced rows keep `candidate_source=next_candidates`, `source_candidate_id`, `source_candidate_trigger_metric`, and `source_candidate_parameters_json` in both `optimization_history.json` and `optimization_leaderboard.csv`.
+
+The validation target is configured in `config/sky130_validation.yaml`. The current primary target is `Max_overlap_ratio < 0.1`; rows that do not have enough output nodes are marked `not_evaluable` instead of being treated as improvements. Extended validation entries for long hold and PVT/load coverage are recorded in `validation_summary.csv`; they are skipped until the primary target passes.
+
+The local fixture `examples/sky130_candidate_chain_row.json` provides a three-output SKY130 chain-style testbench so overlap can be evaluated. During preparation, the workflow generates a small local `sky130_minimal.lib.spice` per run that references the real SKY130 1.8 V nfet/pfet model files without loading the full PDK library.
+
 ## License
 
 MIT License. See `LICENSE`.
