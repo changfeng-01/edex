@@ -1,15 +1,26 @@
 # GitHub Upload Checklist
 
-## 1. Upload Precheck
+## 1. Public-Release Precheck
 
-Run these checks before the first public commit:
+Run these checks before changing the existing GitHub repository from private to public:
 
 ```bash
 python -m pytest -q
-rg -n "<replace-with-private-path-pattern>" README.md docs examples configs src tests pyproject.toml .gitignore LICENSE
+git status --short --ignored
+git ls-files
+git grep -n -I -E "(DEEPSEEK_API_KEY|api[_-]?key|apikey|secret|password|token|Authorization|Bearer|sk-[A-Za-z0-9_-]{20,})" -- . ':!frontend/package-lock.json'
+rg -n "<replace-with-private-path-pattern>" README.md docs examples configs config src tests pyproject.toml .gitignore LICENSE
 ```
 
-Review any hits manually. Historical notes may mention local paths; public README, docs, examples, and source code should not require them.
+Review all hits manually. Placeholders such as `.env.example` are expected; real credentials, personal absolute paths, private waveform files, PDK folders, and bulky local reports should not be tracked.
+
+Because changing repository visibility exposes Git history too, also run a history scan before switching visibility:
+
+```bash
+git log --all --pickaxe-regex -S"DEEPSEEK_API_KEY|api_key|apikey|secret|password|token|Authorization|Bearer|sk-" --format="%h %ad %s" --date=short
+```
+
+If a real secret appears in Git history, rotate that secret before making the repository public. History rewriting is optional only after rotation and should be coordinated carefully.
 
 ## 2. Do Not Upload
 
@@ -35,22 +46,22 @@ Keep only small public examples:
 - `docs/*.md`
 - tests that generate their own temporary waveform fixtures
 
-## 4. First Git Commands
+## 4. Visibility Change Flow
 
-Only run these after reviewing ignored files:
+For an existing private GitHub repository, do not re-run `git init` or replace the remote. Use the GitHub repository settings to change visibility after the checks above pass.
+
+Recommended local flow for cleanup commits:
 
 ```bash
-git init
 git status --short
-git add .gitignore LICENSE README.md pyproject.toml src tests configs examples docs
+python -m pytest -q
+git add <changed-files>
 git status --short
-git commit -m "chore: prepare CircuitPilot open-source baseline"
-git branch -M main
-git remote add origin <your-github-repo-url>
-git push -u origin main
+git commit -m "chore: prepare public repository checks"
+git push
 ```
 
-Do not push until the file list is reviewed.
+Do not change repository visibility until the tracked file list and ignored local artifacts have been reviewed.
 
 ## 5. Branch Workflow
 

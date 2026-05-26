@@ -469,7 +469,7 @@ GitHub 上传清单见 `docs/github_upload_checklist.md`。
 
 ## SKY130 Candidate Validation
 
-This workflow keeps the repository private and focuses on local, simulation-only SKY130/ngspice evidence. It does not download or commit a PDK. By default the local PDK path is `tools/volare-pdks/sky130A`, and `--pdk-root` can override it.
+This workflow keeps PDK files and private simulation inputs out of the repository while focusing on local, simulation-only SKY130/ngspice evidence. It does not download or commit a PDK. By default the local PDK path is `tools/volare-pdks/sky130A`, and `--pdk-root` can override it.
 
 Run the current two-round candidate validation with:
 
