@@ -53,3 +53,24 @@ python scripts/run_public_demo.py --output-dir outputs/my_demo
 ```
 
 The `outputs/` directory is ignored by git, so generated artifacts remain local unless explicitly copied into a public example folder.
+
+## Next-Round Candidate Loop
+
+After evaluating multiple runs with `evaluate-batch`, generate next-round parameter candidates from the leaderboard:
+
+```powershell
+python -m goa_eval.cli optimize-loop `
+  --leaderboard outputs_batch/leaderboard.csv `
+  --param-space examples/sample_params.yaml `
+  --output-dir outputs/closed_loop `
+  --max-candidates 10
+```
+
+This writes:
+
+- `optimization_leaderboard.csv`
+- `next_candidates.csv`
+- `next_candidates.md`
+- `optimization_history.json`
+
+The loop is conservative: it selects the current best evaluated simulation run, proposes nearby one-parameter and two-parameter changes from the provided parameter space, and records machine-readable provenance. The generated candidates still need to be simulated and fed back through `evaluate-batch`.

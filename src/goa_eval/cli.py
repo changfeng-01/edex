@@ -11,6 +11,7 @@ from goa_eval.evaluation.feature_extractor import extract_waveform_features
 from goa_eval.evaluation.mock_waveform import generate_mock_waveform
 from goa_eval.evaluation.scoring import compute_metric_results
 from goa_eval.io_utils import copy_initial_raw_inputs, ensure_run_dirs, extract_archives, to_jsonable, write_json
+from goa_eval.optimizer import write_closed_loop_outputs
 from goa_eval.parsers.design_parser import build_design_version, discover_design_roots
 from goa_eval.parsers.mapping_parser import parse_mapping
 from goa_eval.parsers.metric_table_parser import parse_metric_table
@@ -96,6 +97,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "evaluate-batch":
         run_batch_evaluation(runs_dir=Path(args.runs_dir), output_dir=Path(args.output_dir))
         return 0
+    if args.command == "optimize-loop":
+        write_closed_loop_outputs(
+            leaderboard_path=Path(args.leaderboard),
+            param_space_path=Path(args.param_space),
+            output_dir=Path(args.output_dir),
+            max_candidates=args.max_candidates,
+        )
+        return 0
     parser.print_help()
     return 2
 
@@ -133,6 +142,11 @@ def build_parser() -> argparse.ArgumentParser:
     batch = sub.add_parser("evaluate-batch")
     batch.add_argument("--runs-dir", required=True)
     batch.add_argument("--output-dir", default="outputs_batch")
+    optimize = sub.add_parser("optimize-loop")
+    optimize.add_argument("--leaderboard", required=True)
+    optimize.add_argument("--param-space", required=True)
+    optimize.add_argument("--output-dir", default="outputs/closed_loop")
+    optimize.add_argument("--max-candidates", type=int, default=10)
     return parser
 
 

@@ -9,7 +9,9 @@ def score_real_evaluation(summary: dict, stage_rows: list[dict], spec: dict) -> 
     hard_constraints = evaluate_hard_constraints(summary, spec)
     failures = [item["reason"] for item in hard_constraints.values() if not item["passed"]]
     warnings = warning_reasons(summary, spec)
-    function_score = 100.0 if not failures else max(0.0, 100.0 - 20.0 * len(failures))
+    constraint_penalties = _constraint_penalties(hard_constraints)
+    hard_failure_penalty = sum(item["penalty"] for item in constraint_penalties.values())
+    function_score = _clamp(100.0 - hard_failure_penalty)
     quality_score = _quality_score(summary, spec)
     stability_score = min(
         _inverse_limit_score(summary.get("Max_ripple"), spec.get("max_ripple_v")),
@@ -44,6 +46,8 @@ def score_real_evaluation(summary: dict, stage_rows: list[dict], spec: dict) -> 
         "hard_constraint_passed": not failures,
         "hard_constraint_failures": failures,
         "hard_constraints": hard_constraints,
+        "constraint_penalties": constraint_penalties,
+        "hard_failure_penalty": _round(hard_failure_penalty),
         "failure_reasons": failures,
         "warning_reasons": warnings,
         "soft_scores": soft_scores,
@@ -158,7 +162,62 @@ def _inverse_limit_score(value, limit) -> float:
     limit = _finite(limit)
     if value is None or limit in (None, 0):
         return 100.0
-    return _clamp(100.0 * (1.0 - value / limit))
+    ratio = value / abs(limit)
+    if ratio <= 1.0:
+        return _clamp(100.0 - 20.0 * ratio)
+    return _clamp(80.0 / (1.0 + (ratio - 1.0)))
+
+
+def _constraint_penalties(hard_constraints: dict[str, dict]) -> dict[str, dict]:
+    penalties: dict[str, dict] = {}
+    for name, item in hard_constraints.items():
+        if item.get("passed"):
+            violation_ratio = 0.0
+            penalty = 0.0
+        else:
+            violation_ratio = _violation_ratio(item)
+            penalty = _penalty_from_violation(violation_ratio)
+        penalties[name] = {
+            "passed": bool(item.get("passed")),
+            "current_value": item.get("current_value"),
+            "threshold": item.get("threshold"),
+            "violation_ratio": _round(violation_ratio),
+            "penalty": _round(penalty),
+            "severity": _penalty_severity(penalty),
+            "reason": item.get("reason"),
+        }
+    return penalties
+
+
+def _violation_ratio(item: dict) -> float:
+    current = _finite(item.get("current_value"))
+    threshold = _finite(item.get("threshold"))
+    if isinstance(item.get("current_value"), bool) or isinstance(item.get("threshold"), bool):
+        return 1.0
+    if current is None or threshold is None:
+        return 1.0
+    if threshold == 0:
+        return abs(current)
+    reason = str(item.get("reason", "")).lower()
+    if "below" in reason:
+        return max(0.0, (threshold - current) / abs(threshold))
+    return max(0.0, (current - threshold) / abs(threshold))
+
+
+def _penalty_from_violation(violation_ratio: float) -> float:
+    if violation_ratio <= 0:
+        return 0.0
+    return min(60.0, 18.0 + 14.0 * math.log2(1.0 + violation_ratio))
+
+
+def _penalty_severity(penalty: float) -> str:
+    if penalty <= 0:
+        return "none"
+    if penalty < 25:
+        return "low"
+    if penalty < 40:
+        return "medium"
+    return "high"
 
 
 def _gt(value, limit) -> bool:
@@ -181,3 +240,7 @@ def _finite(value) -> float | None:
 
 def _clamp(value: float) -> float:
     return float(max(0.0, min(100.0, value)))
+
+
+def _round(value: float) -> float:
+    return round(float(value), 6)
