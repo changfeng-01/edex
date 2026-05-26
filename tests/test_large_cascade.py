@@ -44,6 +44,22 @@ cascade:
     assert nodes[:3] == ["o1", "o2", "o3"]
     assert nodes[-1] == "o720"
     assert spec["cascade"]["stage_group_size"] == 60
+    assert spec["ripple_mode"] == "hold"
+
+
+def test_real_spec_reads_ripple_mode(tmp_path: Path):
+    spec_path = tmp_path / "spec.yaml"
+    spec_path.write_text(
+        """
+thresholds:
+  ripple_mode: diagnostic_only
+""",
+        encoding="utf-8",
+    )
+
+    spec = load_real_spec(spec_path)
+
+    assert spec["ripple_mode"] == "diagnostic_only"
 
 
 def test_evaluate_real_cli_accepts_cascade_overrides():

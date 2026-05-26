@@ -89,6 +89,33 @@ def test_stable_leaderboard_adds_rank_status_and_sorts_failures_last():
     assert list(leaderboard["rank_status"]) == ["evaluated", "evaluated", "not_evaluable", "failed"]
 
 
+def test_stable_leaderboard_prefers_target_overlap_before_overall_score():
+    history = pd.DataFrame(
+        [
+            {
+                "status": "evaluated",
+                "overall_score": 90.0,
+                "target_metric": "Max_overlap_ratio",
+                "target_value": 0.22,
+                "target_passed": False,
+                "run_dir": "high_score_bad_overlap",
+            },
+            {
+                "status": "evaluated",
+                "overall_score": 70.0,
+                "target_metric": "Max_overlap_ratio",
+                "target_value": 0.08,
+                "target_passed": True,
+                "run_dir": "lower_score_target_pass",
+            },
+        ]
+    )
+
+    leaderboard = stable_leaderboard(history)
+
+    assert list(leaderboard["run_dir"]) == ["lower_score_target_pass", "high_score_bad_overlap"]
+
+
 def test_target_metric_status_requires_evaluable_overlap_and_threshold():
     passing = {"status": "evaluated", "stage_count": 3, "Max_overlap_ratio": 0.08}
     failing = {"status": "evaluated", "stage_count": 3, "Max_overlap_ratio": 0.18}

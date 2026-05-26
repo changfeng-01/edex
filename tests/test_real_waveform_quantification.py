@@ -57,7 +57,7 @@ def test_short_high_outside_legal_windows_is_false_trigger_not_normal_cycle():
 
 
 def test_overlap_ratio_uses_min_adjacent_primary_width():
-    time = np.arange(0.0, 20e-6, 0.5e-6)
+    time = np.arange(0.0, 20.5e-6, 0.5e-6)
     frame = pd.DataFrame(
         {
             "time": time,
@@ -76,6 +76,49 @@ def test_overlap_ratio_uses_min_adjacent_primary_width():
     expected_ratio = result.stage_rows[0]["Overlap"] / min(result.stage_rows[0]["PulseWidth"], result.stage_rows[1]["PulseWidth"])
     assert result.stage_rows[0]["OverlapRatio"] == pytest.approx(expected_ratio)
     assert result.summary["Max_overlap_ratio"] == pytest.approx(expected_ratio)
+
+
+def test_overlap_ratio_for_repeated_windows_is_normalized_by_total_active_width():
+    index = np.arange(0, 41)
+    time = index * 0.5e-6
+    frame = pd.DataFrame(
+        {
+            "time": time,
+            "o1": np.where(((index >= 4) & (index < 16)) | ((index >= 24) & (index < 36)), 6.0, 0.0),
+            "o2": np.where(((index >= 12) & (index < 20)) | ((index >= 32) & (index < 40)), 6.0, 0.0),
+        }
+    )
+
+    result = evaluate_waveform_metrics(
+        frame,
+        RealEvalConfig(high_threshold=5.0, low_threshold=1.0, min_pulse_width=2e-6),
+        output_nodes=["o1", "o2"],
+    )
+
+    assert result.stage_rows[0]["Overlap"] == pytest.approx(4e-6)
+    assert result.stage_rows[0]["OverlapRatio"] == pytest.approx(4e-6 / 8e-6)
+    assert result.summary["Max_overlap_ratio"] == pytest.approx(0.5)
+
+
+def test_overlap_ignores_common_startup_window_at_left_boundary():
+    index = np.arange(0, 41)
+    time = index * 0.5e-6
+    frame = pd.DataFrame(
+        {
+            "time": time,
+            "o1": np.where(((index >= 0) & (index < 4)) | ((index >= 20) & (index < 24)), 6.0, 0.0),
+            "o2": np.where(((index >= 0) & (index < 4)) | ((index >= 26) & (index < 30)), 6.0, 0.0),
+        }
+    )
+
+    result = evaluate_waveform_metrics(
+        frame,
+        RealEvalConfig(high_threshold=5.0, low_threshold=1.0, min_pulse_width=1e-6),
+        output_nodes=["o1", "o2"],
+    )
+
+    assert result.stage_rows[0]["Overlap"] == pytest.approx(0.0)
+    assert result.stage_rows[0]["OverlapRatio"] == pytest.approx(0.0)
 
 
 def test_voltage_loss_is_reported_per_stage_and_summary():
@@ -99,6 +142,33 @@ def test_voltage_loss_is_reported_per_stage_and_summary():
     assert row["VoltageLossRatio"] == pytest.approx(0.8 / 7.0)
     assert result.summary["Max_voltage_loss"] == pytest.approx(0.8)
     assert result.summary["Max_voltage_loss_ratio"] == pytest.approx(0.8 / 7.0)
+
+
+def test_diagnostic_only_ripple_is_not_a_summary_hard_metric():
+    time = np.arange(0.0, 12e-6, 1.0e-6)
+    frame = pd.DataFrame(
+        {
+            "time": time,
+            "o1": np.array([0.0, 0.0, 6.0, 14.0, 13.0, 6.0, 0.0, 0.1, 0.6, 0.2, 0.0, 0.0]),
+        }
+    )
+
+    result = evaluate_waveform_metrics(
+        frame,
+        RealEvalConfig(
+            high_threshold=5.0,
+            low_threshold=1.0,
+            min_pulse_width=2e-6,
+            ripple_mode="diagnostic_only",
+        ),
+        output_nodes=["o1"],
+    )
+
+    assert result.stage_rows[0]["Ripple"] is None
+    assert result.stage_rows[0]["RippleRaw"] == pytest.approx(0.6)
+    assert result.summary["Max_ripple"] is None
+    assert result.summary["Max_ripple_raw"] == pytest.approx(0.6)
+    assert result.summary["ripple_mode"] == "diagnostic_only"
 
 
 def test_low_frequency_stability_is_not_evaluable_when_waveform_is_shorter_than_frame_hold_time():

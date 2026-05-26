@@ -80,6 +80,7 @@ def run_real_waveform_evaluation(
         stage_group_size=cascade["stage_group_size"],
         min_pulse_width=spec["min_pulse_width"],
         false_trigger_min_duration=spec["false_trigger_min_duration"],
+        ripple_mode=spec["ripple_mode"],
     )
     evaluation = evaluate_waveform_metrics(waveform.frame, config, output_nodes=output_nodes)
     evaluation.notes.append(node_selection_note)

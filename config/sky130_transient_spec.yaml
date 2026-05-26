@@ -11,6 +11,7 @@ thresholds:
   target_refresh_hz: 1000000.0
   min_pulse_width_us: 0.00005
   false_trigger_min_duration_us: 0.00005
+  ripple_mode: diagnostic_only
 
 cascade:
   stage_count: 8

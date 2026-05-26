@@ -117,6 +117,11 @@ def propose_candidates(
             _append_if_available(candidates, param_space, "W_pmos", "increase", 70, recommendation)
             _append_if_available(candidates, param_space, "transistor_width", "increase", 70, recommendation)
         if "overlap" in rec_id or metric == "Max_overlap_ratio":
+            _append_if_available(candidates, param_space, "vin2_delay", "increase_spacing", 96, recommendation)
+            _append_if_available(candidates, param_space, "vin3_delay", "increase_spacing", 96, recommendation)
+            _append_if_available(candidates, param_space, "vin1_pulse_width", "increase", 94, recommendation)
+            _append_if_available(candidates, param_space, "vin2_pulse_width", "increase", 94, recommendation)
+            _append_if_available(candidates, param_space, "vin3_pulse_width", "increase", 94, recommendation)
             _append_if_available(candidates, param_space, "R_driver", "review_timing", 85, recommendation)
             _append_if_available(candidates, param_space, "drive_resistance", "review_timing", 85, recommendation)
             _append_if_available(candidates, param_space, "m1_width", "review_timing", 82, recommendation)

@@ -26,6 +26,7 @@ class RealEvalConfig:
     edge_buffer_ratio: float = 0.10
     min_pulse_width: float = 2.0e-6
     false_trigger_min_duration: float = 0.0
+    ripple_mode: str = "hold"
 
 
 @dataclass
@@ -56,6 +57,7 @@ def evaluate_waveform_metrics(
     voh_means = []
     vol_max_values = []
     ripples = []
+    raw_ripples = []
     voltage_losses = []
     voltage_loss_ratios = []
     waveform_activity_scores = []
@@ -74,6 +76,8 @@ def evaluate_waveform_metrics(
             vol_max_values.append(metrics["VOL_max"])
         if metrics["Ripple"] is not None:
             ripples.append(metrics["Ripple"])
+        if metrics.get("RippleRaw") is not None:
+            raw_ripples.append(metrics["RippleRaw"])
         if metrics["VoltageLoss"] is not None:
             voltage_losses.append(metrics["VoltageLoss"])
         if metrics["VoltageLossRatio"] is not None:
@@ -90,11 +94,16 @@ def evaluate_waveform_metrics(
             delay = None
         right["Delay"] = delay
         right["delay_to_next"] = delay
-        overlap = _windows_overlap_duration(left["legal_windows"], right["legal_windows"])
+        overlap = _windows_overlap_duration(left["legal_windows"], right["legal_windows"], start_time=float(time[0]))
         overlaps.append(overlap)
         left["Overlap"] = overlap
         left["overlap_with_next"] = overlap
-        denominator = _overlap_denominator(left["PulseWidth"], right["PulseWidth"])
+        denominator = _overlap_denominator(
+            left["PulseWidth"],
+            right["PulseWidth"],
+            left["legal_windows"],
+            right["legal_windows"],
+        )
         ratio = overlap / denominator if denominator else None
         left["OverlapRatio"] = ratio
         left["overlap_ratio"] = ratio
@@ -137,6 +146,8 @@ def evaluate_waveform_metrics(
         "Width_mean": _safe_mean(widths),
         "Width_std": _safe_std(widths),
         "Max_ripple": _safe_max(ripples),
+        "Max_ripple_raw": _safe_max(raw_ripples),
+        "ripple_mode": config.ripple_mode,
         "Max_voltage_loss": max_voltage_loss,
         "Max_voltage_loss_ratio": _safe_max(voltage_loss_ratios),
         "Max_overlap": _safe_max(overlaps),
@@ -191,7 +202,9 @@ def compute_stage_metrics(time: np.ndarray, signal: np.ndarray, config: RealEval
             "rising_time": None,
             "falling_time": None,
             "Ripple": None,
+            "RippleRaw": None,
             "ripple": None,
+            "ripple_mode": config.ripple_mode,
             "VHoldEnd": None,
             "VoltageLoss": None,
             "VoltageLossRatio": None,
@@ -229,7 +242,8 @@ def compute_stage_metrics(time: np.ndarray, signal: np.ndarray, config: RealEval
     ]
     rise_time = _edge_duration(time, signal, v10, v90, "rising", after=edge_search_start)
     fall_time = _edge_duration(time, signal, v90, v10, "falling", after=rise_edge)
-    ripple, vol_max = ripple_in_hold_window(time, signal, legal_windows, config.edge_buffer_ratio)
+    raw_ripple, vol_max = ripple_in_hold_window(time, signal, legal_windows, config.edge_buffer_ratio)
+    ripple = _evaluated_ripple(raw_ripple, config)
     selected_signal = signal[selected_mask]
     voh_max = float(np.nanmax(selected_signal)) if selected_mask.any() else None
     v_hold_end = _last_finite(selected_signal) if selected_mask.any() else None
@@ -257,7 +271,9 @@ def compute_stage_metrics(time: np.ndarray, signal: np.ndarray, config: RealEval
         "rising_time": rise_time,
         "falling_time": fall_time,
         "Ripple": ripple,
+        "RippleRaw": raw_ripple,
         "ripple": ripple,
+        "ripple_mode": config.ripple_mode,
         "VHoldEnd": v_hold_end,
         "VoltageLoss": voltage_loss,
         "VoltageLossRatio": voltage_loss_ratio,
@@ -377,6 +393,13 @@ def _overall_status(summary: dict, config: RealEvalConfig) -> str:
     if summary["VOH_min"] is not None and summary["VOH_min"] - config.high_threshold < config.min_voh_margin_v:
         return "FAIL_LOW_VOH"
     return "PASS_BASIC_SIMULATION_CHECK"
+
+
+def _evaluated_ripple(raw_ripple: float | None, config: RealEvalConfig) -> float | None:
+    mode = str(config.ripple_mode or "hold").lower()
+    if mode in {"diagnostic_only", "diagnostic-only", "diagnostic"}:
+        return None
+    return raw_ripple
 
 
 def _large_cascade_summary(stage_rows: list[dict], config: RealEvalConfig) -> dict:
@@ -513,13 +536,44 @@ def _low_frequency_stability(summary: dict, config: RealEvalConfig) -> tuple[boo
     return bool(stable), "当前波形覆盖目标刷新周期，已按电压损失、纹波和误触发进行低频稳定性初判。"
 
 
-def _windows_overlap_duration(left_windows: list[tuple[float, float]], right_windows: list[tuple[float, float]]) -> float:
-    return total_pairwise_overlap(left_windows, right_windows)
+def _windows_overlap_duration(
+    left_windows: list[tuple[float, float]],
+    right_windows: list[tuple[float, float]],
+    *,
+    start_time: float | None = None,
+) -> float:
+    if start_time is None:
+        return total_pairwise_overlap(left_windows, right_windows)
+    total = 0.0
+    for left in left_windows:
+        for right in right_windows:
+            if _starts_at_boundary(left, start_time) and _starts_at_boundary(right, start_time):
+                continue
+            total += total_pairwise_overlap([left], [right])
+    return float(total)
 
 
-def _overlap_denominator(left_width: float | None, right_width: float | None) -> float | None:
-    values = [width for width in [left_width, right_width] if width is not None and width > 0]
+def _starts_at_boundary(window: tuple[float, float], start_time: float) -> bool:
+    return abs(float(window[0]) - float(start_time)) <= 1e-15
+
+
+def _overlap_denominator(
+    left_width: float | None,
+    right_width: float | None,
+    left_windows: list[tuple[float, float]] | None = None,
+    right_windows: list[tuple[float, float]] | None = None,
+) -> float | None:
+    left_total = _windows_total_duration(left_windows or [])
+    right_total = _windows_total_duration(right_windows or [])
+    if left_total > 0 and right_total > 0:
+        values = [left_total, right_total]
+    else:
+        values = [width for width in [left_width, right_width] if width is not None and width > 0]
     return min(values) if len(values) == 2 else None
+
+
+def _windows_total_duration(windows: list[tuple[float, float]]) -> float:
+    return float(sum(max(0.0, end - start) for start, end in windows))
 
 
 def _last_finite(values: np.ndarray) -> float | None:
