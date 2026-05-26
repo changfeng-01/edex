@@ -23,6 +23,7 @@ from goa_eval.report.reporter import write_report_md
 from goa_eval.report.summary_writer import write_metric_table, write_metrics_csv, write_summary_json
 from goa_eval.real_waveform_eval import run_real_waveform_evaluation
 from goa_eval.recommendation import write_recommendations_markdown
+from goa_eval.sky130_experiment import run_sky130_experiment_preflight
 from goa_eval.visualization.comparison_plotter import plot_v1_v8_comparison
 from goa_eval.visualization.metric_plotter import plot_voh_bar
 from goa_eval.visualization.version_compare_plotter import plot_timing_overview
@@ -105,6 +106,16 @@ def main(argv: list[str] | None = None) -> int:
             max_candidates=args.max_candidates,
         )
         return 0
+    if args.command == "sky130-experiment":
+        report = run_sky130_experiment_preflight(
+            pdk_root=Path(args.pdk_root),
+            ngspice=Path(args.ngspice),
+            output_dir=Path(args.output_dir),
+            mock_if_unavailable=args.mock_if_unavailable,
+        )
+        if report["status"] == "blocked_missing_toolchain":
+            return 2
+        return 0
     parser.print_help()
     return 2
 
@@ -147,6 +158,11 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.add_argument("--param-space", required=True)
     optimize.add_argument("--output-dir", default="outputs/closed_loop")
     optimize.add_argument("--max-candidates", type=int, default=10)
+    sky130 = sub.add_parser("sky130-experiment")
+    sky130.add_argument("--pdk-root", default="tools/volare-pdks/sky130A")
+    sky130.add_argument("--ngspice", default="tools/ngspice/Spice64/bin/ngspice.exe")
+    sky130.add_argument("--output-dir", default="outputs/sky130_experiment")
+    sky130.add_argument("--mock-if-unavailable", action="store_true")
     return parser
 
 
