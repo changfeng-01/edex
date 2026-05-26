@@ -10,6 +10,9 @@ import pandas as pd
 
 from goa_eval.config import load_configs
 from goa_eval.batch_eval import run_batch_evaluation
+from goa_eval.ai_profile_assistant import run_ai_profile_assistant
+from goa_eval.circuit_profiles import validate_profile_references
+from goa_eval.csv_import_adapter import run_csv_import, run_csv_import_sweep
 from goa_eval.evaluation.feature_extractor import extract_waveform_features
 from goa_eval.evaluation.mock_waveform import generate_mock_waveform
 from goa_eval.evaluation.scoring import compute_metric_results
@@ -17,6 +20,7 @@ from goa_eval.io_utils import copy_initial_raw_inputs, ensure_run_dirs, extract_
 from goa_eval.llm_analysis import run_llm_parameter_analysis
 from goa_eval.multi_round_optimizer import run_multi_round_optimization
 from goa_eval.optimizer import constrained_random_candidates, load_baseline_params, load_param_space, propose_candidates, write_candidate_outputs
+from goa_eval.parameter_semantics import load_parameter_semantics
 from goa_eval.parsers.design_parser import build_design_version, discover_design_roots
 from goa_eval.parsers.mapping_parser import parse_mapping
 from goa_eval.parsers.metric_table_parser import parse_metric_table
@@ -28,6 +32,7 @@ from goa_eval.report.reporter import write_report_md
 from goa_eval.report.summary_writer import write_metric_table, write_metrics_csv, write_summary_json
 from goa_eval.real_waveform_eval import run_real_waveform_evaluation
 from goa_eval.recommendation import build_recommendations, write_recommendations_markdown
+from goa_eval.sky130_mainline import run_sky130_mainline
 from goa_eval.sky130_sweep import run_sky130_sweep
 from goa_eval.sky130_transient import Sky130DependencyError, run_sky130_transient
 from goa_eval.visualization.comparison_plotter import plot_v1_v8_comparison
@@ -92,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
             output_node_pattern=args.output_node_pattern,
             stage_group_size=args.stage_group_size,
             topology=args.topology,
+            circuit_profile=args.circuit_profile,
+            profile_file=Path(args.profile_file) if args.profile_file else None,
         )
         return 0
     if args.command == "recommend":
@@ -111,8 +118,14 @@ def main(argv: list[str] | None = None) -> int:
         metrics = pd.read_csv(Path(args.metrics)) if args.metrics else pd.DataFrame()
         recommendations = build_recommendations(summary, score, metrics)
         param_space = load_param_space(Path(args.param_space))
+        semantics = load_parameter_semantics(Path(args.params)) if args.params else None
         if args.strategy == "rule":
-            candidates = propose_candidates(param_space, recommendations)
+            candidates = propose_candidates(
+                param_space,
+                recommendations,
+                profile_file=Path(args.profile_file) if args.profile_file else None,
+                parameter_semantics=semantics,
+            )
         else:
             candidates = constrained_random_candidates(
                 param_space,
@@ -120,8 +133,17 @@ def main(argv: list[str] | None = None) -> int:
                 max_candidates=args.max_candidates,
                 seed=args.seed,
                 baseline_params=load_baseline_params(Path(args.baseline_params)) if args.baseline_params else None,
+                profile_file=Path(args.profile_file) if args.profile_file else None,
+                parameter_semantics=semantics,
             )
         write_candidate_outputs(candidates, csv_path=Path(args.output_csv), markdown_path=Path(args.output_md))
+        return 0
+    if args.command == "validate-config":
+        validate_profile_references(
+            profile_file=Path(args.profile_file),
+            semantics_file=Path(args.params) if args.params else None,
+        )
+        print(f"validated {args.profile_file}" + (f" with {args.params}" if args.params else ""))
         return 0
     if args.command == "analyze-params":
         run_llm_parameter_analysis(
@@ -136,6 +158,108 @@ def main(argv: list[str] | None = None) -> int:
             mock_response=args.mock_response,
         )
         return 0
+    if args.command == "ai-profile-assistant":
+        run_ai_profile_assistant(
+            description_path=Path(args.description),
+            output_dir=Path(args.output_dir),
+            profile_file=Path(args.profile_file) if args.profile_file else None,
+            params_file=Path(args.params) if args.params else None,
+            metrics_file=Path(args.metrics) if args.metrics else None,
+            score_file=Path(args.score) if args.score else None,
+            model=args.model,
+            mock_response=args.mock_response,
+        )
+        return 0
+    if args.command == "csv-import":
+        run_csv_import(
+            input_dir=Path(args.input_dir),
+            output_dir=Path(args.output_dir),
+            spec_path=Path(args.spec),
+            param_space_path=Path(args.param_space),
+            circuit_profile=args.circuit_profile,
+            profile_file=Path(args.profile_file) if args.profile_file else None,
+            params_file=Path(args.params) if args.params else None,
+            max_candidates=args.max_candidates,
+            seed=args.seed,
+        )
+        return 0
+    if args.command == "simulate-run":
+        if args.adapter == "csv-import":
+            run_csv_import(
+                input_dir=Path(args.input_dir),
+                output_dir=Path(args.output_dir),
+                spec_path=Path(args.spec),
+                param_space_path=Path(args.param_space),
+                circuit_profile=args.circuit_profile,
+                profile_file=Path(args.profile_file) if args.profile_file else None,
+                params_file=Path(args.params) if args.params else None,
+                max_candidates=args.max_candidates,
+                seed=args.seed,
+            )
+            return 0
+        if args.adapter == "sky130-transient":
+            try:
+                run_sky130_transient(
+                    output_root=Path(args.output_dir),
+                    split=args.split,
+                    max_rows=args.max_rows,
+                    topology=args.topology or args.circuit_profile,
+                    source_dataset=args.source_dataset,
+                    dataset_name=args.dataset,
+                    mock_dataset_json=Path(args.mock_dataset_json) if args.mock_dataset_json else None,
+                    mock_ngspice=args.mock_ngspice,
+                    ngspice_cmd=args.ngspice_cmd,
+                    spec_path=Path(args.spec),
+                    param_space_path=Path(args.param_space),
+                    max_candidates=args.max_candidates,
+                    seed=args.seed,
+                )
+            except Sky130DependencyError as exc:
+                print(str(exc), file=sys.stderr)
+                return 2
+            return 0
+        print(f"unsupported simulate-run adapter: {args.adapter}", file=sys.stderr)
+        return 2
+    if args.command == "simulate-sweep":
+        if args.adapter == "csv-import":
+            run_csv_import_sweep(
+                input_root=Path(args.input_root),
+                output_root=Path(args.output_root),
+                spec_path=Path(args.spec),
+                param_space_path=Path(args.param_space),
+                circuit_profile=args.circuit_profile,
+                profile_file=Path(args.profile_file) if args.profile_file else None,
+                params_file=Path(args.params) if args.params else None,
+                max_candidates=args.max_candidates,
+                seed=args.seed,
+            )
+            return 0
+        if args.adapter == "sky130-sweep":
+            try:
+                run_sky130_sweep(
+                    sweep_path=Path(args.sweep),
+                    output_root=Path(args.output_root),
+                    pdk_root=Path(args.pdk_root) if args.pdk_root else None,
+                    split=args.split,
+                    max_rows=args.max_rows,
+                    topology=args.topology or args.circuit_profile,
+                    source_dataset=args.source_dataset,
+                    dataset_name=args.dataset,
+                    mock_dataset_json=Path(args.mock_dataset_json) if args.mock_dataset_json else None,
+                    mock_ngspice=args.mock_ngspice,
+                    ngspice_cmd=args.ngspice_cmd,
+                    spec_path=Path(args.spec),
+                    param_space_path=Path(args.param_space),
+                    max_candidates=args.max_candidates,
+                    seed=args.seed,
+                    max_runs=args.max_runs,
+                )
+            except Sky130DependencyError as exc:
+                print(str(exc), file=sys.stderr)
+                return 2
+            return 0
+        print(f"unsupported simulate-sweep adapter: {args.adapter}", file=sys.stderr)
+        return 2
     if args.command == "sky130-transient":
         try:
             run_sky130_transient(
@@ -212,6 +336,38 @@ def main(argv: list[str] | None = None) -> int:
             print(str(exc), file=sys.stderr)
             return 2
         return 0
+    if args.command == "sky130-mainline":
+        try:
+            run_sky130_mainline(
+                sweep_path=Path(args.sweep),
+                output_root=Path(args.output_root),
+                validation_config_path=Path(args.validation_config) if args.validation_config else None,
+                rounds=args.rounds,
+                max_runs_per_round=args.max_runs_per_round,
+                patience=args.patience,
+                min_improvement=args.min_improvement,
+                exploration_ratio=args.exploration_ratio,
+                pdk_root=Path(args.pdk_root) if args.pdk_root else None,
+                split=args.split,
+                max_rows=args.max_rows,
+                topology=args.topology,
+                source_dataset=args.source_dataset,
+                dataset_name=args.dataset,
+                mock_dataset_json=Path(args.mock_dataset_json) if args.mock_dataset_json else None,
+                mock_ngspice=args.mock_ngspice,
+                mock_if_unavailable=args.mock_if_unavailable,
+                ngspice_cmd=args.ngspice_cmd,
+                spec_path=Path(args.spec),
+                param_space_path=Path(args.param_space),
+                max_candidates=args.max_candidates,
+                seed=args.seed,
+                strategy=args.strategy,
+                full_validation=args.full_validation,
+            )
+        except Sky130DependencyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        return 0
     parser.print_help()
     return 2
 
@@ -242,6 +398,8 @@ def build_parser() -> argparse.ArgumentParser:
     real.add_argument("--output-node-pattern")
     real.add_argument("--stage-group-size", type=int)
     real.add_argument("--topology")
+    real.add_argument("--circuit-profile")
+    real.add_argument("--profile-file")
     recommend = sub.add_parser("recommend")
     recommend.add_argument("--summary", required=True)
     recommend.add_argument("--score")
@@ -259,8 +417,13 @@ def build_parser() -> argparse.ArgumentParser:
     candidates.add_argument("--max-candidates", type=int, default=10)
     candidates.add_argument("--seed", type=int, default=42)
     candidates.add_argument("--baseline-params")
+    candidates.add_argument("--profile-file")
+    candidates.add_argument("--params")
     candidates.add_argument("--output-csv", default="outputs/next_candidates.csv")
     candidates.add_argument("--output-md", default="outputs/next_candidates.md")
+    validate = sub.add_parser("validate-config")
+    validate.add_argument("--profile-file", required=True)
+    validate.add_argument("--params")
     analyze = sub.add_parser("analyze-params")
     analyze.add_argument("--summary", required=True)
     analyze.add_argument("--score")
@@ -271,6 +434,30 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--mock-response")
     analyze.add_argument("--output-md", default="outputs/llm_parameter_analysis.md")
     analyze.add_argument("--output-json", default="outputs/llm_parameter_analysis.json")
+    assistant = sub.add_parser("ai-profile-assistant")
+    assistant.add_argument("--description", required=True)
+    assistant.add_argument("--profile-file")
+    assistant.add_argument("--params")
+    assistant.add_argument("--metrics")
+    assistant.add_argument("--score")
+    assistant.add_argument("--model", default="deepseek-v4-pro")
+    assistant.add_argument("--mock-response")
+    assistant.add_argument("--output-dir", default="outputs/ai_profile_assistant")
+    csv_import = sub.add_parser("csv-import")
+    _add_csv_import_args(csv_import)
+    simulate_run = sub.add_parser("simulate-run")
+    simulate_run.add_argument("--adapter", choices=["csv-import", "sky130-transient"], required=True)
+    _add_csv_import_args(simulate_run)
+    _add_sky130_common_args(simulate_run, output_arg=None)
+    simulate_sweep = sub.add_parser("simulate-sweep")
+    simulate_sweep.add_argument("--adapter", choices=["csv-import", "sky130-sweep"], required=True)
+    simulate_sweep.add_argument("--input-root", default="outputs/csv_import_inputs")
+    simulate_sweep.add_argument("--output-root", default="outputs/simulate_sweep")
+    simulate_sweep.add_argument("--sweep", default="config/sky130_sweep.yaml")
+    simulate_sweep.add_argument("--pdk-root")
+    simulate_sweep.add_argument("--max-runs", type=int)
+    _add_common_profile_args(simulate_sweep)
+    _add_sky130_common_args(simulate_sweep, output_arg=None)
     sky130 = sub.add_parser("sky130-transient")
     sky130.add_argument("--dataset", default="pphilip/analog-circuits-sky130")
     sky130.add_argument("--split", choices=["train", "validation", "test"], default="train")
@@ -326,7 +513,63 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.add_argument("--ngspice-cmd", default="ngspice")
     optimize.add_argument("--mock-dataset-json")
     optimize.add_argument("--mock-ngspice", action="store_true")
+    mainline = sub.add_parser("sky130-mainline")
+    mainline.add_argument("--sweep", default="config/sky130_candidate_sweep.yaml")
+    mainline.add_argument("--pdk-root")
+    mainline.add_argument("--dataset", default="pphilip/analog-circuits-sky130")
+    mainline.add_argument("--split", choices=["train", "validation", "test"], default="train")
+    mainline.add_argument("--max-rows", type=int, default=1)
+    mainline.add_argument("--topology")
+    mainline.add_argument("--source-dataset")
+    mainline.add_argument("--output-root", default="outputs/sky130_mainline")
+    mainline.add_argument("--spec", default="config/sky130_transient_spec.yaml")
+    mainline.add_argument("--param-space", default="examples/sample_params.yaml")
+    mainline.add_argument("--max-candidates", type=int, default=10)
+    mainline.add_argument("--seed", type=int, default=42)
+    mainline.add_argument("--rounds", type=int, default=1)
+    mainline.add_argument("--strategy", choices=["adaptive", "genetic", "bayesian", "surrogate", "hybrid"], default="adaptive")
+    mainline.add_argument("--max-runs-per-round", type=int, default=3)
+    mainline.add_argument("--patience", type=int, default=2)
+    mainline.add_argument("--min-improvement", type=float, default=0.0)
+    mainline.add_argument("--exploration-ratio", type=float, default=0.25)
+    mainline.add_argument("--validation-config", default="config/sky130_validation.yaml")
+    mainline.add_argument("--ngspice-cmd", default="ngspice")
+    mainline.add_argument("--mock-dataset-json", default="examples/sky130_candidate_chain_row.json")
+    mainline.add_argument("--mock-ngspice", action="store_true")
+    mainline.add_argument("--lightweight", action="store_true", default=True)
+    mainline.add_argument("--full-validation", action="store_true")
+    mainline.add_argument("--mock-if-unavailable", dest="mock_if_unavailable", action="store_true", default=True)
+    mainline.add_argument("--no-mock-if-unavailable", dest="mock_if_unavailable", action="store_false")
     return parser
+
+
+def _add_common_profile_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--spec", default="config/sky130_transient_spec.yaml")
+    parser.add_argument("--param-space", default="examples/sample_params.yaml")
+    parser.add_argument("--circuit-profile")
+    parser.add_argument("--profile-file")
+    parser.add_argument("--params")
+    parser.add_argument("--max-candidates", type=int, default=10)
+    parser.add_argument("--seed", type=int, default=42)
+
+
+def _add_csv_import_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--input-dir", default=".")
+    parser.add_argument("--output-dir", default="outputs/csv_import")
+    _add_common_profile_args(parser)
+
+
+def _add_sky130_common_args(parser: argparse.ArgumentParser, *, output_arg: str | None) -> None:
+    parser.add_argument("--dataset", default="pphilip/analog-circuits-sky130")
+    parser.add_argument("--split", choices=["train", "validation", "test"], default="train")
+    parser.add_argument("--max-rows", type=int, default=5)
+    parser.add_argument("--topology")
+    parser.add_argument("--source-dataset")
+    if output_arg:
+        parser.add_argument(f"--{output_arg}", default="outputs/sky130_smoke")
+    parser.add_argument("--ngspice-cmd", default="ngspice")
+    parser.add_argument("--mock-dataset-json")
+    parser.add_argument("--mock-ngspice", action="store_true")
 
 
 def _output_path(args) -> Path:

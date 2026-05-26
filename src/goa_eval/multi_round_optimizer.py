@@ -572,11 +572,26 @@ def stable_leaderboard(history: pd.DataFrame) -> pd.DataFrame:
     status_order = {"evaluated": 0, "not_evaluable": 1, "skipped": 2, "failed": 3}
     ranked["_score"] = scores.fillna(float("-inf"))
     ranked["_status_order"] = ranked["rank_status"].map(status_order).fillna(9)
+    target_passed = ranked["target_passed"] if "target_passed" in ranked else pd.Series([""] * len(ranked), index=ranked.index)
+    ranked["_target_pass_order"] = target_passed.map(_target_pass_order).fillna(1)
+    target_values = pd.to_numeric(ranked["target_value"], errors="coerce") if "target_value" in ranked else pd.Series([float("inf")] * len(ranked), index=ranked.index)
+    ranked["_target_value"] = target_values.fillna(float("inf"))
     round_values = ranked["round_index"] if "round_index" in ranked else pd.Series([0] * len(ranked), index=ranked.index)
     ranked["_round"] = pd.to_numeric(round_values, errors="coerce").fillna(0)
     ranked["_run"] = ranked.get("run_dir", "").astype(str)
-    ranked = ranked.sort_values(["_status_order", "_score", "_round", "_run"], ascending=[True, False, True, True])
-    return ranked.drop(columns=["_score", "_status_order", "_round", "_run"])
+    ranked = ranked.sort_values(
+        ["_status_order", "_target_pass_order", "_target_value", "_score", "_round", "_run"],
+        ascending=[True, True, True, False, True, True],
+    )
+    return ranked.drop(columns=["_score", "_status_order", "_target_pass_order", "_target_value", "_round", "_run"])
+
+
+def _target_pass_order(value: object) -> int:
+    if value is True or str(value).lower() == "true":
+        return 0
+    if value is False or str(value).lower() == "false":
+        return 1
+    return 2
 
 
 def enrich_history_row(row: dict, *, target_metric: str | None = None, target_threshold: float | None = None) -> dict:
@@ -586,7 +601,7 @@ def enrich_history_row(row: dict, *, target_metric: str | None = None, target_th
     score = _read_json(run_dir / "score_summary.json")
     analysis = _read_json(run_dir / "analysis_metrics.json")
     if summary:
-        for key in ["stage_count", "Max_overlap_ratio", "Max_ripple", "Max_voltage_loss", "Delay_std", "LowFreqStable", "Overall_status"]:
+        for key in ["stage_count", "Max_overlap_ratio", "Max_ripple", "Max_ripple_raw", "ripple_mode", "Max_voltage_loss", "Delay_std", "LowFreqStable", "Overall_status"]:
             if key in summary:
                 enriched[key] = summary.get(key)
     if score:
@@ -709,6 +724,10 @@ def _best_parameter_row(history: pd.DataFrame, parameters: dict[str, Any]) -> di
 def _best_history_row(history: pd.DataFrame) -> dict | None:
     if history.empty or "overall_score" not in history:
         return None
+    if "target_value" in history:
+        ranked = stable_leaderboard(history)
+        if not ranked.empty:
+            return ranked.iloc[0].to_dict()
     scores = pd.to_numeric(history["overall_score"], errors="coerce")
     if not scores.notna().any():
         return None

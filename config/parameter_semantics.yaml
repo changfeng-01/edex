@@ -1,0 +1,101 @@
+schema_version: "1.0"
+
+parameters:
+  m1_width:
+    target: "XM1.W"
+    type: device_dimension
+    unit: "um"
+    values:
+      - "0.8um"
+      - "1.0um"
+      - "1.2um"
+    semantic_tags:
+      - device_width
+      - input_pair_width
+      - gain_device_width
+      - gm_control
+    affects:
+      - dc_gain_db
+      - unity_gain_hz
+      - static_power_w
+    risk_tags:
+      - area
+      - parasitic_capacitance
+      - mismatch
+
+  m2_width:
+    target: "XM2.W"
+    type: device_dimension
+    unit: "um"
+    values:
+      - "0.8um"
+      - "1.0um"
+      - "1.2um"
+    semantic_tags:
+      - device_width
+      - input_pair_width
+      - gain_device_width
+      - gm_control
+    affects:
+      - dc_gain_db
+      - unity_gain_hz
+      - static_power_w
+    risk_tags:
+      - area
+      - parasitic_capacitance
+      - mismatch
+
+  ibias:
+    target: "IBIAS.dc_value"
+    type: bias_source
+    unit: "A"
+    values:
+      - "5uA"
+      - "10uA"
+      - "20uA"
+    semantic_tags:
+      - bias_current
+      - speed_power_tradeoff
+      - slew_control
+    affects:
+      - unity_gain_hz
+      - slew_rate_v_per_s
+      - static_power_w
+    risk_tags:
+      - power
+      - thermal
+
+  ccomp:
+    target: "CCOMP.C"
+    type: capacitance
+    unit: "F"
+    values:
+      - "0.5pF"
+      - "1pF"
+      - "2pF"
+    semantic_tags:
+      - compensation_capacitance
+      - stability_control
+    affects:
+      - phase_margin_deg
+      - unity_gain_hz
+      - slew_rate_v_per_s
+    risk_tags:
+      - stability
+      - bandwidth
+
+parameter_groups:
+  input_pair:
+    members:
+      - m1_width
+      - m2_width
+    constraint: must_change_together
+    matching_required: true
+    description: "Differential input pair widths should be changed together to preserve symmetry."
+
+  compensation_network:
+    members:
+      - ccomp
+      - ibias
+    constraint: tradeoff_coupled
+    description: "Compensation capacitance and bias current jointly affect phase margin, bandwidth and slew rate."

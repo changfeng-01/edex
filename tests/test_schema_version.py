@@ -21,7 +21,7 @@ def test_schema_versions_are_public_strings():
 
 def test_real_result_schema_contains_stable_boundary_fields():
     assert {"schema_version", "result_version", "data_source", "engineering_validity"} <= set(REAL_SUMMARY_REQUIRED_FIELDS)
-    assert {"stage", "node", "Ripple", "Overlap", "OverlapRatio"} <= set(REAL_METRICS_COLUMNS)
+    assert {"stage", "node", "Ripple", "RippleRaw", "ripple_mode", "Overlap", "OverlapRatio"} <= set(REAL_METRICS_COLUMNS)
     assert {
         "recommendation_id",
         "severity",

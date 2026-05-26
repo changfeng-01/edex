@@ -231,6 +231,32 @@ def test_constrained_random_candidates_prioritize_severe_constraint_penalties():
     assert "critical" in candidates[0]["rationale"]
 
 
+def test_overlap_recommendation_prefers_timing_parameters_when_available():
+    recommendations = [
+        {
+            "recommendation_id": "overlap_timing_review",
+            "trigger_metric": "Max_overlap_ratio",
+            "current_value": 0.5,
+            "threshold": 0.1,
+        }
+    ]
+    param_space = {
+        "vin2_delay": {"values": ["0.45n", "0.75n"]},
+        "vin3_delay": {"values": ["0.90n", "1.50n"]},
+        "vin1_pulse_width": {"values": ["0.8n", "1.2n"]},
+        "m1_width": {"values": ["0.8", "1.0"]},
+    }
+
+    candidates = rank_candidates(propose_candidates(param_space, recommendations))
+    distinct_parameters = list(dict.fromkeys(candidate["parameter"] for candidate in candidates))
+
+    assert distinct_parameters[:3] == [
+        "vin2_delay",
+        "vin3_delay",
+        "vin1_pulse_width",
+    ]
+
+
 def test_propose_candidates_uses_topology_profile_candidate_rules_for_ota_gain():
     recommendations = [
         {

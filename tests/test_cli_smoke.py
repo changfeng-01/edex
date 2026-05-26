@@ -556,6 +556,88 @@ parameters:
     assert set(table["engineering_validity"]) == {"simulation_only"}
 
 
+def test_cli_validate_config_checks_profile_and_semantics():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "goa_eval.cli",
+            "validate-config",
+            "--profile-file",
+            "config/circuit_profiles.yaml",
+            "--params",
+            "config/parameter_semantics.yaml",
+        ],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "validated" in result.stdout
+
+
+def test_cli_propose_candidates_accepts_profile_file_and_parameter_semantics(tmp_path):
+    summary_path = tmp_path / "real_summary.json"
+    score_path = tmp_path / "score_summary.json"
+    param_space_path = tmp_path / "params.yaml"
+    output_csv = tmp_path / "next_candidates.csv"
+    output_md = tmp_path / "next_candidates.md"
+
+    summary_path.write_text(
+        json.dumps({"data_source": "real_simulation_csv", "engineering_validity": "simulation_only"}),
+        encoding="utf-8",
+    )
+    score_path.write_text(
+        json.dumps(
+            {
+                "topology_profile": "ota",
+                "analysis_metric_penalties": {
+                    "dc_gain_db": {"severity": "fail", "score": 60.0, "deduction": 40.0}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    param_space_path.write_text(Path("config/parameter_semantics.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "goa_eval.cli",
+            "propose-candidates",
+            "--strategy",
+            "rule",
+            "--summary",
+            str(summary_path),
+            "--score",
+            str(score_path),
+            "--param-space",
+            str(param_space_path),
+            "--profile-file",
+            "config/circuit_profiles.yaml",
+            "--params",
+            "config/parameter_semantics.yaml",
+            "--output-csv",
+            str(output_csv),
+            "--output-md",
+            str(output_md),
+        ],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    table = pd.read_csv(output_csv)
+    assert "input_pair" in set(table["parameter_group"])
+    assert table["must_resimulate"].eq(True).all()
+    assert "input_pair_width" in ";".join(table["semantic_tags"].dropna().astype(str))
+
+
 def test_cli_analyze_params_writes_mock_deepseek_outputs(tmp_path):
     summary_path = tmp_path / "real_summary.json"
     score_path = tmp_path / "score_summary.json"

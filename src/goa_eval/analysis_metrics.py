@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from pathlib import Path
 import math
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 
 def extract_analysis_metrics(run_dir: Path, *, topology_profile: str = "default") -> dict:
-    op_metrics, op_reason = _op_metrics(run_dir / "op_metrics.csv")
-    ac_metrics, ac_reason = _ac_metrics(run_dir / "ac_metrics.csv")
-    dc_metrics, dc_reason = _dc_metrics(run_dir / "dc_metrics.csv")
-    tran_metrics, tran_reason = _tran_metrics(run_dir / "tran_metrics.csv")
+    provenance: dict[str, dict] = {}
+    op_metrics, op_reason = _op_metrics(run_dir / "op_metrics.csv", provenance)
+    ac_metrics, ac_reason = _ac_metrics(run_dir / "ac_metrics.csv", provenance)
+    dc_metrics, dc_reason = _dc_metrics(run_dir / "dc_metrics.csv", provenance)
+    tran_metrics, tran_reason = _tran_metrics(run_dir / "tran_metrics.csv", provenance)
     not_evaluable = {}
     for key, reason in {
         "op_metrics": op_reason,
@@ -28,6 +29,8 @@ def extract_analysis_metrics(run_dir: Path, *, topology_profile: str = "default"
         "dc_metrics": dc_metrics,
         "tran_metrics": tran_metrics,
         "not_evaluable": not_evaluable,
+        "not_evaluable_metrics": not_evaluable,
+        "metric_provenance": provenance,
     }
 
 
@@ -38,7 +41,7 @@ def write_analysis_metrics(path: Path, metrics: dict) -> dict:
     return metrics
 
 
-def _op_metrics(path: Path) -> tuple[dict, str | None]:
+def _op_metrics(path: Path, provenance: dict[str, dict]) -> tuple[dict, str | None]:
     if not path.exists() or path.stat().st_size == 0:
         return {}, "missing op_metrics.csv"
     try:
@@ -46,14 +49,33 @@ def _op_metrics(path: Path) -> tuple[dict, str | None]:
     except Exception as exc:
         return {}, f"unreadable op_metrics.csv: {exc}"
     values = _metric_value_frame(frame)
+    for metric in values:
+        _add_provenance(
+            provenance,
+            "op_metrics",
+            metric,
+            path,
+            unit=_metric_unit(metric),
+            source_column=metric if metric in frame.columns else "value",
+            normalization="numeric",
+        )
     voltage = _number(values.get("supply_voltage_v"))
     current = _number(values.get("supply_current_a"))
     if voltage is not None and current is not None:
         values["static_power_w"] = abs(voltage * current)
+        _add_provenance(
+            provenance,
+            "op_metrics",
+            "static_power_w",
+            path,
+            unit="W",
+            source_column="supply_voltage_v;supply_current_a",
+            normalization="abs(voltage * current)",
+        )
     return values, None
 
 
-def _ac_metrics(path: Path) -> tuple[dict, str | None]:
+def _ac_metrics(path: Path, provenance: dict[str, dict]) -> tuple[dict, str | None]:
     if not path.exists() or path.stat().st_size == 0:
         return {}, "missing ac_metrics.csv"
     try:
@@ -71,14 +93,25 @@ def _ac_metrics(path: Path) -> tuple[dict, str | None]:
         target = dc_gain - 3.0
         bandwidth = _first_frequency_below(frequency, gain, target)
     unity = _first_frequency_below(frequency, gain, 0.0)
-    return {
+    metrics = {
         "dc_gain_db": dc_gain,
         "bandwidth_3db_hz": bandwidth,
         "unity_gain_hz": unity,
-    }, None
+    }
+    for metric, unit in {"dc_gain_db": "dB", "bandwidth_3db_hz": "Hz", "unity_gain_hz": "Hz"}.items():
+        _add_provenance(
+            provenance,
+            "ac_metrics",
+            metric,
+            path,
+            unit=unit,
+            source_column=str(gain.name),
+            normalization="derived_from_frequency_gain_curve",
+        )
+    return metrics, None
 
 
-def _dc_metrics(path: Path) -> tuple[dict, str | None]:
+def _dc_metrics(path: Path, provenance: dict[str, dict]) -> tuple[dict, str | None]:
     if not path.exists() or path.stat().st_size == 0:
         return {}, "missing dc_metrics.csv"
     try:
@@ -93,14 +126,25 @@ def _dc_metrics(path: Path) -> tuple[dict, str | None]:
     input_values = pd.to_numeric(input_v, errors="coerce")
     midpoint = (float(np.nanmax(output_values)) + float(np.nanmin(output_values))) / 2.0
     index = int((output_values - midpoint).abs().idxmin())
-    return {
+    metrics = {
         "switching_threshold_v": _number(input_values.iloc[index]),
         "output_swing_v": float(np.nanmax(output_values) - np.nanmin(output_values)),
         "hysteresis_proxy_v": None,
-    }, None
+    }
+    for metric in metrics:
+        _add_provenance(
+            provenance,
+            "dc_metrics",
+            metric,
+            path,
+            unit="V",
+            source_column=f"{input_v.name};{output_v.name}",
+            normalization="derived_from_dc_transfer_curve",
+        )
+    return metrics, None
 
 
-def _tran_metrics(path: Path) -> tuple[dict, str | None]:
+def _tran_metrics(path: Path, provenance: dict[str, dict]) -> tuple[dict, str | None]:
     if not path.exists() or path.stat().st_size == 0:
         fallback = path.with_name("waveform.csv")
         if fallback.exists() and fallback.stat().st_size > 0:
@@ -120,13 +164,24 @@ def _tran_metrics(path: Path) -> tuple[dict, str | None]:
     swing = float(np.nanmax(y) - np.nanmin(y))
     frequency = _frequency_from_crossings(t, y)
     slew = _slew_rate(t, y)
-    return {
+    metrics = {
         "output_swing_v": swing,
         "frequency_hz": frequency,
         "period_std_s": _period_std(t, y),
         "slew_rate_v_per_s": slew,
         "startup_time_s": _startup_time(t, y),
-    }, None
+    }
+    for metric in metrics:
+        _add_provenance(
+            provenance,
+            "tran_metrics",
+            metric,
+            path,
+            unit=_metric_unit(metric),
+            source_column=str(output.name),
+            normalization="derived_from_time_domain_waveform",
+        )
+    return metrics, None
 
 
 def _metric_value_frame(frame: pd.DataFrame) -> dict:
@@ -225,3 +280,45 @@ def _number(value) -> float | None:
     if math.isnan(number):
         return None
     return number
+
+
+def _add_provenance(
+    provenance: dict[str, dict],
+    source_analysis: str,
+    metric: str,
+    path: Path,
+    *,
+    unit: str,
+    source_column: str,
+    normalization: str,
+    not_evaluable_reason: str = "",
+) -> None:
+    provenance[f"{source_analysis}.{metric}"] = {
+        "unit": unit,
+        "source_file": path.name,
+        "source_analysis": source_analysis.replace("_metrics", ""),
+        "source_column": source_column,
+        "parser": "analysis_metrics",
+        "normalization": normalization,
+        "not_evaluable_reason": not_evaluable_reason,
+    }
+
+
+def _metric_unit(metric: str) -> str:
+    if metric == "slew_rate_v_per_s":
+        return "V/s"
+    if metric.endswith("_hz"):
+        return "Hz"
+    if metric.endswith("_db"):
+        return "dB"
+    if metric.endswith("_w"):
+        return "W"
+    if metric.endswith("_a"):
+        return "A"
+    if metric.endswith("_s"):
+        return "s"
+    if metric.endswith("_v"):
+        return "V"
+    if metric.endswith("_deg"):
+        return "deg"
+    return ""

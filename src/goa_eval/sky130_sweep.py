@@ -262,6 +262,8 @@ def _rewrite_one(text: str, target: str, value: str) -> str | None:
         return None
     device_name, field = target.split(".", 1)
     field = field.upper()
+    if field.startswith("PULSE_"):
+        return _rewrite_pulse_field(text, device_name, field, value)
     if field == "DC_VALUE":
         return _rewrite_source_dc(text, device_name, value)
     if field in {"W", "L"}:
@@ -347,6 +349,37 @@ def _rewrite_source_dc(text: str, device_name: str, value: str) -> str | None:
         else:
             tokens = [*tokens[:3], "DC", value]
         lines[index] = " ".join(tokens)
+        return "\n".join(lines) + "\n"
+    return None
+
+
+def _rewrite_pulse_field(text: str, device_name: str, field: str, value: str) -> str | None:
+    field_positions = {
+        "PULSE_V1": 0,
+        "PULSE_V2": 1,
+        "PULSE_DELAY": 2,
+        "PULSE_RISE": 3,
+        "PULSE_FALL": 4,
+        "PULSE_WIDTH": 5,
+        "PULSE_PERIOD": 6,
+    }
+    position = field_positions.get(field)
+    if position is None:
+        return None
+    lines = text.splitlines()
+    pulse_pattern = re.compile(r"(\bPULSE\s*\()([^)]*)(\))", re.IGNORECASE)
+    for index, line in enumerate(lines):
+        if not _line_starts_with_device(line, device_name):
+            continue
+        match = pulse_pattern.search(line)
+        if not match:
+            return None
+        values = match.group(2).split()
+        if len(values) <= position:
+            return None
+        values[position] = value
+        replacement = f"{match.group(1)}{' '.join(values)}{match.group(3)}"
+        lines[index] = line[: match.start()] + replacement + line[match.end() :]
         return "\n".join(lines) + "\n"
     return None
 

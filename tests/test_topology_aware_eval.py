@@ -121,6 +121,10 @@ def test_score_real_evaluation_adds_topology_profile_scores():
 
     assert score["topology_profile"] == "ota"
     assert "dc_gain_db" in score["profile_metric_scores"]
+    assert score["circuit_profile"] == "ota"
+    assert score["objective_score"] == score["profile_score"]
+    assert "profile_metric_score" in score["objective_breakdown"]
+    assert "not_evaluable_required_metrics" in score
     assert "dc_gain_db" in score["analysis_metric_penalties"]
     assert score["not_evaluable_metrics"] == {}
     assert score["overall_score"] > 0

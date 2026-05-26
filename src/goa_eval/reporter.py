@@ -245,6 +245,7 @@ def write_optimization_dataset(
         "hard_constraint_passed": score_summary.get("hard_constraint_passed"),
         "overall_status": summary.get("Overall_status"),
         "overall_score": score_summary.get("overall_score"),
+        "metric_provenance": json.dumps(score_summary.get("metric_provenance", {}), ensure_ascii=False, sort_keys=True),
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
     }

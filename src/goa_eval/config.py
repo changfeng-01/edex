@@ -32,6 +32,7 @@ def load_real_spec(spec_path: Path | None, *, high_threshold: float | None = Non
         "target_refresh_hz": _float(thresholds.get("target_refresh_hz", 60.0)),
         "min_pulse_width": _us_to_s(thresholds.get("min_pulse_width_us", 2.0)),
         "false_trigger_min_duration": _us_to_s(thresholds.get("false_trigger_min_duration_us", 0.0)),
+        "ripple_mode": str(thresholds.get("ripple_mode", "hold")),
         "cascade": {
             "stage_count": _int(cascade.get("stage_count", 720)),
             "output_node_pattern": str(cascade.get("output_node_pattern", "o{index}")),

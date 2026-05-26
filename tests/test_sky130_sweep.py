@@ -146,6 +146,23 @@ def test_rewrite_spice_parameters_updates_corner_temperature_and_transient_stop(
     assert ".tran 20p 20n" in result.text
 
 
+def test_rewrite_spice_parameters_updates_pulse_timing_fields():
+    text = "VIN2 in2 0 PULSE(0 1.8 0.45n 20p 20p 0.8n 1.6n)\n.end\n"
+
+    result = rewrite_spice_parameters(
+        text,
+        {"vin2_delay": "0.75n", "vin2_width": "1.25n", "vin2_period": "2n"},
+        {
+            "vin2_delay": {"target": "VIN2.pulse_delay"},
+            "vin2_width": {"target": "VIN2.pulse_width"},
+            "vin2_period": {"target": "VIN2.pulse_period"},
+        },
+    )
+
+    assert result.success
+    assert "VIN2 in2 0 PULSE(0 1.8 0.75n 20p 20p 1.25n 2n)" in result.text
+
+
 def test_rewrite_spice_parameters_inserts_missing_temperature_before_end():
     result = rewrite_spice_parameters(
         ".title validation matrix fixture\n.tran 20p 4n\n.end\n",

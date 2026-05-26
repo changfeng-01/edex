@@ -43,8 +43,9 @@ engineering_validity = simulation_only
 - `propose-candidates` 默认使用 `constrained-random`，支持单参数和两参数组合候选，并保留固定 seed 以便复现。
 - 候选生成会读取 waveform penalty 和 topology-aware penalty，提高主要失效指标对应参数的搜索权重。
 - Profile candidate rules 可将 `dc_gain_db`、`static_power_w`、`frequency_hz` 等 profile 指标映射到参数空间中的 `m1_width`、`m2_width`、`load_cap`、`ibias` 等候选。
+- 新增 `config/circuit_profiles.yaml` 和 `config/parameter_semantics.yaml`，支持把候选生成从固定参数名匹配扩展为语义标签匹配，例如 `input_pair_width`、`bias_current`、`compensation_capacitance`。
 - `All_pulses_exist`、`Seq_pass` 等硬约束失败也能生成恢复候选，例如驱动能力、负载、电平阈值复核类建议。
-- `next_candidates.csv` 增加 `strategy`、`candidate_kind`、`changed_parameters`、`parameters_json`、`search_score`、`rationale` 等字段。
+- `next_candidates.csv` 增加 `strategy`、`candidate_kind`、`changed_parameters`、`parameters_json`、`search_score`、`rationale`、`parameter_group`、`semantic_tags`、`must_resimulate` 等字段。
 
 ### 4. 多轮优化驱动
 
@@ -78,6 +79,8 @@ engineering_validity = simulation_only
 
 ```text
 config/
+├── circuit_profiles.yaml        # 通用 circuit profile、目标、硬约束和语义候选规则
+├── parameter_semantics.yaml     # 参数 target、单位、语义标签、风险和参数组
 ├── spec.yaml                    # 默认阈值、评分权重和级联配置
 ├── sky130_eval_profiles.yaml    # topology profile、profile metrics 和候选规则
 ├── sky130_sweep.yaml            # SKY130 参数扫描示例
@@ -203,6 +206,32 @@ python -m goa_eval.cli propose-candidates \
 ```
 
 `--strategy rule` 只输出规则映射的单参数候选；`constrained-random` 会生成单参数和两参数组合候选。
+
+### 语义标签驱动候选参数
+
+当电路已经有 circuit profile 和参数语义配置时，可以让候选生成优先按工程含义匹配，而不是只按参数名匹配：
+
+```bash
+python -m goa_eval.cli propose-candidates \
+  --summary outputs/example/real_summary.json \
+  --score outputs/example/score_summary.json \
+  --param-space config/parameter_semantics.yaml \
+  --profile-file config/circuit_profiles.yaml \
+  --params config/parameter_semantics.yaml \
+  --strategy rule \
+  --output-csv outputs/example/next_candidates.csv \
+  --output-md outputs/example/next_candidates.md
+```
+
+例如 `dc_gain_db` 低于 profile 目标时，`ota_general` 的规则会匹配 `input_pair_width` / `gm_control` 等语义标签，并生成 `input_pair` 参数组候选。候选仍然只是下一轮仿真建议，`must_resimulate=true`，不表示参数已经被物理验证。
+
+配置校验入口：
+
+```bash
+python -m goa_eval.cli validate-config \
+  --profile-file config/circuit_profiles.yaml \
+  --params config/parameter_semantics.yaml
+```
 
 ### 批量评价多个 run
 
@@ -440,7 +469,7 @@ GitHub 上传清单见 `docs/github_upload_checklist.md`。
 
 ## SKY130 Candidate Validation
 
-This workflow keeps the repository private and focuses on local, simulation-only SKY130/ngspice evidence. It does not download or commit a PDK. By default the local PDK path is `tools/volare-pdks/sky130A`, and `--pdk-root` can override it.
+This workflow keeps PDK files and private simulation inputs out of the repository while focusing on local, simulation-only SKY130/ngspice evidence. It does not download or commit a PDK. By default the local PDK path is `tools/volare-pdks/sky130A`, and `--pdk-root` can override it.
 
 Run the current two-round candidate validation with:
 
@@ -462,9 +491,103 @@ The validation target is configured in `config/sky130_validation.yaml`. The curr
 
 The local fixture `examples/sky130_candidate_chain_row.json` provides a three-output SKY130 chain-style testbench so overlap can be evaluated. During preparation, the workflow generates a small local `sky130_minimal.lib.spice` per run that references the real SKY130 1.8 V nfet/pfet model files without loading the full PDK library.
 
+### Lightweight SKY130 Mainline
+
+For a faster end-to-end check, use the lightweight mainline facade. It keeps the
+default run small, writes a compact validation bundle, and only enables the full
+validation matrix when requested:
+
+```powershell
+python -m goa_eval.cli sky130-mainline `
+  --sweep config/sky130_candidate_sweep.yaml `
+  --validation-config config/sky130_validation.yaml `
+  --pdk-root tools/volare-pdks/sky130A `
+  --source-dataset local_external_ngspice `
+  --rounds 1 `
+  --max-runs-per-round 3 `
+  --output-root outputs/sky130_mainline
+```
+
+If the local PDK or `ngspice` is unavailable, the command defaults to
+`--mock-if-unavailable` and falls back to a mock smoke run so the software chain
+can still be exercised. Add `--full-validation` to run the configured extended
+validation cases such as PVT/load coverage; without it, full-matrix cases are
+recorded as skipped by lightweight policy.
+
+Mainline outputs include `mainline_validation.json`,
+`sky130_mainline_report.md`, `optimization_leaderboard.csv`,
+`best_next_candidates.csv`, and `validation_summary.csv`. These artifacts remain
+`engineering_validity=simulation_only` and are not physical, lab, or silicon
+evidence.
+
 ## License
 
 MIT License. See `LICENSE`.
+
+## Generalized CSV Adapter and AI Profile Assistant
+
+This repository also provides generalized facades above the older SKY130-named
+entrypoints. They keep the same boundary:
+
+```text
+data_source = real_simulation_csv
+engineering_validity = simulation_only
+```
+
+Import an existing simulator-export directory:
+
+```bash
+python -m goa_eval.cli simulate-run \
+  --adapter csv-import \
+  --input-dir path/to/csv_run \
+  --output-dir outputs/csv_run \
+  --circuit-profile ota_general \
+  --profile-file config/circuit_profiles.yaml \
+  --params config/parameter_semantics.yaml
+```
+
+The input directory must contain `waveform.csv` and may include
+`op_metrics.csv`, `ac_metrics.csv`, `dc_metrics.csv`, `tran_metrics.csv`,
+`source_netlist.spice`, and `simulation_metadata.json/yaml`. The output run
+keeps the normal evaluation artifacts and adds `adapter_status.json` plus
+`simulation_metadata.json`.
+
+Batch import child directories with:
+
+```bash
+python -m goa_eval.cli simulate-sweep \
+  --adapter csv-import \
+  --input-root path/to/csv_runs \
+  --output-root outputs/csv_sweep \
+  --circuit-profile ota_general \
+  --profile-file config/circuit_profiles.yaml \
+  --params config/parameter_semantics.yaml
+```
+
+The sweep facade writes `simulate_sweep_runs.csv` and
+`simulate_sweep_leaderboard.csv`.
+
+Generate auditable AI profile drafts with:
+
+```bash
+python -m goa_eval.cli ai-profile-assistant \
+  --description docs/my_circuit_description.md \
+  --profile-file config/circuit_profiles.yaml \
+  --params config/parameter_semantics.yaml \
+  --mock-response '{"analysis":"draft only"}' \
+  --output-dir outputs/ai_profile_assistant
+```
+
+The assistant writes `profile_draft.yaml`,
+`parameter_semantics_draft.yaml`, `ai_profile_assistant.json`, and
+`ai_profile_assistant.md`. Drafts must pass `validate-config` before they are
+used by scoring or candidate generation. AI output is advisory and does not
+replace the evaluator, simulator, or human review.
+
+Profile metric outputs now include additive `metric_provenance` metadata in
+`analysis_metrics.json`, `score_summary.json`, and `optimization_dataset.csv`.
+The metadata records units, source files, source columns, parser names, and
+normalization notes for auditability.
 
 ## Acknowledgement
 
