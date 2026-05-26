@@ -18,6 +18,9 @@ __pypackages__/
 .vscode/
 build/
 dist/
+node_modules/
+frontend/node_modules/
+frontend/dist/
 *.egg-info/
 *.log
 *.tmp
@@ -30,6 +33,7 @@ dist/
 
 # Local / private simulation inputs and generated artifacts.
 /goa_eval/
+/tools/
 yuanshi_csv
 neibucsv
 test.sp
