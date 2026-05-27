@@ -29,6 +29,11 @@ dist/
 ~$*
 
 # Local / private simulation inputs and generated artifacts.
+/frontend/node_modules/
+/tools/downloads/
+/tools/ngspice/
+/tools/sky130-pdk/
+/tools/volare-pdks/
 /goa_eval/
 yuanshi_csv
 neibucsv

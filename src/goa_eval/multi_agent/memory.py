@@ -41,6 +41,8 @@ def _suggestions(state: dict) -> list[str]:
         suggestions.append("add waveform, score_summary, or leaderboard before optimization")
     if state.get("candidate_summary", {}).get("candidate_count"):
         suggestions.append("replay next_candidates through the existing deterministic simulation flow")
+    if (state.get("generated_files") or {}).get("optimization_loop_record"):
+        suggestions.append("review optimization_loop_record.json and optimization_decision_card.md before claiming optimization progress")
     if state.get("warnings"):
         suggestions.append("review warnings before presenting results")
     return suggestions or ["continue deterministic evaluation with simulation-only boundary"]

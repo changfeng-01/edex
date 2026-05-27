@@ -21,6 +21,7 @@ from goa_eval.multi_agent.schemas import MultiAgentTask
 from goa_eval.multi_agent.state import new_state_from_task
 from goa_eval.multi_agent.trace import write_trace
 from goa_eval.multi_agent.handoff import write_handoff_trace
+from goa_eval.multi_agent.agent_contracts import get_agent_contracts
 
 
 def load_task(path: Path) -> MultiAgentTask:
@@ -103,9 +104,38 @@ def _write_outputs(output_dir: Path, state: dict) -> None:
     _write_plan(output_dir, state)
     write_trace(output_dir / "multi_agent_trace.jsonl", state.get("trace_records", []))
     write_handoff_trace(output_dir / "multi_agent_handoff_trace.jsonl", state.get("handoff_records", []))
-    critic_report = {"verdicts": state.get("critic_verdicts", [])}
+    critic_report = _critic_report_from_state(state)
     (output_dir / "critic_report.json").write_text(json.dumps(critic_report, ensure_ascii=False, indent=2), encoding="utf-8")
     write_memory(output_dir / "multi_agent_memory.json", state)
+
+
+def _critic_report_from_state(state: dict) -> dict:
+    risks = [risk for verdict in state.get("critic_verdicts", []) for risk in verdict.get("risks", [])]
+    return {
+        "schema_version": "1.0",
+        "result_version": "1.0",
+        "verdicts": state.get("critic_verdicts", []),
+        "warnings": state.get("warnings", []),
+        "failures": state.get("failures", []),
+        "summary": {
+            "warning_count": len(state.get("warnings", [])),
+            "failure_count": len(state.get("failures", [])),
+        },
+        "risk_summary": _risk_summary(risks),
+        "top_risks": risks[:5],
+        "data_source": state.get("data_source", "real_simulation_csv"),
+        "engineering_validity": state.get("engineering_validity", "simulation_only"),
+    }
+
+
+def _risk_summary(risks: list[dict]) -> dict[str, dict[str, int]]:
+    summary: dict[str, dict[str, int]] = {}
+    for risk in risks:
+        risk_type = str(risk.get("risk_type", "unknown"))
+        severity = str(risk.get("severity", "info"))
+        summary.setdefault(risk_type, {})
+        summary[risk_type][severity] = summary[risk_type].get(severity, 0) + 1
+    return summary
 
 
 def _write_plan(output_dir: Path, state: dict) -> None:
@@ -116,8 +146,30 @@ def _write_plan(output_dir: Path, state: dict) -> None:
         "task_type": state.get("task_type"),
         "profile": state.get("profile"),
         "selected_domain_agent": state.get("selected_domain_agent"),
+        "routing_reason": state.get("routing_reason"),
         "data_source": state.get("data_source"),
         "engineering_validity": state.get("engineering_validity"),
+        "agent_contracts": {
+            name: {
+                "role": contract.role,
+                "allowed_tools": contract.allowed_tools,
+                "input_schema": contract.input_schema,
+                "output_schema": contract.output_schema,
+                "handoff_policy": contract.handoff_policy,
+                "failure_policy": contract.failure_policy,
+            }
+            for name, contract in get_agent_contracts().items()
+        },
+        "expected_outputs": [
+            "multi_agent_plan.json",
+            "multi_agent_trace.jsonl",
+            "multi_agent_handoff_trace.jsonl",
+            "critic_report.json",
+            "multi_agent_memory.json",
+            "multi_agent_decision_report.md",
+            "optimization_loop_record.json",
+            "optimization_decision_card.md",
+        ],
     }
     (output_dir / "multi_agent_plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
 

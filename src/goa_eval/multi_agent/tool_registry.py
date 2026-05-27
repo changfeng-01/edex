@@ -48,6 +48,13 @@ def get_tool_registry() -> dict[str, ToolMetadata]:
             "candidate_risk_summary",
             tools.inspect_candidates,
         ),
+        "inspect_netlist_integrity": ToolMetadata(
+            "inspect_netlist_integrity",
+            "Inspect a SPICE netlist for minimal completeness and parser-visible device evidence.",
+            ["netlist_path"],
+            "netlist_integrity_summary",
+            tools.inspect_netlist_integrity,
+        ),
         "check_schema_and_boundary": ToolMetadata(
             "check_schema_and_boundary",
             "Check schema markers and simulation-only boundary fields.",

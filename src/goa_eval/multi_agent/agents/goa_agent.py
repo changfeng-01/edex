@@ -20,17 +20,25 @@ def run_goa_agent(state: dict) -> dict:
         result = inspect_real_metrics(inputs["real_metrics"])
         state["metrics_summary"] = result.data
         store_tool_result(state, "GOAAgent", result)
+    diagnosis = {
+        "domain": "GOA/8T1C",
+        "cascade_stage_risk": {
+            "worst_stage": state.get("metrics_summary", {}).get("worst_stage"),
+            "first_failed_stage": state.get("score_summary", {}).get("first_failed_stage"),
+        },
+        "overlap": state.get("metrics_summary", {}).get("metric_stats", {}).get("OverlapRatio"),
+        "ripple": state.get("metrics_summary", {}).get("metric_stats", {}).get("Ripple"),
+        "voltage_loss": state.get("metrics_summary", {}).get("metric_stats", {}).get("VoltageLoss"),
+        "false_trigger": state.get("metrics_summary", {}).get("metric_stats", {}).get("FalseTriggerCount"),
+        "next_direction": "prioritize overlap window, ripple hold-window, voltage-loss, and false-trigger review before wider parameter search",
+    }
+    state["domain_diagnosis"] = diagnosis
     add_message(
         state,
         "GOAAgent",
         {
             "goa_summary": "GOA/8T1C evaluation artifacts inspected.",
-            "worst_stage": state.get("metrics_summary", {}).get("worst_stage"),
-            "first_failed_stage": state.get("score_summary", {}).get("first_failed_stage"),
-            "overlap_summary": state.get("metrics_summary", {}).get("metric_stats", {}).get("OverlapRatio"),
-            "ripple_summary": state.get("metrics_summary", {}).get("metric_stats", {}).get("Ripple"),
-            "voltage_loss_summary": state.get("metrics_summary", {}).get("metric_stats", {}).get("VoltageLoss"),
-            "false_trigger_summary": state.get("metrics_summary", {}).get("metric_stats", {}).get("FalseTriggerCount"),
+            "domain_diagnosis": diagnosis,
             "goa_next_action": "run shared evaluation and candidate generation only through deterministic tools",
         },
     )

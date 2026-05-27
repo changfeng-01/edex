@@ -20,16 +20,33 @@ def run_sky130_agent(state: dict) -> dict:
         result = inspect_real_metrics(inputs["real_metrics"])
         state["metrics_summary"] = result.data
         store_tool_result(state, "SKY130Agent", result)
+    best_candidate = state.get("leaderboard_summary", {}).get("best_candidate", {})
+    diagnosis = {
+        "domain": "SKY130",
+        "sky130_timing": {
+            key: state.get("metrics_summary", {}).get("metric_stats", {}).get(key)
+            for key in ["Delay", "RiseTime", "FallTime"]
+        },
+        "parameter_focus": {
+            "load_cap": best_candidate.get("load_cap"),
+            "drive_resistance": best_candidate.get("drive_resistance"),
+            "candidate_risk_summary": state.get("candidate_summary", {}),
+        },
+        "hard_constraints": {
+            "passed": state.get("score_summary", {}).get("hard_constraint_passed"),
+            "failures": state.get("score_summary", {}).get("hard_constraint_failures", []),
+        },
+        "timing_margin": "review delay/rise/fall against hard constraints before accepting any candidate",
+        "next_direction": "generate bounded param_space candidates and rerun through simulation-only evaluation",
+    }
+    state["domain_diagnosis"] = diagnosis
     add_message(
         state,
         "SKY130Agent",
         {
             "sky130_summary": "SKY130 leaderboard and scoring artifacts inspected.",
-            "best_candidate_summary": state.get("leaderboard_summary", {}).get("best_candidate", {}),
-            "timing_summary": {
-                key: state.get("metrics_summary", {}).get("metric_stats", {}).get(key)
-                for key in ["Delay", "RiseTime", "FallTime"]
-            },
+            "best_candidate_summary": best_candidate,
+            "domain_diagnosis": diagnosis,
             "score_summary": state.get("score_summary", {}),
             "candidate_risk_summary": state.get("candidate_summary", {}),
             "sky130_next_action": "generate next candidates through optimizer wrapper if param_space is available",

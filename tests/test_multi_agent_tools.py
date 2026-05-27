@@ -7,6 +7,7 @@ from goa_eval.multi_agent.tools import (
     generate_candidates,
     inspect_candidates,
     inspect_leaderboard,
+    inspect_netlist_integrity,
     inspect_real_metrics,
     inspect_score_summary,
     inspect_task_inputs,
@@ -80,3 +81,23 @@ def test_check_schema_and_boundary_warns_on_missing_boundary(tmp_path):
 
     assert result.status == "warning"
     assert any("data_source" in issue for issue in result.data["issues"])
+
+
+def test_inspect_netlist_integrity_detects_incomplete_netlist(tmp_path):
+    netlist = tmp_path / "bad.sp"
+    netlist.write_text(
+        "\n".join(
+            [
+                ".SUBCKT only in out",
+                "R1 in out 1k",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = inspect_netlist_integrity(netlist)
+
+    assert result.status == "warning"
+    assert any("netlist missing .END" in issue for issue in result.warnings)
+    assert any(".SUBCKT without matching .ENDS" in issue for issue in result.warnings)
+    assert any("netlist missing MOS devices" in issue for issue in result.warnings)

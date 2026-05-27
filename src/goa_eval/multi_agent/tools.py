@@ -10,6 +10,7 @@ import yaml
 
 from goa_eval.optimizer import propose_candidates, rank_candidates
 from goa_eval.multi_agent.schemas import ToolResult
+from goa_eval.parsers.netlist_parser import parse_netlist
 from goa_eval.schemas import RESULT_VERSION, SCHEMA_VERSION
 
 
@@ -103,6 +104,14 @@ def inspect_real_metrics(real_metrics_path: str | Path) -> ToolResult:
     for column in frame.columns:
         bad_mask[column] = bad_mask[column] | frame[column].astype(str).str.lower().isin(BAD_CELL_STRINGS)
     bad_cells = int(bad_mask.sum().sum())
+    bad_cell_values = sorted(
+        {
+            str(value).strip().lower()
+            for column in frame.columns
+            for value in frame.loc[bad_mask[column], column].tolist()
+            if str(value).strip()
+        }
+    )
     numeric = frame.apply(pd.to_numeric, errors="coerce")
     worst_stage = None
     if "stage" in frame.columns:
@@ -122,6 +131,7 @@ def inspect_real_metrics(real_metrics_path: str | Path) -> ToolResult:
         "bad_cell_count": bad_cells,
         "worst_stage": worst_stage,
         "metric_stats": stats,
+        "bad_cell_values": bad_cell_values,
         "columns": list(frame.columns),
     }
     return ToolResult("inspect_real_metrics", "warning" if bad_cells else "pass", data, warnings=["bad metric cells detected"] if bad_cells else [])
@@ -199,6 +209,68 @@ def inspect_candidates(next_candidates_path: str | Path, param_space_path: str |
     return ToolResult("inspect_candidates", "warning" if issues else "pass", data, warnings=issues)
 
 
+def inspect_netlist_integrity(netlist_path: str | Path) -> ToolResult:
+    path = Path(netlist_path)
+    if not path.exists():
+        return ToolResult("inspect_netlist_integrity", "fail", {"path": str(path)}, failures=[f"missing netlist: {path}"])
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+    issues: list[str] = []
+    subckt_stack: list[tuple[str, int]] = []
+    has_end = False
+
+    for line_no, raw_line in enumerate(lines, start=1):
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("*"):
+            continue
+        upper = stripped.upper()
+        tokens = stripped.split()
+        directive = tokens[0].upper() if tokens else ""
+        if directive == ".END":
+            has_end = True
+        elif directive == ".SUBCKT":
+            name = tokens[1] if len(tokens) > 1 else "<missing-name>"
+            subckt_stack.append((name, line_no))
+        elif directive == ".ENDS":
+            end_name = tokens[1] if len(tokens) > 1 else None
+            if not subckt_stack:
+                issues.append(f"netlist has .ENDS without matching .SUBCKT at line {line_no}")
+            else:
+                start_name, start_line = subckt_stack.pop()
+                if end_name and end_name != start_name:
+                    issues.append(f"netlist .ENDS {end_name} at line {line_no} does not match .SUBCKT {start_name} at line {start_line}")
+        elif upper.startswith(".END") and directive not in {".END", ".ENDS"}:
+            issues.append(f"netlist has ambiguous end directive at line {line_no}: {tokens[0]}")
+
+    if not has_end:
+        issues.append("netlist missing .END directive")
+    for name, line_no in subckt_stack:
+        issues.append(f"netlist has .SUBCKT without matching .ENDS: {name} at line {line_no}")
+
+    parsed = parse_netlist(path)
+    kind_counts: dict[str, int] = {}
+    for device in parsed.devices:
+        kind_counts[device.kind] = kind_counts.get(device.kind, 0) + 1
+    has_mos_evidence = any(device.kind == "mos" for device in parsed.devices) or any(_looks_like_mos_line(line) for line in lines)
+    if not has_mos_evidence:
+        issues.append("netlist missing MOS devices")
+    if not any(device.kind == "voltage_source" for device in parsed.devices):
+        issues.append("netlist missing voltage sources")
+    issues.extend(parsed.warnings)
+
+    data = {
+        "path": str(path),
+        "line_count": len(lines),
+        "device_count": len(parsed.devices),
+        "subckt_count": len(parsed.subckts),
+        "kind_counts": kind_counts,
+        "has_mos_evidence": has_mos_evidence,
+        "issues": issues,
+    }
+    return ToolResult("inspect_netlist_integrity", "warning" if issues else "pass", data, warnings=issues)
+
+
 def check_schema_and_boundary(
     output_path: str | Path,
     expected_data_source: str = "real_simulation_csv",
@@ -232,16 +304,34 @@ def check_schema_and_boundary(
 
 
 def write_multi_agent_report(final_state: dict, memory: dict, trace: list, handoff_trace: list, critic_report: dict, output_dir: str | Path) -> ToolResult:
+    from goa_eval.multi_agent.optimization_loop import write_optimization_artifacts
     from goa_eval.multi_agent.report_writer import write_decision_report
 
+    artifact_paths = write_optimization_artifacts(Path(output_dir), final_state, critic_report)
+    final_state.setdefault("generated_files", {}).update(artifact_paths)
     path = write_decision_report(Path(output_dir), final_state, memory, trace, handoff_trace, critic_report)
-    return ToolResult("write_multi_agent_report", "pass", {"report_path": str(path)})
+    return ToolResult("write_multi_agent_report", "pass", {"report_path": str(path), **artifact_paths})
 
 
 def _input_kind(key: str) -> str:
     if key in {"leaderboard", "score_summary", "real_metrics", "waveform", "netlist", "param_space"}:
         return key
     return "unknown"
+
+
+def _looks_like_mos_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("*") or stripped.startswith("."):
+        return False
+    tokens = stripped.split()
+    if not tokens:
+        return False
+    name = tokens[0].lower()
+    if name.startswith("m"):
+        return True
+    if name.startswith("xm") and any("fet" in token.lower() for token in tokens[1:]):
+        return True
+    return False
 
 
 def _load_param_values(path: Path) -> dict[str, list[Any]]:

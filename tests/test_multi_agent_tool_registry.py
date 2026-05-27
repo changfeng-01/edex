@@ -8,6 +8,7 @@ REQUIRED_TOOLS = {
     "inspect_real_metrics",
     "generate_candidates",
     "inspect_candidates",
+    "inspect_netlist_integrity",
     "check_schema_and_boundary",
     "write_multi_agent_report",
 }

@@ -1,238 +1,201 @@
-# CircuitPilot / 芯智调参
+# CircuitPilot Multi-Agent Evidence Chain
 
-中文名：芯智调参：基于仿真数据的电路参数智能推荐系统  
-English name: CircuitPilot: Simulation-Driven Intelligent Parameter Recommendation for Circuit Design
+CircuitPilot 是一个面向电路仿真结果的本地 multi-agent 证据链原型。它读取已有仿真 CSV、评分摘要、leaderboard、参数空间和 netlist 文件，通过确定性 Agent 完成任务路由、证据读取、候选生成、风险审查、优化闭环记录和报告输出。
 
-CircuitPilot 是一个面向电路仿真结果的评价、诊断和规则化参数推荐原型。项目从 8T1C / GOA 级联波形分析流程中抽取出可复用的软件部分，Python 包名保留为 `goa_eval`，便于兼容已有脚本和测试。
-
-## 项目定位
-
-当前版本处理的是仿真 CSV 文件，不是实物测试平台，也不是已经闭环接入外部 SPICE 的全自动优化系统。它完成的核心工作是：
-
-- 读取外部仿真导出的 CSV 波形；
-- 归一化 `XVAL` / `TIME`、`v(o1)`、`v(xs4.pu)` 等常见列名；
-- 自动识别 `o1~oN` 输出节点的合法扫描窗口；
-- 计算电压、时序、级间重叠、纹波、保持损失和误触发等指标；
-- 生成 CSV / JSON / Markdown / PNG 评价包；
-- 按硬约束、软评分和失败原因生成诊断结果；
-- 基于当前指标给出保守的下一轮参数调整建议；
-- 支持 `runs/run_001`、`runs/run_002` 形式的批量评价入口。
-
-所有真实 CSV 评价输出必须保留以下边界标记：
+当前仓库不做 WebUI、数据库、RAG、远程服务或自动物理验证。它的目标是把一次本地运行整理成可复查、可答辩、可继续 rerun 的工程证据包。
 
 ```text
 data_source = real_simulation_csv
 engineering_validity = simulation_only
 ```
 
-这些标记表示结果来自电路仿真 CSV，只能作为 simulation-only 工程分析依据，不能表述为物理样机或实验室测试结论。
+这两个字段是项目边界：结果来自仿真 CSV，只能作为 simulation-only 工程分析依据，不能表述为流片验证、实物芯片验证或完整工业级自动优化。
 
-## 为什么做这个项目
+## 快速运行
 
-电路迭代过程中通常会产生大量波形 CSV、截图和手工记录。若只依赖人工查看，后续很难稳定比较不同参数组合，也难以把评价结果接入参数搜索或优化算法。CircuitPilot 的目标是把仿真结果整理为固定字段、固定单位、可复核的数据包，让后续的参数空间搜索、规则推荐和优化器接口可以基于结构化数据继续演进。
-
-## 当前已实现功能
-
-- 识别 `XVAL` / `TIME` 时间列，以及 `v(o1)`、`v(o2)`、`v(xs4.pu)` 等波形列名。
-- 对 `o1~oN` 输出节点做逐级扫描窗口识别；当 CSV 只有 `o1~o8` 时按 8 级兼容评价。
-- 支持 720 级级联配置接口；这表示框架可扩展，不表示示例数据已经包含 720 级真实仿真结果。
-- 区分合法重复扫描脉冲和真正误触发，避免把周期性扫描误判为异常。
-- overlap 使用时间区间端点交集累计，适配非均匀采样。
-- ripple 在 hold / non-selected 窗口计算，并排除上升沿和下降沿区域。
-- 低频保持时长不足时输出 `not_evaluable_with_current_waveform`，不硬判低频稳定性失败。
-- 评分结果区分 `hard_constraints`、`soft_scores`、`failure_reasons` 和 `warning_reasons`。
-- 批量评价输出 `all_metrics.csv`、`all_scores.csv`、`leaderboard.csv` 和 `recommendations.md`。
-- 输出 `optimization_dataset.csv`，保留固定列和 provenance 字段，方便后续参数搜索流程读取。
-
-## 仓库结构
-
-```text
-config/
-└── spec.yaml                  # 默认阈值、权重和级联规模配置
-docs/
-├── project_overview.md         # 项目总览、数据流和扩展边界
-├── metrics_spec.md             # 指标定义、单位和判定策略
-├── schema_spec.md              # 输出文件 schema 与字段约定
-└── github_upload_checklist.md  # 上传 GitHub 前的检查清单
-examples/
-├── sample_waveform.csv         # 可公开的小型示例波形
-└── sample_params.yaml          # 可公开的示例参数
-scripts/                        # 辅助脚本，核心逻辑不放在这里
-src/goa_eval/                   # CircuitPilot 核心包
-tests/                          # pytest 回归测试
-```
-
-核心模块：
-
-```text
-src/goa_eval/
-├── cli.py              # evaluate-real / recommend / evaluate-batch
-├── waveform_io.py      # 仿真 CSV 读取与列名归一化
-├── windowing.py        # 脉冲窗口、重复扫描窗口、边沿区域、overlap 积分
-├── metrics.py          # 单次波形指标计算和级联摘要
-├── scorer.py           # 硬约束与软评分
-├── diagnosis.py        # 诊断报告
-├── recommendation.py   # 规则化参数建议
-├── batch_eval.py       # 多 run 批量评价
-├── param_space.py      # run 参数与参数空间读取
-├── optimizer.py        # 后续优化器接口
-├── reporter.py         # CSV / JSON / Markdown 输出
-├── plotter.py          # PNG 图表
-└── schemas.py          # schema_version、字段名和基础校验
-```
-
-## 安装
-
-建议使用 Python 3.10 或更高版本。
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -U pip
-python -m pip install -e ".[test]"
-```
-
-Windows PowerShell 可使用：
+安装测试与 Agent 依赖：
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -U pip
-python -m pip install -e ".[test]"
+python -m pip install -e ".[test,agent]"
 ```
 
-运行测试：
+运行 SKY130 multi-agent 最小流程：
 
-```bash
-python -m pytest -q
+```powershell
+python -m goa_eval.cli multi-agent-run `
+  --task examples/tasks/sky130_multi_agent_task.yaml `
+  --output-dir outputs/multi_agent_sky130
 ```
 
-## 快速开始
+验证四类路由：
 
-运行公开示例波形：
+```powershell
+python -m goa_eval.cli multi-agent-run --task examples/tasks/goa_multi_agent_task.yaml --output-dir outputs/multi_agent_goa
+python -m goa_eval.cli multi-agent-run --task examples/tasks/sky130_multi_agent_task.yaml --output-dir outputs/multi_agent_sky130
+python -m goa_eval.cli multi-agent-run --task examples/tasks/generic_multi_agent_task.yaml --output-dir outputs/multi_agent_generic
+python -m goa_eval.cli multi-agent-run --task examples/tasks/netlist_multi_agent_task.yaml --output-dir outputs/multi_agent_netlist
+```
 
-```bash
+如果未安装 LangGraph，命令会返回清晰错误，并提示安装 `.[agent]`。
+
+## Agent 角色
+
+| Agent | 职责 | 允许工具 |
+| --- | --- | --- |
+| SupervisorAgent | 初始化共享状态和运行边界 | `inspect_task_inputs` |
+| RouterAgent | 根据 `task_type`、`profile`、输入文件进行可解释路由 | `inspect_task_inputs` |
+| GOAAgent | 输出 GOA / 8T1C 级联诊断，关注 stage、overlap、ripple、voltage loss、false trigger | `inspect_real_metrics`, `inspect_score_summary`, `inspect_leaderboard` |
+| SKY130Agent | 输出 SKY130 诊断，关注 timing、load_cap、drive_resistance、hard constraints、参数风险 | `inspect_real_metrics`, `inspect_score_summary`, `inspect_leaderboard`, `inspect_candidates` |
+| GenericWaveformAgent | 汇总通用 waveform-derived 评估文件 | `inspect_real_metrics`, `inspect_score_summary`, `inspect_leaderboard` |
+| NetlistAgent | 检查 netlist 最小完整性和 parser 可见结构 | `inspect_netlist_integrity` |
+| EvaluationAgent | 汇总已存在评估结果，不重算核心指标 | `inspect_leaderboard`, `inspect_score_summary`, `inspect_real_metrics` |
+| OptimizationAgent | 通过现有 optimizer wrapper 生成 `next_candidates.csv` | `generate_candidates`, `inspect_candidates` |
+| CriticAgent | 审查边界、schema、硬约束、异常指标、工具越权、candidate 风险和 netlist 完整性 | `check_schema_and_boundary`, `inspect_candidates`, `inspect_netlist_integrity` |
+| ReportAgent | 写出最终报告、优化闭环记录和决策证据卡 | `write_multi_agent_report` |
+
+每个 Agent 都有显式 contract：`role`、`allowed_tools`、`input_schema`、`output_schema`、`handoff_policy`、`failure_policy`。运行时的工具调用进入 trace，CriticAgent 会检查是否发生越权调用。
+
+## 路由规则
+
+RouterAgent 的路由是可解释的：
+
+- `profile` 或 `task_type` 指向 GOA / 8T1C 时，进入 `GOAAgent`。
+- `profile` 或 `task_type` 指向 SKY130 时，进入 `SKY130Agent`。
+- 没有明确领域 profile，但输入包含 `waveform`、`real_metrics`、`score_summary` 或 `leaderboard` 时，进入 `GenericWaveformAgent`。
+- 只有 netlist 输入且没有 waveform 评估文件时，进入 `NetlistAgent`。
+- 输入不足或不支持时，交给 `CriticAgent` 生成失败/警告证据。
+
+路由结果会写入 `multi_agent_plan.json`、`multi_agent_trace.jsonl`、`multi_agent_handoff_trace.jsonl` 和 `multi_agent_decision_report.md`。
+
+## 证据链输出
+
+一次 `multi-agent-run` 会在输出目录生成：
+
+| 文件 | 内容 |
+| --- | --- |
+| `multi_agent_plan.json` | 任务元信息、选中的 Agent、路由原因、Agent contracts、边界字段和预期输出 |
+| `multi_agent_trace.jsonl` | 每个 Agent 步骤、工具调用、状态、输入摘要、输出摘要和时间戳 |
+| `multi_agent_handoff_trace.jsonl` | Agent 之间的 handoff、原因、传递的状态字段和状态 |
+| `critic_report.json` | Critic verdict、severity、risk_type、risk_summary、top_risks、warning/failure 和边界 |
+| `multi_agent_memory.json` | 本次运行的 Agent、工具、best candidate、候选摘要、warning/failure 和后续动作 |
+| `multi_agent_decision_report.md` | 完整人读报告，包含目标、路由、工具调用、领域诊断、候选依据、闭环链接、netlist 检查、Critic 结果和边界说明 |
+| `optimization_loop_record.json` | 优化闭环机器可读记录：baseline、next_candidates、rerun instruction、rerun results、comparison、decision |
+| `optimization_decision_card.md` | 面向比赛展示和答辩的决策证据卡 |
+
+如果提供了 `param_space` 和 leaderboard，OptimizationAgent 会通过现有 `goa_eval.optimizer` wrapper 生成 `next_candidates.csv`。这只是下一轮仿真候选，不是自动闭环优化完成证明。
+
+## 优化闭环语义
+
+优化闭环记录遵循：
+
+```text
+next_candidates -> rerun -> comparison -> decision
+```
+
+如果 task 没有提供 rerun 结果，`optimization_loop_record.json` 会写出：
+
+```text
+status = awaiting_rerun_results
+decision = await_rerun_results
+```
+
+这表示系统已经给出下一轮候选和 rerun 指令，但还没有真实 rerun artifact，不能宣称优化完成。
+
+如果 task 提供 `rerun_leaderboard`、`rerun_score_summary` 或 `rerun_real_metrics`，系统会进入 `decision_ready`，并基于 baseline best candidate 与 rerun best candidate 的 `overall_score` 做 comparison。分数提升时输出 `accept_rerun_candidate`，未提升时输出 `reject_rerun_candidate`，缺少可比字段时输出 `review_required`。
+
+可选 rerun 输入字段：
+
+```yaml
+inputs:
+  baseline_run_dir: outputs/multi_agent_sky130
+  rerun_run_dir: outputs/rerun_001
+  rerun_leaderboard: outputs/rerun_001/leaderboard.csv
+  rerun_score_summary: outputs/rerun_001/score_summary.json
+  rerun_real_metrics: outputs/rerun_001/real_metrics.csv
+```
+
+## CriticAgent 风险分级
+
+CriticAgent 保留旧的 `verdict` 字段，同时新增：
+
+- `severity`: `info | warning | major | critical`
+- `risk_type`: `boundary | hard_constraint | not_evaluable | false_trigger | overlap | candidate_risk | netlist_integrity | tool_permission | rerun_missing | decision_blocked`
+- `risks`: 每个具体问题的风险类型和严重度
+- `risk_summary`: 按风险类型和严重度聚合
+- `top_risks`: 适合报告展示的主要风险
+
+主要检查项包括：
+
+- `hard_constraint_passed = false` 或硬约束失败原因。
+- `not_evaluable`、`not_evaluable_with_current_waveform`、`missing`、`nan` 等不可评估指标。
+- `FalseTrigger` 或 `FalseTriggerCount > 0`。
+- `OverlapRatio` 超过默认或任务指定阈值。
+- 缺失 `schema_version`、`result_version`、`data_source`、`engineering_validity`。
+- Agent 调用了 contract 中未允许的工具。
+- 候选参数值超出 `param_space` 或单个候选修改参数数过多。
+- netlist 缺少 `.END`、`.SUBCKT` 未闭合、`.ENDS` 不匹配、缺少 MOS 器件或电压源等最小完整性问题。
+- 生成了 `next_candidates` 但没有 rerun 结果时，记录 `rerun_missing`。
+- 报告文字是否越界声称 silicon validation、physical validation 或 industrial-grade full automation。
+
+## Task YAML
+
+任务文件保持轻量，基础字段如下：
+
+```yaml
+task_name: sky130_multi_agent_mvp
+task_type: sky130_eda_optimization
+profile: sky130_inverter_chain
+
+inputs:
+  leaderboard: examples/multi_agent/sample_sky130_leaderboard.csv
+  score_summary: examples/multi_agent/sample_score_summary.json
+  real_metrics: examples/multi_agent/sample_real_metrics.csv
+  param_space: examples/sample_params.yaml
+
+objectives:
+  primary: pass_hard_constraints
+
+limits:
+  max_candidates: 10
+  max_parameter_changes_per_candidate: 2
+
+validity:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only
+```
+
+现有示例任务位于 `examples/tasks/`。这些任务复用 `examples/multi_agent/` 中已有样例文件，不需要继续增加样例数据。
+
+## 与核心评估逻辑的关系
+
+Multi-agent 层只做编排、审查、闭环记录和报告：
+
+- 不重写 `metrics.py`。
+- 不重写 `scorer.py`。
+- 不重写 `optimizer.py`。
+- 不重写 `reporter.py`。
+- 不直接调度远程服务或外部数据库。
+
+已有入口仍然可用：
+
+```powershell
 python -m goa_eval.cli evaluate-real --waveform examples/sample_waveform.csv --output-dir outputs/example
-```
-
-生成单次推荐报告：
-
-```bash
-python -m goa_eval.cli recommend \
-  --summary outputs/example/real_summary.json \
-  --score outputs/example/score_summary.json \
-  --metrics outputs/example/real_metrics.csv \
-  --output outputs/example/recommendations.md
-```
-
-Windows PowerShell：
-
-```powershell
-python -m goa_eval.cli recommend `
-  --summary outputs/example/real_summary.json `
-  --score outputs/example/score_summary.json `
-  --metrics outputs/example/real_metrics.csv `
-  --output outputs/example/recommendations.md
-```
-
-批量评价多个 run：
-
-```bash
+python -m goa_eval.cli recommend --summary outputs/example/real_summary.json --score outputs/example/score_summary.json --metrics outputs/example/real_metrics.csv --output outputs/example/recommendations.md
 python -m goa_eval.cli evaluate-batch --runs-dir runs --output-dir outputs_batch
 ```
 
-## 单次评价输出
+## 测试
 
-`evaluate-real` 会在指定输出目录中生成：
+定向测试：
 
-- `real_metrics.csv`：逐级指标表，每行对应一个输出节点或级。
-- `real_summary.json`：整次评价摘要，包括通过状态、最差级、分段摘要和关键统计值。
-- `score_summary.json`：硬约束、软评分、失败原因和警告原因。
-- `diagnosis_report.md`：面向人工复核的诊断报告。
-- `real_waveform_report.md`：波形评价 Markdown 报告。
-- `optimization_dataset.csv`：面向后续参数搜索的一行结构化数据。
-- `run_manifest_real.json`：输入文件、配置、阈值、版本和有效性边界记录。
-- `figures/`：波形总览、趋势图、热力图和内部节点图。
-
-字段细节见 [docs/schema_spec.md](docs/schema_spec.md)，指标定义见 [docs/metrics_spec.md](docs/metrics_spec.md)。
-
-## 批量评价约定
-
-批量入口读取 `runs/run_xxx` 目录。每个 run 至少需要一个 `waveform.csv`，可选 `params.yaml`。
-
-```text
-runs/
-├── run_001/
-│   ├── params.yaml
-│   └── waveform.csv
-└── run_002/
-    ├── params.yaml
-    └── waveform.csv
+```powershell
+python -m pytest tests -k multi_agent -q
 ```
 
-`params.yaml` 示例：
+全量回归：
 
-```yaml
-run_id: run_001
-circuit_version: goa_8t1c_v1
-parameters:
-  C_store: 1pF
-  R_driver: 10k
-  W_pmos: 2u
-  W_nmos: 1u
-  VDD: 15
-  load_cap: 5pF
-conditions:
-  temp: 25
-  corner: TT
+```powershell
+python -m pytest -q
 ```
 
-`evaluate-batch` 主要输出：
-
-- `all_metrics.csv`：所有 run 的逐级指标合并表，并附带参数字段。
-- `all_scores.csv`：所有 run 的评分摘要。
-- `leaderboard.csv`：按 `overall_score` 排序的候选结果表。
-- `recommendations.md`：按 run 分组的下一轮参数建议。
-- `run_manifest_batch.json`：批量评价元数据。
-
-## 配置说明
-
-默认配置位于 [config/spec.yaml](config/spec.yaml)。其中：
-
-- `thresholds` 定义高低电平阈值、目标脉宽、最大 overlap ratio、最大 ripple、电压损失、延迟一致性和目标刷新率。
-- `cascade` 定义级数、输出节点命名模式、分段大小和抽样绘图节点。
-- `weights` 定义功能、质量、稳定性、一致性和成本评分权重。
-
-命令行可覆盖部分阈值和级联配置，例如：
-
-```bash
-python -m goa_eval.cli evaluate-real \
-  --waveform examples/sample_waveform.csv \
-  --output-dir outputs/example \
-  --stage-count 8 \
-  --output-node-pattern "o{index}"
-```
-
-如果配置要求 720 级但当前 CSV 只包含 `o1~o8`，程序会按实际可识别输出节点兼容评价，并在报告中记录说明。
-
-## 当前边界
-
-CircuitPilot 当前只处理仿真数据。推荐器是规则系统，不训练深度学习模型，不直接调度外部 SPICE，也不声明已经完成全自动闭环优化。建议内容用于指导下一轮仿真设计和指标复核。
-
-公开仓库不应上传私有或大体积仿真数据。上传前请查看 [docs/github_upload_checklist.md](docs/github_upload_checklist.md) 和 `.gitignore`。
-
-## Roadmap
-
-- 固定更多输出 schema 与公开示例数据。
-- 扩展参数空间定义和候选生成策略。
-- 增加 PVT、Monte Carlo、负载变化和功耗指标。
-- 在积累足够多参数-结果数据后，再评估贝叶斯优化、进化算法或机器学习模型。
-- 增加外部仿真器调度接口，同时保持仿真结果与实物验证边界清晰。
-
-## License
-
-MIT License. See [LICENSE](LICENSE).
-
-## Acknowledgement
-
-This project started from an 8T1C / GOA circuit simulation review workflow. The open-source version preserves the reusable software parts: simulation-data parsing, metric extraction, structured reporting, diagnosis, and conservative rule-based recommendations.
+如果本机缺少某些私有 fixture 或外部工具，优先看 multi-agent 定向测试和错误信息，不要把工具链可用性误写成物理验证结论。

@@ -69,3 +69,77 @@ def test_critic_detects_metric_bad_cells_and_candidate_risk(tmp_path):
     assert any("bad metric cell" in issue for issue in issues)
     assert any("parameter change count" in issue for issue in issues)
     assert any("unauthorized tool" in issue for issue in issues)
+
+
+def test_critic_detects_domain_risks_and_incomplete_netlist(tmp_path):
+    incomplete_netlist = tmp_path / "incomplete.sp"
+    incomplete_netlist.write_text(
+        "\n".join(
+            [
+                "* Missing .END and .ENDS",
+                ".SUBCKT inv in out vdd vss",
+                "R1 out vss 1k",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    state = {
+        "score_summary": {
+            "hard_constraint_passed": False,
+            "hard_constraint_failures": ["Max_overlap_ratio above target"],
+        },
+        "metrics_summary": {
+            "bad_cell_count": 1,
+            "metric_stats": {
+                "FalseTriggerCount": {"max": 1},
+                "OverlapRatio": {"max": 0.31},
+            },
+        },
+        "inputs": {"netlist": str(incomplete_netlist)},
+        "netlist_summary": {"not_implemented_yet": False},
+        "tool_results": {},
+        "handoff_records": [{"from_agent": "NetlistAgent", "to_agent": "CriticAgent"}],
+        "data_source": "real_simulation_csv",
+        "engineering_validity": "simulation_only",
+    }
+
+    verdicts = run_critic_checks(state)
+    issues = [issue for verdict in verdicts for issue in verdict.issues]
+
+    assert any("hard_constraint_failed" in issue for issue in issues)
+    assert any("FalseTriggerCount" in issue for issue in issues)
+    assert any("OverlapRatio" in issue for issue in issues)
+    assert any("netlist missing .END" in issue for issue in issues)
+    assert any(".SUBCKT without matching .ENDS" in issue for issue in issues)
+    assert any("netlist missing MOS devices" in issue for issue in issues)
+
+
+def test_critic_verdict_contains_severity_and_risk_type():
+    state = {
+        "score_summary": {
+            "data_source": "real_simulation_csv",
+            "engineering_validity": "simulation_only",
+            "hard_constraint_passed": False,
+            "hard_constraint_failures": ["Max_overlap_ratio above target"],
+        },
+        "metrics_summary": {
+            "bad_cell_count": 1,
+            "bad_cell_values": ["not_evaluable"],
+            "metric_stats": {
+                "FalseTriggerCount": {"max": 1},
+                "OverlapRatio": {"max": 0.31},
+            },
+        },
+        "tool_results": {"RouterAgent": [{"tool_name": "generate_candidates"}]},
+        "handoff_records": [{"from_agent": "RouterAgent", "to_agent": "CriticAgent"}],
+        "data_source": "real_simulation_csv",
+        "engineering_validity": "simulation_only",
+    }
+
+    verdict = run_critic_checks(state)[0].to_dict()
+
+    assert verdict["verdict"] == "reject"
+    assert verdict["severity"] == "critical"
+    assert verdict["risk_type"] == "hard_constraint"
+    risk_types = {risk["risk_type"] for risk in verdict["risks"]}
+    assert {"hard_constraint", "not_evaluable", "false_trigger", "overlap", "tool_permission"} <= risk_types

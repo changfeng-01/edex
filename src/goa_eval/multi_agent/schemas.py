@@ -105,6 +105,9 @@ class CriticVerdict(JsonDataclass):
     issues: list[str]
     reason: str
     suggested_next_action: str
+    severity: str = "info"
+    risk_type: str = "none"
+    risks: list[dict[str, Any]] = field(default_factory=list)
     timestamp: str = field(default_factory=utc_timestamp)
 
 
