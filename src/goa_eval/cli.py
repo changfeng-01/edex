@@ -96,6 +96,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "evaluate-batch":
         run_batch_evaluation(runs_dir=Path(args.runs_dir), output_dir=Path(args.output_dir))
         return 0
+    if args.command == "multi-agent-run":
+        from goa_eval.multi_agent.availability import check_langgraph_availability
+
+        availability = check_langgraph_availability()
+        if not availability["available"]:
+            print(availability["message"], file=sys.stderr)
+            return 2
+        from goa_eval.multi_agent.graph_app import run_multi_agent_task
+
+        run_multi_agent_task(Path(args.task), Path(args.output_dir))
+        return 0
     parser.print_help()
     return 2
 
@@ -133,6 +144,9 @@ def build_parser() -> argparse.ArgumentParser:
     batch = sub.add_parser("evaluate-batch")
     batch.add_argument("--runs-dir", required=True)
     batch.add_argument("--output-dir", default="outputs_batch")
+    multi_agent = sub.add_parser("multi-agent-run")
+    multi_agent.add_argument("--task", required=True)
+    multi_agent.add_argument("--output-dir", required=True)
     return parser
 
 

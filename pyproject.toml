@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+agent = ["langgraph"]
 
 [project.scripts]
 circuitpilot = "goa_eval.cli:main"
