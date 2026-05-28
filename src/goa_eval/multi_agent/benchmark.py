@@ -56,6 +56,22 @@ def _case_result(case_dir: Path, output_dir: Path, final_state: dict[str, Any], 
     for artifact in expected.get("required_artifacts", []):
         artifact_results[artifact] = bool((artifacts.get(artifact) or {}).get("exists"))
     forbidden_hits = _forbidden_hits(final_state, expected.get("forbidden_claims", []))
+    report_forbidden_hits = _report_forbidden_hits(case_output=output_dir, forbidden_claims=expected.get("forbidden_claims", []))
+    risk_types = _critic_risk_types(final_state)
+    expected_risk_types = [str(item) for item in expected.get("expected_risk_types", [])]
+    optimization_status = _optimization_loop_status(output_dir, final_state)
+    expected_optimization_status = expected.get("optimization_loop_status")
+    diagnosis_terms = [str(item).lower() for item in expected.get("diagnosis_terms", [])]
+    diagnosis_text = json.dumps(final_state.get("domain_diagnosis", {}), ensure_ascii=False).lower()
+    case_metrics = {
+        "route_accuracy": 1.0 if route_ok else 0.0,
+        "artifact_discovery_score": _artifact_score(artifact_results),
+        "diagnosis_match_score": _term_score(diagnosis_text, diagnosis_terms),
+        "critic_risk_detection_score": _risk_score(risk_types, expected_risk_types),
+        "boundary_safety_score": 1.0 if boundary_ok and not forbidden_hits else 0.0,
+        "optimization_loop_status_score": 1.0 if expected_optimization_status in {None, optimization_status} else 0.0,
+        "report_forbidden_claim_score": 0.0 if report_forbidden_hits else 1.0,
+    }
     return {
         "case_name": case_dir.name,
         "output_dir": str(output_dir),
@@ -65,6 +81,12 @@ def _case_result(case_dir: Path, output_dir: Path, final_state: dict[str, Any], 
         "boundary_ok": boundary_ok and not forbidden_hits,
         "required_artifacts": artifact_results,
         "forbidden_hits": forbidden_hits,
+        "report_forbidden_hits": report_forbidden_hits,
+        "critic_risk_types": risk_types,
+        "expected_risk_types": expected_risk_types,
+        "optimization_loop_status": optimization_status,
+        "expected_optimization_loop_status": expected_optimization_status,
+        "metrics": case_metrics,
         "warning_count": len(final_state.get("warnings", [])),
         "failure_count": len(final_state.get("failures", [])),
         "data_source": final_state.get("data_source"),
@@ -74,16 +96,20 @@ def _case_result(case_dir: Path, output_dir: Path, final_state: dict[str, Any], 
 
 def _summary(results: list[dict[str, Any]]) -> dict[str, Any]:
     case_count = len(results)
-    route_count = sum(1 for result in results if result["route_ok"])
-    boundary_count = sum(1 for result in results if result["boundary_ok"])
+    metric_names = [
+        "route_accuracy",
+        "artifact_discovery_score",
+        "diagnosis_match_score",
+        "critic_risk_detection_score",
+        "boundary_safety_score",
+        "optimization_loop_status_score",
+        "report_forbidden_claim_score",
+    ]
     return {
         "schema_version": "1.0",
         "result_version": "1.0",
         "case_count": case_count,
-        "metrics": {
-            "route_accuracy": route_count / case_count if case_count else 0.0,
-            "boundary_safety_score": boundary_count / case_count if case_count else 0.0,
-        },
+        "metrics": {name: _average(results, name) for name in metric_names},
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
     }
@@ -101,13 +127,76 @@ def _forbidden_hits(final_state: dict[str, Any], forbidden_claims: list[str]) ->
     return [claim for claim in forbidden_claims if str(claim).lower() in haystack]
 
 
+def _report_forbidden_hits(case_output: Path, forbidden_claims: list[str]) -> list[str]:
+    report_path = case_output / "multi_agent_decision_report.md"
+    if not report_path.exists():
+        return []
+    text = report_path.read_text(encoding="utf-8", errors="replace").lower()
+    hits = []
+    for claim in forbidden_claims:
+        phrase = str(claim).lower()
+        index = text.find(phrase)
+        context = text[max(0, index - 40) : index] if index >= 0 else ""
+        sentence_start = text.rfind("\n", 0, index) if index >= 0 else -1
+        sentence_context = text[max(0, sentence_start + 1) : index] if index >= 0 else ""
+        if (
+            index >= 0
+            and "not" not in context
+            and "must not" not in sentence_context
+            and "forbidden phrase" not in context
+            and "overclaim" not in context
+        ):
+            hits.append(claim)
+    return hits
+
+
+def _critic_risk_types(final_state: dict[str, Any]) -> list[str]:
+    risks = [risk for verdict in final_state.get("critic_verdicts", []) for risk in verdict.get("risks", [])]
+    return sorted({str(risk.get("risk_type")) for risk in risks if risk.get("risk_type")})
+
+
+def _optimization_loop_status(output_dir: Path, final_state: dict[str, Any]) -> str | None:
+    path = output_dir / "optimization_loop_record.json"
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8")).get("status")
+        except json.JSONDecodeError:
+            return None
+    candidate_status = (final_state.get("candidate_summary") or {}).get("status")
+    return str(candidate_status) if candidate_status else None
+
+
+def _artifact_score(artifact_results: dict[str, bool]) -> float:
+    if not artifact_results:
+        return 1.0
+    return sum(1 for value in artifact_results.values() if value) / len(artifact_results)
+
+
+def _term_score(text: str, terms: list[str]) -> float:
+    if not terms:
+        return 1.0
+    return sum(1 for term in terms if term in text) / len(terms)
+
+
+def _risk_score(actual: list[str], expected: list[str]) -> float:
+    if not expected:
+        return 1.0
+    actual_set = set(actual)
+    return sum(1 for risk in expected if risk in actual_set) / len(expected)
+
+
+def _average(results: list[dict[str, Any]], metric_name: str) -> float:
+    if not results:
+        return 0.0
+    return sum(float((result.get("metrics") or {}).get(metric_name, 0.0)) for result in results) / len(results)
+
+
 def _write_report(path: Path, summary: dict[str, Any], results: list[dict[str, Any]]) -> None:
     lines = [
         "# Multi-Agent Benchmark Report",
         "",
         f"- Cases: {summary['case_count']}",
-        f"- Route accuracy: {summary['metrics']['route_accuracy']:.3f}",
-        f"- Boundary safety score: {summary['metrics']['boundary_safety_score']:.3f}",
+        *[f"- {name}: {value:.3f}" for name, value in summary["metrics"].items()],
         "- Data source: real_simulation_csv",
         "- Engineering validity: simulation_only",
         "",

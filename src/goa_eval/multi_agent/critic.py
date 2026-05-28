@@ -34,6 +34,7 @@ def run_critic_checks(state: dict) -> list[CriticVerdict]:
     if state.get("engineering_validity") != "simulation_only":
         issues.append(f"engineering_validity mismatch: {state.get('engineering_validity')}")
     inputs = normalize_artifact_inputs(state.get("inputs") or {})
+    _extend_missing_evidence_issues(state, issues)
     _extend_main_artifact_issues(inputs, issues, failures)
     bad_metric_count = int((state.get("metrics_summary") or {}).get("bad_cell_count") or 0)
     if bad_metric_count:
@@ -102,6 +103,22 @@ def _bad_metric_cell_issues(path: Path) -> list[str]:
     if count:
         issues.append(f"bad metric cell count {count} in {path}")
     return issues
+
+
+def _extend_missing_evidence_issues(state: dict, issues: list[str]) -> None:
+    evidence = state.get("evidence_index") or {}
+    artifacts = evidence.get("artifacts") or {}
+    if not evidence:
+        issues.append("missing evidence_index in shared state")
+        return
+    if state.get("selected_domain_agent") in {"GOAAgent", "SKY130Agent", "GenericWaveformAgent"}:
+        for key in ["real_summary", "real_metrics", "score_summary"]:
+            if not (artifacts.get(key) or {}).get("exists"):
+                issues.append(f"missing evidence artifact: {key}")
+    if state.get("selected_domain_agent") == "SKY130Agent":
+        for key in ["analysis_metrics", "validation_summary", "optimization_history", "run_manifest_real"]:
+            if key in artifacts and not artifacts[key].get("exists"):
+                issues.append(f"missing optional SKY130 evidence artifact: {key}")
 
 
 def _extend_main_artifact_issues(inputs: dict, issues: list[str], failures: list[str]) -> None:

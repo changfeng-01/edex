@@ -6,13 +6,21 @@ from goa_eval.multi_agent.tools import (
     check_schema_and_boundary,
     generate_candidates,
     inspect_candidates,
+    inspect_analysis_metrics,
+    inspect_existing_reports,
     inspect_leaderboard,
+    inspect_optimization_history,
+    inspect_optimization_leaderboard,
     inspect_netlist_integrity,
     inspect_real_metrics,
+    inspect_real_summary,
+    inspect_run_manifest,
     inspect_score_summary,
     inspect_task_inputs,
+    inspect_validation_summary,
     normalize_artifact_inputs,
 )
+from goa_eval.multi_agent.tool_registry import get_tool_registry
 
 
 EXAMPLES = Path("examples/multi_agent")
@@ -118,3 +126,54 @@ def test_normalize_artifact_inputs_discovers_current_main_artifacts(tmp_path):
     assert normalized["score_summary"].endswith("score_summary.json")
     assert normalized["leaderboard"].endswith("optimization_leaderboard.csv")
     assert normalized["next_candidates"].endswith("best_next_candidates.csv")
+
+
+def test_evidence_tools_are_registered():
+    registry = get_tool_registry()
+
+    for tool_name in [
+        "inspect_artifact_bundle",
+        "inspect_real_summary",
+        "inspect_analysis_metrics",
+        "inspect_optimization_history",
+        "inspect_optimization_leaderboard",
+        "inspect_validation_summary",
+        "inspect_run_manifest",
+        "inspect_existing_reports",
+    ]:
+        assert tool_name in registry
+
+
+def test_evidence_inspectors_summarize_mainline_artifacts(tmp_path):
+    real_summary = tmp_path / "real_summary.json"
+    real_summary.write_text(
+        '{"data_source":"real_simulation_csv","engineering_validity":"simulation_only","Max_overlap_ratio":0.03,"FalseTriggerCount":0}',
+        encoding="utf-8",
+    )
+    analysis_metrics = tmp_path / "analysis_metrics.json"
+    analysis_metrics.write_text('{"topology_profile":"ota","not_evaluable_metrics":["unity_gain_hz"]}', encoding="utf-8")
+    history = tmp_path / "optimization_history.json"
+    history.write_text(
+        '{"rounds":[{"round_index":1,"best_score":0.81,"best_run_dir":"round_1"},{"round_index":2,"best_score":0.91,"best_run_dir":"round_2","target_status":"passed"}],"stop_reason":"target_met"}',
+        encoding="utf-8",
+    )
+    leaderboard = tmp_path / "optimization_leaderboard.csv"
+    leaderboard.write_text("candidate_id,overall_score,target.status\ncand_2,0.91,passed\ncand_1,0.81,failed\n", encoding="utf-8")
+    validation = tmp_path / "validation_summary.csv"
+    validation.write_text("target.status,metric\nfailed,Max_ripple\n", encoding="utf-8")
+    manifest = tmp_path / "run_manifest_real.json"
+    manifest.write_text('{"data_source":"real_simulation_csv","engineering_validity":"simulation_only","run_id":"r1"}', encoding="utf-8")
+    report = tmp_path / "diagnosis_report.md"
+    report.write_text("simulation_only diagnosis", encoding="utf-8")
+
+    assert inspect_real_summary(real_summary).data["boundary"]["data_source"] == "real_simulation_csv"
+    assert inspect_analysis_metrics(analysis_metrics).data["not_evaluable_metrics"] == ["unity_gain_hz"]
+    history_result = inspect_optimization_history(history)
+    assert history_result.data["round_count"] == 2
+    assert history_result.data["best_score"] == 0.91
+    assert history_result.data["best_run_dir"] == "round_2"
+    assert history_result.data["target_status"] == "passed"
+    assert inspect_optimization_leaderboard(leaderboard).data["best_candidate"]["candidate_id"] == "cand_2"
+    assert inspect_validation_summary(validation).status == "warning"
+    assert inspect_run_manifest(manifest).data["boundary"]["engineering_validity"] == "simulation_only"
+    assert inspect_existing_reports({"diagnosis_report": str(report)}).data["reports"]["diagnosis_report"]["exists"] is True

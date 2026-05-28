@@ -1,0 +1,9 @@
+task_name: sky130_evidence_case
+task_type: sky130_eda_optimization
+profile: sky130_inverter_chain
+inputs:
+  artifact_dir: examples/demo_run
+  param_space: examples/sample_params.yaml
+validity:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only
