@@ -123,6 +123,11 @@ def main(argv: list[str] | None = None) -> int:
 
         run_multi_agent_task(Path(args.task), Path(args.output_dir))
         return 0
+    if args.command == "benchmark-run":
+        from goa_eval.multi_agent.benchmark import run_benchmark_suite
+
+        run_benchmark_suite(Path(args.suite), Path(args.output_dir))
+        return 0
     if args.command == "propose-candidates":
         summary = json.loads(Path(args.summary).read_text(encoding="utf-8"))
         score = json.loads(Path(args.score).read_text(encoding="utf-8")) if args.score else {}
@@ -422,6 +427,9 @@ def build_parser() -> argparse.ArgumentParser:
     multi_agent = sub.add_parser("multi-agent-run")
     multi_agent.add_argument("--task", required=True)
     multi_agent.add_argument("--output-dir", required=True)
+    benchmark = sub.add_parser("benchmark-run")
+    benchmark.add_argument("--suite", required=True)
+    benchmark.add_argument("--output-dir", required=True)
     candidates = sub.add_parser("propose-candidates")
     candidates.add_argument("--summary", required=True)
     candidates.add_argument("--score")
