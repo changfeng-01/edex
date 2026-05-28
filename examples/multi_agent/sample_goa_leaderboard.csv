@@ -1,0 +1,3 @@
+candidate_id,overall_score,hard_constraint_passed,failure_reasons,warning_reasons,Max_overlap_ratio,Max_ripple,FalseTriggerCount,C_store,R_driver
+goa_cand_001,0.64,false,["overlap_timing_review"],["ripple_hold_window_review"],0.22,0.18,1,1pF,10k
+goa_cand_002,0.58,false,["false_trigger_threshold_review"],["voltage_loss_review"],0.31,0.16,2,2pF,8k

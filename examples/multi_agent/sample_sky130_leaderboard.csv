@@ -1,0 +1,3 @@
+candidate_id,overall_score,hard_constraint_passed,failure_reasons,warning_reasons,delay,rise_time,fall_time,load_cap,drive_resistance
+sky_cand_001,0.82,true,[],["delay_margin_review"],1.2e-09,2.0e-10,2.2e-10,1.0e-12,1000
+sky_cand_002,0.71,false,["delay_drive_load_review"],["ripple_hold_window_review"],1.8e-09,2.8e-10,3.0e-10,1.2e-12,1500

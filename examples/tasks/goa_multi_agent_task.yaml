@@ -1,0 +1,25 @@
+task_name: goa_multi_agent_mvp
+task_type: goa_eda_optimization
+profile: goa_8t1c_720
+
+inputs:
+  leaderboard: examples/multi_agent/sample_goa_leaderboard.csv
+  score_summary: examples/multi_agent/sample_score_summary.json
+  real_metrics: examples/multi_agent/sample_real_metrics.csv
+  param_space: examples/sample_params.yaml
+
+objectives:
+  primary: pass_hard_constraints
+  secondary:
+    - minimize_Max_overlap_ratio
+    - minimize_Max_ripple
+    - minimize_Max_voltage_loss
+    - reduce_false_trigger
+
+limits:
+  max_candidates: 10
+  max_parameter_changes_per_candidate: 2
+
+validity:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only

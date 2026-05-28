@@ -1,0 +1,25 @@
+task_name: sky130_multi_agent_mvp
+task_type: sky130_eda_optimization
+profile: sky130_inverter_chain
+
+inputs:
+  leaderboard: examples/multi_agent/sample_sky130_leaderboard.csv
+  score_summary: examples/multi_agent/sample_score_summary.json
+  real_metrics: examples/multi_agent/sample_real_metrics.csv
+  param_space: examples/sample_params.yaml
+
+objectives:
+  primary: pass_hard_constraints
+  secondary:
+    - maximize_overall_score
+    - minimize_delay
+    - minimize_overlap
+    - reduce_parameter_risk
+
+limits:
+  max_candidates: 10
+  max_parameter_changes_per_candidate: 2
+
+validity:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only

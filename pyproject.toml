@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest"]
 sky130 = ["datasets"]
+agent = ["langgraph"]
 
 [project.scripts]
 circuitpilot = "goa_eval.cli:main"

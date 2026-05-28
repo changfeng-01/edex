@@ -1,4 +1,13 @@
 # CircuitPilot / 芯智调参
+## Multi-Agent Evidence Chain
+
+The `multi-agent-run` command adds a local orchestration layer over the existing evidence tools. It routes tasks through Supervisor, Router, GOA/SKY130/Generic/Netlist, Evaluation, Optimization, Critic, and Report agents, then writes trace, handoff, memory, critic, decision, and optimization-loop artifacts. See `docs/multi_agent_evidence_chain.md`.
+
+```bash
+python -m goa_eval.cli multi-agent-run \
+  --task examples/tasks/sky130_multi_agent_task.yaml \
+  --output-dir outputs/multi_agent_sky130
+```
 
 中文名：芯智调参：基于仿真数据的电路参数智能推荐系统  
 English name: CircuitPilot: Simulation-Driven Intelligent Parameter Recommendation for Circuit Design
