@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+
+def _write_case(case_dir: Path) -> None:
+    artifacts = case_dir / "artifacts"
+    artifacts.mkdir(parents=True)
+    (artifacts / "real_summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "result_version": "1.0",
+                "data_source": "real_simulation_csv",
+                "engineering_validity": "simulation_only",
+                "Max_overlap_ratio": 0.0,
+                "FalseTriggerCount": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (artifacts / "score_summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "result_version": "1.0",
+                "data_source": "real_simulation_csv",
+                "engineering_validity": "simulation_only",
+                "hard_constraint_passed": True,
+                "overall_score": 0.9,
+            }
+        ),
+        encoding="utf-8",
+    )
+    pd.DataFrame([{"schema_version": "1.0", "result_version": "1.0", "stage": 1, "OverlapRatio": 0.0}]).to_csv(
+        artifacts / "real_metrics.csv", index=False
+    )
+    pd.DataFrame([{"candidate_id": "cand_001", "overall_score": 0.9}]).to_csv(
+        artifacts / "optimization_leaderboard.csv", index=False
+    )
+    pd.DataFrame([{"candidate_id": "next_001", "parameter": "load_cap", "candidate_values": "[1p]"}]).to_csv(
+        artifacts / "best_next_candidates.csv", index=False
+    )
+    (artifacts / "optimization_history.json").write_text(
+        json.dumps({"rounds": [{"round_index": 1, "best_score": 0.9, "best_run_dir": "round_1"}], "stop_reason": "target_met"}),
+        encoding="utf-8",
+    )
+    pd.DataFrame([{"target.status": "passed"}]).to_csv(artifacts / "validation_summary.csv", index=False)
+
+    (case_dir / "task.yaml").write_text(
+        f"""
+task_name: benchmark_sky130
+task_type: sky130_eda_optimization
+profile: sky130_inverter_chain
+inputs:
+  artifact_dir: {artifacts.as_posix()}
+  param_space: examples/sample_params.yaml
+validity:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only
+""".strip(),
+        encoding="utf-8",
+    )
+    (case_dir / "expected.json").write_text(
+        json.dumps(
+            {
+                "selected_domain_agent": "SKY130Agent",
+                "required_artifacts": ["real_summary", "score_summary", "real_metrics", "optimization_leaderboard", "best_next_candidates"],
+                "expected_risk_types": [],
+                "optimization_loop_status": "awaiting_rerun_results",
+                "forbidden_claims": [
+                    "silicon validation",
+                    "physical validation",
+                    "tape-out proof",
+                    "real chip verification",
+                    "industrial-grade full automation",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (case_dir / "README.md").write_text("# benchmark case\n", encoding="utf-8")
+
+
+def test_benchmark_run_cli_writes_summary_results_and_report(tmp_path: Path):
+    suite = tmp_path / "suite"
+    case_dir = suite / "sky130_case"
+    case_dir.mkdir(parents=True)
+    _write_case(case_dir)
+    output = tmp_path / "benchmark"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "goa_eval.cli",
+            "benchmark-run",
+            "--suite",
+            str(suite),
+            "--output-dir",
+            str(output),
+        ],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    summary = json.loads((output / "benchmark_summary.json").read_text(encoding="utf-8"))
+    assert summary["case_count"] == 1
+    assert summary["metrics"]["route_accuracy"] == 1.0
+    assert summary["metrics"]["boundary_safety_score"] == 1.0
+    assert (output / "case_results.jsonl").exists()
+    assert (output / "benchmark_report.md").exists()
