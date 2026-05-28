@@ -17,7 +17,7 @@ from goa_eval.multi_agent.agents.router_agent import run_router_agent
 from goa_eval.multi_agent.agents.sky130_agent import run_sky130_agent
 from goa_eval.multi_agent.agents.supervisor_agent import run_supervisor_agent
 from goa_eval.multi_agent.memory import write_memory
-from goa_eval.multi_agent.evidence_index import build_evidence_index, write_evidence_index
+from goa_eval.multi_agent.evidence_index import write_evidence_index
 from goa_eval.multi_agent.schemas import MultiAgentTask
 from goa_eval.multi_agent.state import new_state_from_task
 from goa_eval.multi_agent.trace import write_trace
@@ -94,10 +94,6 @@ def run_multi_agent_task(task_path: Path, output_dir: Path) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     task = load_task(task_path)
     state = new_state_from_task(task, str(output_dir))
-    evidence_index = build_evidence_index(state.get("inputs", {}), output_dir)
-    evidence_path = write_evidence_index(evidence_index, output_dir)
-    state["evidence_index"] = evidence_index
-    state.setdefault("generated_files", {})["evidence_index"] = str(evidence_path)
     _write_plan(output_dir, state)
     app = build_multi_agent_graph()
     final_state = app.invoke(state)

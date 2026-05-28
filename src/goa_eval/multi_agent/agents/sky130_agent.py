@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from goa_eval.multi_agent.agents._utils import add_message, store_tool_result
 from goa_eval.multi_agent.handoff import append_handoff
-from goa_eval.multi_agent.tools import inspect_leaderboard, inspect_real_metrics, inspect_score_summary
+from goa_eval.multi_agent.tools import (
+    inspect_analysis_metrics,
+    inspect_existing_reports,
+    inspect_leaderboard,
+    inspect_optimization_history,
+    inspect_real_metrics,
+    inspect_run_manifest,
+    inspect_score_summary,
+    inspect_validation_summary,
+)
 
 
 def run_sky130_agent(state: dict) -> dict:
@@ -20,9 +29,35 @@ def run_sky130_agent(state: dict) -> dict:
         result = inspect_real_metrics(inputs["real_metrics"])
         state["metrics_summary"] = result.data
         store_tool_result(state, "SKY130Agent", result)
+    if inputs.get("analysis_metrics"):
+        result = inspect_analysis_metrics(inputs["analysis_metrics"])
+        state["analysis_metrics_summary"] = result.data
+        store_tool_result(state, "SKY130Agent", result)
+    if inputs.get("validation_summary"):
+        result = inspect_validation_summary(inputs["validation_summary"])
+        state["validation_summary"] = result.data
+        store_tool_result(state, "SKY130Agent", result)
+    if inputs.get("optimization_history"):
+        result = inspect_optimization_history(inputs["optimization_history"])
+        state["optimization_history_summary"] = result.data
+        store_tool_result(state, "SKY130Agent", result)
+    if inputs.get("run_manifest_real"):
+        result = inspect_run_manifest(inputs["run_manifest_real"])
+        state["run_manifest_summary"] = result.data
+        store_tool_result(state, "SKY130Agent", result)
+    result = inspect_existing_reports(inputs)
+    state["existing_report_summary"] = result.data
+    store_tool_result(state, "SKY130Agent", result)
     best_candidate = state.get("leaderboard_summary", {}).get("best_candidate", {})
     diagnosis = {
         "domain": "SKY130",
+        "analysis_metrics": state.get("analysis_metrics_summary", {}),
+        "validation": {
+            "failed_targets": state.get("validation_summary", {}).get("failed_targets", []),
+            "status_counts": state.get("validation_summary", {}).get("status_counts", {}),
+        },
+        "optimization_history": state.get("optimization_history_summary", {}),
+        "run_manifest": state.get("run_manifest_summary", {}),
         "sky130_timing": {
             key: state.get("metrics_summary", {}).get("metric_stats", {}).get(key)
             for key in ["Delay", "RiseTime", "FallTime"]
@@ -52,5 +87,19 @@ def run_sky130_agent(state: dict) -> dict:
             "sky130_next_action": "generate next candidates through optimizer wrapper if param_space is available",
         },
     )
-    append_handoff(state, "SKY130Agent", "EvaluationAgent", "domain artifacts inspected", ["leaderboard_summary", "score_summary", "metrics_summary"])
+    append_handoff(
+        state,
+        "SKY130Agent",
+        "EvaluationAgent",
+        "domain artifacts inspected",
+        [
+            "leaderboard_summary",
+            "score_summary",
+            "metrics_summary",
+            "analysis_metrics_summary",
+            "validation_summary",
+            "optimization_history_summary",
+            "run_manifest_summary",
+        ],
+    )
     return state

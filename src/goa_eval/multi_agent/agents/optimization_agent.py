@@ -1,23 +1,41 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pandas as pd
 
 from goa_eval.multi_agent.agents._utils import add_message, store_tool_result
 from goa_eval.multi_agent.handoff import append_handoff
-from goa_eval.multi_agent.tools import generate_candidates, inspect_candidates
+from goa_eval.multi_agent.tools import (
+    generate_candidates,
+    inspect_candidates,
+    inspect_optimization_history,
+    inspect_optimization_leaderboard,
+)
 
 
 def run_optimization_agent(state: dict) -> dict:
     state["active_agent"] = "OptimizationAgent"
     inputs = state.get("inputs", {})
-    existing_candidates = inputs.get("next_candidates") or inputs.get("best_next_candidates")
+    existing_candidates = inputs.get("best_next_candidates") or inputs.get("next_candidates")
     if inputs.get("optimization_history"):
-        state["optimization_history_summary"] = _summarize_optimization_history(inputs["optimization_history"])
+        result = inspect_optimization_history(inputs["optimization_history"])
+        state["optimization_history_summary"] = result.data
+        store_tool_result(state, "OptimizationAgent", result)
+    if inputs.get("optimization_leaderboard") and not state.get("leaderboard_summary"):
+        result = inspect_optimization_leaderboard(inputs["optimization_leaderboard"])
+        state["leaderboard_summary"] = result.data
+        store_tool_result(state, "OptimizationAgent", result)
     if existing_candidates:
-        state["candidate_summary"] = _summarize_existing_candidates(existing_candidates)
+        state["candidate_summary"] = _summarize_existing_candidates(existing_candidates, state)
+        if inputs.get("param_space"):
+            result = inspect_candidates(
+                existing_candidates,
+                inputs["param_space"],
+                int((state.get("limits") or {}).get("max_parameter_changes_per_candidate", 2)),
+            )
+            state["candidate_summary"]["risk_summary"] = result.data
+            store_tool_result(state, "OptimizationAgent", result)
         add_message(state, "OptimizationAgent", {"candidate_summary": state.get("candidate_summary")})
         append_handoff(
             state,
@@ -27,7 +45,7 @@ def run_optimization_agent(state: dict) -> dict:
             ["candidate_summary", "optimization_history_summary"],
         )
         return state
-    leaderboard = inputs.get("leaderboard")
+    leaderboard = inputs.get("leaderboard") or inputs.get("optimization_leaderboard")
     param_space = inputs.get("param_space")
     if not leaderboard or not param_space:
         state.setdefault("warnings", []).append("skip optimization: leaderboard or param_space missing")
@@ -50,27 +68,14 @@ def run_optimization_agent(state: dict) -> dict:
     return state
 
 
-def _summarize_existing_candidates(path_text: str | Path) -> dict:
+def _summarize_existing_candidates(path_text: str | Path, state: dict) -> dict:
     path = Path(path_text)
     frame = pd.read_csv(path) if path.exists() else pd.DataFrame()
+    has_rerun = any((state.get("inputs") or {}).get(key) for key in ["rerun_run_dir", "rerun_leaderboard", "rerun_score_summary", "rerun_real_metrics"])
     return {
         "source": "existing_artifact",
+        "status": "decision_ready" if has_rerun else "awaiting_rerun_results",
         "next_candidates_path": str(path),
         "candidate_count": int(len(frame)),
         "columns": list(frame.columns),
-    }
-
-
-def _summarize_optimization_history(path_text: str | Path) -> dict:
-    path = Path(path_text)
-    if not path.exists():
-        return {"path": str(path), "exists": False, "round_count": 0}
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    rounds = payload.get("rounds", [])
-    return {
-        "path": str(path),
-        "exists": True,
-        "round_count": len(rounds),
-        "stop_reason": payload.get("stop_reason"),
-        "last_round": rounds[-1] if rounds else None,
     }

@@ -114,7 +114,30 @@ def test_benchmark_run_cli_writes_summary_results_and_report(tmp_path: Path):
     assert result.returncode == 0, result.stderr
     summary = json.loads((output / "benchmark_summary.json").read_text(encoding="utf-8"))
     assert summary["case_count"] == 1
+    for metric in [
+        "route_accuracy",
+        "artifact_discovery_score",
+        "diagnosis_match_score",
+        "critic_risk_detection_score",
+        "boundary_safety_score",
+        "optimization_loop_status_score",
+        "report_forbidden_claim_score",
+    ]:
+        assert metric in summary["metrics"]
     assert summary["metrics"]["route_accuracy"] == 1.0
     assert summary["metrics"]["boundary_safety_score"] == 1.0
+    assert summary["metrics"]["optimization_loop_status_score"] == 1.0
     assert (output / "case_results.jsonl").exists()
     assert (output / "benchmark_report.md").exists()
+
+
+def test_repository_benchmark_suite_has_required_case_format():
+    suite = Path("benchmarks/multi_agent")
+
+    assert (suite / "README.md").exists()
+    cases = [path for path in suite.iterdir() if path.is_dir()]
+    assert cases
+    for case in cases:
+        assert (case / "task.yaml").exists()
+        assert (case / "expected.json").exists()
+        assert (case / "README.md").exists()

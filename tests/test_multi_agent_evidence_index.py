@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from goa_eval.multi_agent.evidence_index import build_evidence_index, write_evidence_index
+from goa_eval.multi_agent.agents.optimization_agent import run_optimization_agent
 from goa_eval.multi_agent.graph_app import run_multi_agent_task
 
 
@@ -110,5 +111,36 @@ validity:
 
     assert (output / "evidence_index.json").exists()
     assert state["evidence_index"]["artifacts"]["score_summary"]["exists"] is True
+    assert state["inputs"]["real_summary"].endswith("real_summary.json")
     assert state["candidate_summary"]["source"] == "existing_artifact"
+    assert state["candidate_summary"]["status"] == "awaiting_rerun_results"
     assert state["optimization_history_summary"]["round_count"] == 2
+    assert state["optimization_history_summary"]["best_score"] == 0.91
+
+
+def test_optimization_agent_reuses_best_next_candidates_and_summarizes_history(tmp_path: Path):
+    artifacts = tmp_path / "artifacts"
+    _write_artifact_bundle(artifacts)
+    state = {
+        "inputs": {
+            "best_next_candidates": str(artifacts / "best_next_candidates.csv"),
+            "optimization_history": str(artifacts / "optimization_history.json"),
+            "leaderboard": str(artifacts / "optimization_leaderboard.csv"),
+            "param_space": "examples/sample_params.yaml",
+        },
+        "limits": {},
+        "output_dir": str(tmp_path / "out"),
+        "agent_messages": [],
+        "handoff_records": [],
+        "tool_results": {},
+        "generated_files": {},
+    }
+
+    updated = run_optimization_agent(state)
+
+    assert updated["candidate_summary"]["source"] == "existing_artifact"
+    assert updated["candidate_summary"]["next_candidates_path"].endswith("best_next_candidates.csv")
+    assert updated["candidate_summary"]["status"] == "awaiting_rerun_results"
+    assert updated["optimization_history_summary"]["round_count"] == 2
+    assert updated["optimization_history_summary"]["best_score"] == 0.91
+    assert "next_candidates" not in updated["generated_files"]
