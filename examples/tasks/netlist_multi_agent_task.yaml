@@ -1,0 +1,13 @@
+task_name: netlist_multi_agent_mvp
+task_type: netlist_inspection
+profile: generic_netlist
+
+inputs:
+  netlist: examples/multi_agent/sample_netlist.sp
+
+objectives:
+  primary: inspect_netlist_structure
+
+validity:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only

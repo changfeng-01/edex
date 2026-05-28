@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "result_version": "1.0",
+  "data_source": "real_simulation_csv",
+  "engineering_validity": "simulation_only",
+  "hard_constraint_passed": false,
+  "hard_constraint_failures": ["Max_overlap_ratio above target"],
+  "hard_constraints": {
+    "Max_overlap_ratio": false,
+    "FalseTriggerCount": true
+  },
+  "failure_reasons": ["overlap_timing_review"],
+  "warning_reasons": ["delay_margin_review"],
+  "soft_scores": {
+    "function_score": 0.72,
+    "quality_score": 0.68,
+    "stability_score": 0.61
+  },
+  "score_explanations": {
+    "overall": "sample simulation-only score summary for multi-agent MVP"
+  },
+  "overall_score": 0.72
+}

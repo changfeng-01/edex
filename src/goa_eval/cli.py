@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         designs = parse_designs(Path(args.input))
         write_design_summary(out, designs)
         write_netlist_parse_json(out, designs)
-        specs = parse_metric_table(_metric_table_path(Path(args.raw)))
+        specs = _parse_metric_table_if_available(Path(args.raw))
         if specs:
             write_metric_table(out, specs)
         return 0
@@ -81,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         designs = parse_designs(extracted)
         write_design_summary(out, designs)
         write_netlist_parse_json(out, designs)
-        specs = parse_metric_table(_metric_table_path(raw))
+        specs = _parse_metric_table_if_available(raw)
         if specs:
             write_metric_table(out, specs)
         return evaluate_designs(out, designs, config, thresholds, args.mock_waveform, out.name, args, extracted)
@@ -111,6 +111,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "evaluate-batch":
         run_batch_evaluation(runs_dir=Path(args.runs_dir), output_dir=Path(args.output_dir))
+        return 0
+    if args.command == "multi-agent-run":
+        from goa_eval.multi_agent.availability import check_langgraph_availability
+
+        availability = check_langgraph_availability()
+        if not availability["available"]:
+            print(availability["message"], file=sys.stderr)
+            return 2
+        from goa_eval.multi_agent.graph_app import run_multi_agent_task
+
+        run_multi_agent_task(Path(args.task), Path(args.output_dir))
         return 0
     if args.command == "propose-candidates":
         summary = json.loads(Path(args.summary).read_text(encoding="utf-8"))
@@ -408,6 +419,9 @@ def build_parser() -> argparse.ArgumentParser:
     batch = sub.add_parser("evaluate-batch")
     batch.add_argument("--runs-dir", required=True)
     batch.add_argument("--output-dir", default="outputs_batch")
+    multi_agent = sub.add_parser("multi-agent-run")
+    multi_agent.add_argument("--task", required=True)
+    multi_agent.add_argument("--output-dir", required=True)
     candidates = sub.add_parser("propose-candidates")
     candidates.add_argument("--summary", required=True)
     candidates.add_argument("--score")
@@ -762,12 +776,19 @@ def write_netlist_parse_json(out: Path, designs) -> None:
     write_json(out / "metrics" / "netlist_parse.json", rows)
 
 
-def _metric_table_path(raw_dir: Path) -> Path:
+def _parse_metric_table_if_available(raw_dir: Path):
+    metric_path = _metric_table_path(raw_dir)
+    if metric_path is None:
+        return []
+    return parse_metric_table(metric_path)
+
+
+def _metric_table_path(raw_dir: Path) -> Path | None:
     preferred = raw_dir / "评价指标表.html"
     if preferred.exists():
         return preferred
     matches = list(raw_dir.glob("*.html"))
-    return matches[0] if matches else preferred
+    return matches[0] if matches else None
 
 
 if __name__ == "__main__":

@@ -1,0 +1,14 @@
+task_name: generic_multi_agent_mvp
+task_type: generic_waveform_evaluation
+profile: generic_waveform
+
+inputs:
+  score_summary: examples/multi_agent/sample_score_summary.json
+  real_metrics: examples/multi_agent/sample_real_metrics.csv
+
+objectives:
+  primary: summarize_existing_evaluation
+
+validity:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only
