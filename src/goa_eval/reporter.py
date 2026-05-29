@@ -44,7 +44,16 @@ def write_real_metrics_csv(path: Path, stage_rows: list[dict]) -> None:
     frame.to_csv(path, index=False, encoding="utf-8-sig")
 
 
-def write_real_report(path: Path, *, summary: dict, stage_rows: list[dict], generated_figures: list[str], skipped_figures: list[str]) -> None:
+def write_real_report(
+    path: Path,
+    *,
+    summary: dict,
+    stage_rows: list[dict],
+    generated_figures: list[str],
+    skipped_figures: list[str],
+    analysis_metrics: dict | None = None,
+    score_summary: dict | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     table_columns = [
         "stage",
@@ -74,6 +83,7 @@ def write_real_report(path: Path, *, summary: dict, stage_rows: list[dict], gene
     block_table = _markdown_table(pd.DataFrame(summary.get("block_summary", [])))
     figures_text = "\n".join(f"- `{figure}`" for figure in generated_figures) or "- 无"
     skipped_text = "\n".join(f"- {item}" for item in skipped_figures) or "- 无"
+    goa_benchmark_section = _goa_benchmark_section(analysis_metrics or {}, score_summary or {})
     lines = [
         "# 8T1C / GOA 大规模级联摘要报告",
         "",
@@ -139,7 +149,9 @@ def write_real_report(path: Path, *, summary: dict, stage_rows: list[dict], gene
         "",
         block_table,
         "",
-        "## 7. 内部节点 pu / pd / output 机理说明",
+        goa_benchmark_section,
+        "",
+        "## 8. 内部节点 pu / pd / output 机理说明",
         "",
         "PU 节点主要反映本级上拉控制状态。PU 被有效拉高后，通常对应输出节点进入拉高或保持高电平的能力增强；若 PU 上升慢或峰值不足，可能导致输出上升沿变慢或 VOH 降低。",
         "",
@@ -147,7 +159,7 @@ def write_real_report(path: Path, *, summary: dict, stage_rows: list[dict], gene
         "",
         "本报告优先绘制 xs4 的 PU/PD/output 叠加图，并在内部节点完整时绘制 xs1/xs4/xs8 对比图，用于观察前级、中级、后级是否存在明显退化。",
         "",
-        "## 8. 图像输出",
+        "## 9. 图像输出",
         "",
         figures_text,
         "",
@@ -176,7 +188,7 @@ def write_real_report(path: Path, *, summary: dict, stage_rows: list[dict], gene
         "",
         skipped_text,
         "",
-        "## 9. 明确声明",
+        "## 10. 明确声明",
         "",
         "- 本结果来自电路仿真 CSV，仅代表 simulation-only 分析。",
         "- 本结果不是实物测试结果，不能视为实物测试结论。",
@@ -306,3 +318,74 @@ def _markdown_table(frame: pd.DataFrame) -> str:
         values = ["" if pd.isna(row[column]) else str(row[column]) for column in headers]
         lines.append("| " + " | ".join(values) + " |")
     return "\n".join(lines)
+
+
+def _goa_benchmark_section(analysis_metrics: dict, score_summary: dict) -> str:
+    metrics = analysis_metrics.get("goa_benchmark_metrics") if isinstance(analysis_metrics, dict) else None
+    if not isinstance(metrics, dict):
+        return "## 7. GOA 论文 benchmark 对比\n\n- 未启用 GOA benchmark profile。"
+    rows = [
+        {
+            "metric": "FallTime",
+            "current": metrics.get("fall_time_s"),
+            "literature_reference": metrics.get("reference_tfall_s"),
+            "physical_meaning": "下降时间越短，扫描线放电和驱动能力越强。",
+        },
+        {
+            "metric": "RiseTime",
+            "current": metrics.get("rise_time_s"),
+            "literature_reference": metrics.get("reference_trise_s"),
+            "physical_meaning": "上升时间反映输出充电速度和高电平建立能力。",
+        },
+        {
+            "metric": "FalseTriggerCount",
+            "current": metrics.get("false_trigger_count"),
+            "literature_reference": 0,
+            "physical_meaning": "误脉冲代表非目标行被错误选通，是功能级风险。",
+        },
+        {
+            "metric": "Max_overlap_ratio",
+            "current": metrics.get("max_overlap_ratio"),
+            "literature_reference": "",
+            "physical_meaning": "相邻级合法窗口重叠越大，级间时序串扰风险越高。",
+        },
+        {
+            "metric": "Power / Area / DeltaVTH",
+            "current": "not_evaluable",
+            "literature_reference": "P=0.10/0.04/0.23 W; DeltaVTH=+4/+3/+4 V",
+            "physical_meaning": "当前 CSV 未提供功耗、版图代价或阈值漂移扫描，首版只列为缺失维度。",
+        },
+    ]
+    not_evaluable = score_summary.get("not_evaluable_metrics", {}) if isinstance(score_summary, dict) else {}
+    missing = ", ".join(
+        sorted(
+            str(metric)
+            for metric in not_evaluable
+            if metric
+            in {
+                "power_total_w",
+                "power_static_w",
+                "power_dynamic_w",
+                "area_proxy",
+                "width_proxy",
+                "delta_vth_margin_v",
+            }
+        )
+    ) or "无"
+    return "\n".join(
+        [
+            "## 7. GOA 论文 benchmark 对比",
+            "",
+            "- benchmark_scope：`literature_reference`",
+            "- data_source = real_simulation_csv",
+            "- engineering_validity = simulation_only",
+            "- 论文中的 Proposed / Sharp-like / Samsung-like GOA 是文献基线，不是本仓库复现仿真结果。",
+            "- 现有硬约束仍由当前配置判定；论文 8K 数值只作为 reference score 和物理解释口径。",
+            f"- 论文参考负载：RL = `{metrics.get('reference_load_rl_ohm')}` ohm，CL = `{metrics.get('reference_load_cl_f')}` F。",
+            f"- 当前不可评价维度：`{missing}`",
+            "",
+            _markdown_table(pd.DataFrame(rows)),
+            "",
+            "物理解释：下降时间代表 GOA 输出级下拉和扫描线放电能力；误脉冲代表错误选通风险，优先级高于单纯速度；overlap 代表相邻级时序窗口过近或波形窗口定义风险；功耗、面积和阈值漂移需要电源电流、器件参数或 PVT/漂移扫描证据，不能由当前输出 CSV 伪造。",
+        ]
+    )

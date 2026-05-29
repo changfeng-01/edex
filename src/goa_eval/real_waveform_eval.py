@@ -5,7 +5,7 @@ import datetime as dt
 
 import pandas as pd
 
-from goa_eval.analysis_metrics import extract_analysis_metrics, write_analysis_metrics
+from goa_eval.analysis_metrics import attach_goa_benchmark_metrics, extract_analysis_metrics, write_analysis_metrics
 from goa_eval.config import load_real_spec
 from goa_eval.diagnosis import write_diagnosis_report
 from goa_eval.io_utils import write_json
@@ -160,6 +160,7 @@ def run_real_waveform_evaluation(
     resolved_profile_name = circuit_profile or topology
     profile = resolve_topology_profile(resolved_profile_name, profiles)
     analysis_metrics = analysis_metrics or extract_analysis_metrics(output_dir, topology_profile=profile["name"])
+    analysis_metrics = attach_goa_benchmark_metrics(analysis_metrics, summary=summary, stage_rows=evaluation.stage_rows, profile=profile)
     write_analysis_metrics(output_dir / "analysis_metrics.json", analysis_metrics)
     score_summary = score_real_evaluation(
         summary,
@@ -182,6 +183,8 @@ def run_real_waveform_evaluation(
         output_dir / "real_waveform_report.md",
         summary=summary,
         stage_rows=evaluation.stage_rows,
+        analysis_metrics=analysis_metrics,
+        score_summary=score_summary,
         generated_figures=generated_figures,
         skipped_figures=skipped_figures,
     )

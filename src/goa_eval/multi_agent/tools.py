@@ -420,6 +420,7 @@ def inspect_analysis_metrics(analysis_metrics_path: str | Path) -> ToolResult:
             "topology_profile": payload.get("topology_profile") or payload.get("profile"),
             "not_evaluable_metrics": not_evaluable,
             "analysis_metric_penalties": penalties,
+            "goa_benchmark_metrics": payload.get("goa_benchmark_metrics", {}),
             "available_metric_keys": sorted(str(key) for key in payload.keys()) if isinstance(payload, dict) else [],
         },
         warnings=warnings,

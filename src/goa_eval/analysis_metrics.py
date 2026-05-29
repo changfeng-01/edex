@@ -41,6 +41,107 @@ def write_analysis_metrics(path: Path, metrics: dict) -> dict:
     return metrics
 
 
+def attach_goa_benchmark_metrics(analysis_metrics: dict, *, summary: dict, stage_rows: list[dict], profile: dict) -> dict:
+    if not _profile_uses_goa_benchmark(profile):
+        return analysis_metrics
+    metrics = dict(analysis_metrics)
+    benchmark = build_goa_benchmark_metrics(summary=summary, stage_rows=stage_rows, profile=profile)
+    metrics["goa_benchmark_metrics"] = benchmark
+    not_evaluable = dict(metrics.get("not_evaluable", {}) or {})
+    for metric in _missing_goa_metrics(benchmark):
+        not_evaluable[metric] = _goa_missing_reason(metric)
+    metrics["not_evaluable"] = not_evaluable
+    metrics["not_evaluable_metrics"] = not_evaluable
+    provenance = dict(metrics.get("metric_provenance", {}) or {})
+    for metric, value in benchmark.items():
+        if metric.startswith("reference_") or metric in {"benchmark_scope", "reference_note", "literature_baselines"}:
+            normalization = "literature_reference"
+        else:
+            normalization = "derived_from_real_summary_or_stage_metrics"
+        provenance[f"goa_benchmark_metrics.{metric}"] = {
+            "source_file": "real_summary.json;real_metrics.csv",
+            "source_analysis": "goa_benchmark_metrics",
+            "source_column": metric,
+            "unit": _metric_unit(metric),
+            "parser": "attach_goa_benchmark_metrics",
+            "normalization": normalization,
+            "not_evaluable_reason": _goa_missing_reason(metric) if value is None else "",
+        }
+    metrics["metric_provenance"] = provenance
+    return metrics
+
+
+def build_goa_benchmark_metrics(*, summary: dict, stage_rows: list[dict], profile: dict) -> dict:
+    reference = profile.get("reference", {}) or {}
+    load = reference.get("load", {}) or {}
+    timing = reference.get("timing", {}) or {}
+    return {
+        "benchmark_scope": "literature_reference",
+        "reference_note": str(reference.get("note", "Literature reference only; not a reproduced simulation.")),
+        "fall_time_s": _safe_mean([row.get("FallTime", row.get("falling_time")) for row in stage_rows]),
+        "rise_time_s": _safe_mean([row.get("RiseTime", row.get("rising_time")) for row in stage_rows]),
+        "false_trigger_count": _number(summary.get("FalseTriggerCount", summary.get("False_trigger_count"))),
+        "max_overlap_ratio": _number(summary.get("Max_overlap_ratio")),
+        "voh_min_v": _number(summary.get("VOH_min")),
+        "vol_max_v": _number(summary.get("VOL_max_all")),
+        "pulse_width_mean_s": _number(summary.get("Width_mean")),
+        "delay_std_s": _number(summary.get("Delay_std")),
+        "reference_tfall_s": _number(timing.get("tfall_s", 0.97e-6)),
+        "reference_trise_s": _number(timing.get("trise_s", 1.93e-6)),
+        "reference_load_rl_ohm": _number(load.get("rl_ohm", 7200.0)),
+        "reference_load_cl_f": _number(load.get("cl_f", 728e-12)),
+        "literature_baselines": reference.get("baselines", {}),
+        "power_total_w": None,
+        "power_static_w": None,
+        "power_dynamic_w": None,
+        "area_proxy": None,
+        "width_proxy": None,
+        "delta_vth_margin_v": None,
+    }
+
+
+def _profile_uses_goa_benchmark(profile: dict) -> bool:
+    if str(profile.get("name", "")).startswith("goa_"):
+        return True
+    for rule in (profile.get("metrics", {}) or {}).values():
+        if isinstance(rule, dict) and rule.get("source") == "goa_benchmark_metrics":
+            return True
+    return False
+
+
+def _missing_goa_metrics(metrics: dict) -> list[str]:
+    return [
+        metric
+        for metric in [
+            "power_total_w",
+            "power_static_w",
+            "power_dynamic_w",
+            "area_proxy",
+            "width_proxy",
+            "delta_vth_margin_v",
+        ]
+        if metrics.get(metric) is None
+    ]
+
+
+def _goa_missing_reason(metric: str) -> str:
+    reasons = {
+        "power_total_w": "missing supply power measurement in current CSV/artifacts",
+        "power_static_w": "missing DC/static power measurement in current CSV/artifacts",
+        "power_dynamic_w": "missing dynamic power decomposition in current CSV/artifacts",
+        "area_proxy": "missing device/layout proxy source in current parameters/artifacts",
+        "width_proxy": "missing GOA layout width proxy source in current parameters/artifacts",
+        "delta_vth_margin_v": "missing threshold-drift or PVT sweep evidence in current artifacts",
+    }
+    return reasons.get(metric, f"missing {metric}")
+
+
+def _safe_mean(values: list[object]) -> float | None:
+    numbers = [_number(value) for value in values]
+    finite = [value for value in numbers if value is not None]
+    return float(np.nanmean(finite)) if finite else None
+
+
 def _op_metrics(path: Path, provenance: dict[str, dict]) -> tuple[dict, str | None]:
     if not path.exists() or path.stat().st_size == 0:
         return {}, "missing op_metrics.csv"

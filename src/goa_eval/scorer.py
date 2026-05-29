@@ -29,9 +29,9 @@ def score_real_evaluation(
         metric_penalties["Delay_std"]["score"],
         metric_penalties["Width_std"]["score"],
     )
-    cost_score = 100.0
     profile = resolve_topology_profile(topology, profiles or load_eval_profiles())
     profile_scores, analysis_penalties, not_evaluable = evaluate_profile_metrics(analysis_metrics or {}, profile)
+    cost_score = _cost_score(profile_scores, not_evaluable, profile)
     profile_score = _mean([item["score"] for item in profile_scores.values()])
     objective_score, objective_details = _profile_objective_score(profile_scores, profile)
     hard_gate = "passed" if not failures else "failed"
@@ -339,6 +339,19 @@ def _quality_score(metric_penalties: dict[str, dict]) -> float:
     )
 
 
+def _cost_score(profile_scores: dict[str, dict], not_evaluable: dict[str, str], profile: dict) -> float:
+    cost_metrics = ["area_proxy", "width_proxy"]
+    has_cost_scope = str(profile.get("name", "")).startswith("goa_") or any(metric in (profile.get("metrics", {}) or {}) for metric in cost_metrics)
+    if not has_cost_scope:
+        return 100.0
+    available = [float(profile_scores[metric]["score"]) for metric in cost_metrics if metric in profile_scores]
+    if available:
+        return _mean(available)
+    if any(metric in not_evaluable for metric in cost_metrics):
+        return 0.0
+    return 100.0
+
+
 def _target_penalty(metric: str, value, target, tolerance, reason: str) -> dict:
     value = _finite(value)
     target = _finite(target)
@@ -365,6 +378,10 @@ def _upper_limit_penalty(metric: str, value, limit, reason: str) -> dict:
         ratio = 0.0 if value <= 0 else None
         score = 100.0 if value <= 0 else 0.0
         severity = "pass" if value <= 0 else "critical"
+    elif value <= limit:
+        ratio = value / limit
+        score = 100.0
+        severity = "pass"
     else:
         ratio = max(0.0, value) / limit
         score = _ratio_score(ratio)

@@ -46,6 +46,38 @@ def test_goa_agent_writes_goa_specific_diagnosis():
     assert "sky130_timing" not in diagnosis
 
 
+def test_goa_agent_reads_goa_benchmark_analysis_metrics(tmp_path):
+    analysis_path = tmp_path / "analysis_metrics.json"
+    analysis_path.write_text(
+        """
+{
+  "topology_profile": "goa_8k_lcd_reference",
+  "goa_benchmark_metrics": {
+    "benchmark_scope": "literature_reference",
+    "fall_time_s": 8.2e-7,
+    "reference_tfall_s": 9.7e-7,
+    "false_trigger_count": 0,
+    "max_overlap_ratio": 0.33
+  },
+  "not_evaluable_metrics": {
+    "area_proxy": "missing device/layout proxy source in current parameters/artifacts"
+  }
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    state = _state()
+    state["inputs"]["analysis_metrics"] = str(analysis_path)
+
+    state = run_goa_agent(state)
+
+    diagnosis = state["domain_diagnosis"]
+    assert diagnosis["goa_benchmark"]["benchmark_scope"] == "literature_reference"
+    assert diagnosis["goa_benchmark"]["fall_time_s"] == 8.2e-7
+    assert diagnosis["goa_benchmark"]["reference_tfall_s"] == 9.7e-7
+    assert diagnosis["analysis_metrics"]["topology_profile"] == "goa_8k_lcd_reference"
+
+
 def test_sky130_agent_writes_sky130_specific_diagnosis():
     state = run_sky130_agent(_state())
 

@@ -21,6 +21,21 @@ def test_load_circuit_profiles_resolves_aliases_and_units():
     assert ota["profile_source"].endswith("config/circuit_profiles.yaml")
 
 
+def test_load_circuit_profiles_resolves_goa_8k_reference_profile():
+    profiles = load_circuit_profiles(Path("config/circuit_profiles.yaml"))
+
+    goa = resolve_circuit_profile("goa_8k", profiles)
+
+    assert goa["name"] == "goa_8k_lcd_reference"
+    assert goa["boundary"]["data_source"] == "real_simulation_csv"
+    assert goa["boundary"]["engineering_validity"] == "simulation_only"
+    assert goa["reference"]["load"]["rl_ohm"] == 7200.0
+    assert goa["reference"]["load"]["cl_f"] == 728e-12
+    assert goa["metrics"]["fall_time_s"]["maximum"] == 0.97e-6
+    assert goa["metrics"]["rise_time_s"]["maximum"] == 1.93e-6
+    assert goa["metrics"]["power_total_w"]["maximum"] == 0.10
+
+
 def test_circuit_profile_loader_falls_back_to_sky130_profiles():
     profiles = load_circuit_profiles(Path("missing-circuit-profiles.yaml"))
 
