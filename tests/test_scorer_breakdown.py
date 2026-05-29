@@ -162,3 +162,68 @@ def test_metric_penalties_do_not_emit_non_finite_numbers_for_zero_thresholds():
         for value in penalty.values():
             if isinstance(value, float):
                 assert math.isfinite(value)
+
+
+def test_goa_profile_scores_reference_metrics_without_changing_hard_gate():
+    summary = {
+        "Seq_pass": True,
+        "All_pulses_exist": True,
+        "FalseTriggerCount": 0,
+        "Max_overlap_ratio": 0.33,
+        "Max_ripple": 0.0,
+        "Max_voltage_loss": 0.0,
+        "Delay_std": 0.0,
+        "Width_std": 0.0,
+        "VOH_min": 6.5,
+        "high_threshold": 5.0,
+        "Width_mean": 10e-6,
+    }
+    spec = {
+        "max_overlap_ratio": 0.1,
+        "max_ripple_v": 0.5,
+        "max_voltage_loss_v": 0.5,
+        "max_delay_std": 0.5e-6,
+        "min_voh_margin_v": 1.0,
+        "target_pulse_width": 10e-6,
+        "pulse_width_tolerance": 1e-6,
+        "weights": {"cost_score": 0.10, "profile_score": 0.20},
+    }
+    profiles = {
+        "goa_8k_lcd_reference": {
+            "name": "goa_8k_lcd_reference",
+            "metrics": {
+                "fall_time_s": {"source": "goa_benchmark_metrics", "maximum": 0.97e-6},
+                "power_total_w": {"source": "goa_benchmark_metrics", "maximum": 0.10},
+                "area_proxy": {"source": "goa_benchmark_metrics", "direction": "smaller_better"},
+            },
+            "objective": {"weights": {"fall_time_s": 1.0}},
+        }
+    }
+    analysis_metrics = {
+        "goa_benchmark_metrics": {
+            "fall_time_s": 0.8e-6,
+            "reference_tfall_s": 0.97e-6,
+            "benchmark_scope": "literature_reference",
+        },
+        "not_evaluable": {
+            "goa_benchmark_metrics.power_total_w": "missing power source",
+            "goa_benchmark_metrics.area_proxy": "missing area proxy source",
+        },
+    }
+
+    scores = score_real_evaluation(
+        summary,
+        [],
+        spec,
+        topology="goa_8k_lcd_reference",
+        analysis_metrics=analysis_metrics,
+        profiles=profiles,
+    )
+
+    assert scores["hard_constraint_passed"] is False
+    assert scores["hard_constraints"]["Max_overlap_ratio"]["passed"] is False
+    assert scores["topology_profile"] == "goa_8k_lcd_reference"
+    assert scores["profile_metric_scores"]["fall_time_s"]["score"] == 100.0
+    assert "power_total_w" in scores["not_evaluable_metrics"]
+    assert "area_proxy" in scores["not_evaluable_metrics"]
+    assert scores["cost_score"] < 100.0

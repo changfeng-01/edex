@@ -8,6 +8,105 @@ profiles:
       engineering_validity: "simulation_only"
     metrics: {}
 
+  goa_8k_lcd_reference:
+    type: "goa_shift_register"
+    aliases:
+      - goa_8k
+      - goa_8k_lcd
+      - goa_8t1c_720
+      - goa_reference
+    boundary:
+      data_source: "real_simulation_csv"
+      engineering_validity: "simulation_only"
+    reference:
+      source: "literature_reference"
+      note: "Lei Tengteng thesis 8K LCD GOA reference values; not reproduced by this repository."
+      load:
+        rl_ohm: 7200.0
+        cl_f: 728.0e-12
+      timing:
+        tfall_s: 0.97e-6
+        trise_s: 1.93e-6
+      baselines:
+        proposed_goa:
+          structure: "16T2C"
+          tfall_s: 0.97e-6
+          power_total_w: 0.10
+          delta_vth_margin_v: 4.0
+        sharp_like_goa:
+          structure: "11T1C"
+          tfall_s: 1.52e-6
+          power_total_w: 0.04
+          delta_vth_margin_v: 3.0
+        samsung_like_goa:
+          structure: "15T1C"
+          tfall_s: 1.69e-6
+          power_total_w: 0.23
+          delta_vth_margin_v: 4.0
+    metrics:
+      fall_time_s:
+        source: goa_benchmark_metrics
+        unit: s
+        maximum: 0.97e-6
+        direction: smaller_better
+      rise_time_s:
+        source: goa_benchmark_metrics
+        unit: s
+        maximum: 1.93e-6
+        direction: smaller_better
+      false_trigger_count:
+        source: goa_benchmark_metrics
+        unit: count
+        maximum: 0
+        direction: smaller_better
+      max_overlap_ratio:
+        source: goa_benchmark_metrics
+        unit: ratio
+        maximum: 0.10
+        direction: smaller_better
+      voh_min_v:
+        source: goa_benchmark_metrics
+        unit: V
+        minimum: 5.0
+        direction: larger_better
+      power_total_w:
+        source: goa_benchmark_metrics
+        unit: W
+        maximum: 0.10
+        direction: smaller_better
+      power_static_w:
+        source: goa_benchmark_metrics
+        unit: W
+        direction: smaller_better
+      power_dynamic_w:
+        source: goa_benchmark_metrics
+        unit: W
+        direction: smaller_better
+      area_proxy:
+        source: goa_benchmark_metrics
+        direction: smaller_better
+      width_proxy:
+        source: goa_benchmark_metrics
+        direction: smaller_better
+      delta_vth_margin_v:
+        source: goa_benchmark_metrics
+        unit: V
+        minimum: 4.0
+        direction: larger_better
+    objective:
+      scalarization:
+        method: weighted_sum
+        missing_metric_policy: not_evaluable
+      weights:
+        fall_time_s: 0.25
+        rise_time_s: 0.10
+        false_trigger_count: 0.20
+        max_overlap_ratio: 0.15
+        voh_min_v: 0.10
+        power_total_w: 0.10
+        area_proxy: 0.05
+        delta_vth_margin_v: 0.05
+
   ota_general:
     type: "analog_amplifier"
     aliases:
