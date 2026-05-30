@@ -20,6 +20,20 @@ result_version = 1.0
 }
 ```
 
+## Evidence metadata
+
+These additive fields appear in summary, score, manifest, mainline validation, and related SKY130 status outputs.
+
+| Field | Meaning |
+|---|---|
+| `evidence_level` | `level_0_public_demo_csv`, `level_1_external_csv`, `level_2_mock_ngspice`, `level_3_real_ngspice_sky130_pdk`, `level_4_multi_round_rerun_evidence`, or `level_5_validation_matrix`. |
+| `simulation_backend` | `external_csv`, `public_demo_csv`, `mock_ngspice`, or `ngspice`. |
+| `mock_used` | Whether a mock simulator or mock fallback was used. |
+| `pdk_available` | Whether a SKY130 PDK was detected for this run. |
+| `ngspice_available` | Whether ngspice was detected for this run. |
+| `reportable_as_real_ngspice` | True only for real `ngspice` runs with PDK/ngspice available and `mock_used=false`. |
+| `optimizer_claim_level` | `candidate_generated`, `nominal_rerun_passed`, or `validation_matrix_passed`. |
+
 这些字段表示结果来自仿真 CSV，不是物理实验或样机测试结果。
 
 ## real_summary.json
@@ -562,3 +576,32 @@ Stable outputs:
 
 Draft files must pass `validate-config` before they are used by scoring or
 candidate generation. AI output remains advisory and simulation-only.
+
+## strategy-benchmark outputs
+
+`strategy-benchmark` compares `random`, `adaptive`, `genetic`, `bayesian`, `surrogate`, and `hybrid` over fixed seeds, rounds, and max runs per round. The `random` baseline does not read best-candidate replay.
+
+| File | Purpose |
+|---|---|
+| `strategy_benchmark.csv` | One row per strategy/seed run. |
+| `strategy_benchmark_summary.json` | Per-strategy `best_score_mean`, `best_score_std`, `target_pass_rate`, `hard_fail_rate`, `validation_pass_rate`, `avg_sim_count`, and `mock_used_rate`. |
+| `strategy_benchmark_report.md` | Human-readable summary table with boundary labels. |
+
+## figure_manifest.json
+
+Each local matplotlib PNG under `figures/` is listed in `figures/figure_manifest.json`.
+
+| Field | Meaning |
+|---|---|
+| `figure` | PNG file name. |
+| `generated_by` | Local generator, for example `run_real_waveform_evaluation`. |
+| `input_data` | Source waveform or internal waveform files. |
+| `source_type` | `matplotlib_local`. |
+| `ai_generated` / `llm_used` | Always `false` for these figures. |
+| `data_source`, `engineering_validity`, `evidence_level` | Boundary and evidence metadata for the figure. |
+
+## validation matrix rollup
+
+`mainline_validation.json` includes `validation_matrix_summary`. `validation_summary.csv` repeats the same rollup columns on each row: `validation_matrix_pass_rate`, `validation_case_count`, `validation_pass_count`, `validation_fail_count`, `validation_not_evaluable_count`, `worst_case_name`, `worst_case_metric`, and `worst_case_value`.
+
+`--require-real-ngspice` disables mock ngspice and mock fallback for `sky130-mainline`; missing PDK or ngspice is a command failure, not a reportable mock result.

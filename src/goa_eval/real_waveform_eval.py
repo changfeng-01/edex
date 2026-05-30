@@ -8,6 +8,7 @@ import pandas as pd
 from goa_eval.analysis_metrics import attach_goa_benchmark_metrics, extract_analysis_metrics, write_analysis_metrics
 from goa_eval.config import load_real_spec
 from goa_eval.diagnosis import write_diagnosis_report
+from goa_eval.evidence import default_external_csv_evidence, write_figure_manifest
 from goa_eval.io_utils import write_json
 from goa_eval.metrics import RealEvalConfig, evaluate_waveform_metrics
 from goa_eval.plotter import (
@@ -44,12 +45,14 @@ def run_real_waveform_evaluation(
     circuit_profile: str | None = None,
     profile_file: Path | None = None,
     analysis_metrics: dict | None = None,
+    evidence_metadata: dict | None = None,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     figure_dir = output_dir / "figures"
     figure_dir.mkdir(parents=True, exist_ok=True)
     run_timestamp = dt.datetime.now().isoformat(timespec="seconds")
     run_id = "real_" + dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    evidence_metadata = evidence_metadata or default_external_csv_evidence()
 
     spec = load_real_spec(spec_path, high_threshold=high_threshold, low_threshold=low_threshold)
     cascade = spec["cascade"]
@@ -155,6 +158,7 @@ def run_real_waveform_evaluation(
         evaluation=evaluation,
         run_id=run_id,
         run_timestamp=run_timestamp,
+        evidence_metadata=evidence_metadata,
     )
     profiles = load_circuit_profiles(profile_file) if profile_file else load_eval_profiles()
     resolved_profile_name = circuit_profile or topology
@@ -213,6 +217,18 @@ def run_real_waveform_evaluation(
             "min_pulse_width": config.min_pulse_width,
             "false_trigger_min_duration": config.false_trigger_min_duration,
         },
+        evidence_metadata=evidence_metadata,
+    )
+    input_data = [str(waveform_path)]
+    if internal_path_for_manifest is not None:
+        input_data.append(str(internal_path_for_manifest))
+    write_figure_manifest(
+        figure_dir,
+        generated_by="run_real_waveform_evaluation",
+        input_data=input_data,
+        data_source=summary["data_source"],
+        engineering_validity=summary["engineering_validity"],
+        evidence_level=summary["evidence_level"],
     )
     return summary
 

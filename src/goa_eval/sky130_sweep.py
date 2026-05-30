@@ -11,12 +11,14 @@ from typing import Any
 import pandas as pd
 import yaml
 
+from goa_eval.evidence import build_evidence_metadata
 from goa_eval.io_utils import write_json
 from goa_eval.sky130_transient import (
     DEFAULT_DATASET,
     Sky130DependencyError,
     load_sky130_rows,
     process_sky130_row,
+    resolve_ngspice_executable,
 )
 
 
@@ -84,9 +86,16 @@ def run_sky130_sweep(
     max_candidates: int = 10,
     seed: int = 42,
     max_runs: int | None = None,
+    evidence_metadata: dict | None = None,
 ) -> list[dict]:
     config = load_sweep_config(sweep_path)
     resolved_pdk_root = _resolve_pdk_root(pdk_root, mock_ngspice=mock_ngspice)
+    evidence_metadata = evidence_metadata or build_evidence_metadata(
+        simulation_backend="mock_ngspice" if mock_ngspice else "ngspice",
+        mock_used=mock_ngspice,
+        pdk_available=bool(resolved_pdk_root and resolved_pdk_root.exists()),
+        ngspice_available=resolve_ngspice_executable(ngspice_cmd) is not None,
+    )
     rows = load_sky130_rows(
         split=split,
         max_rows=max_rows,
@@ -124,6 +133,7 @@ def run_sky130_sweep(
                     max_candidates=max_candidates,
                     seed=seed,
                     pdk_root=resolved_pdk_root,
+                    evidence_metadata=evidence_metadata,
                 )
                 summaries.append(result)
     finally:
@@ -148,12 +158,14 @@ def _process_sweep_point(
     max_candidates: int,
     seed: int,
     pdk_root: Path | None,
+    evidence_metadata: dict,
 ) -> dict:
     run_dir.mkdir(parents=True, exist_ok=True)
     rewrite = rewrite_spice_parameters(str(row.get("testbench_spice", "")), point, targets)
     _write_params(run_dir / "params.yaml", row, point, pdk_root)
     if not rewrite.success:
         payload = _sweep_status(row, point, run_dir, split, row_index, point_index, "skipped", rewrite.message)
+        payload.update(evidence_metadata)
         write_json(run_dir / "sky130_status.json", payload)
         return payload
     row["testbench_spice"] = rewrite.text
@@ -174,6 +186,7 @@ def _process_sweep_point(
         param_space_path=param_space_path,
         max_candidates=max_candidates,
         seed=seed,
+        evidence_metadata=evidence_metadata,
     )
     result.update({"sweep_point_index": point_index, "pdk_root": str(pdk_root) if pdk_root else ""})
     result.update(point)

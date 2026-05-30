@@ -9,6 +9,28 @@ python -m goa_eval.cli multi-agent-run \
   --output-dir outputs/multi_agent_sky130
 ```
 
+## Evidence Metadata
+
+CircuitPilot now writes additive evidence metadata to summary, score, manifest, mainline validation, and related SKY130 status outputs.
+
+| Level | Meaning |
+|---|---|
+| Level 0 | public demo CSV. |
+| Level 1 | external CSV. |
+| Level 2 | mock-ngspice software-flow evidence. |
+| Level 3 | real ngspice + SKY130 PDK, with no mock. |
+| Level 4 | multi-round optimization with nominal rerun evidence. |
+| Level 5 | validation matrix evidence. |
+
+Machine-readable fields include `evidence_level`, `simulation_backend`, `mock_used`, `pdk_available`, `ngspice_available`, `reportable_as_real_ngspice`, and `optimizer_claim_level`. `reportable_as_real_ngspice=true` is only valid when real ngspice and a SKY130 PDK are available and no mock path was used.
+
+Evidence-loop CLI additions:
+
+- `sky130-mainline --require-real-ngspice` disables `--mock-ngspice` and mock fallback; missing PDK or ngspice causes the command to fail.
+- `strategy-benchmark` compares `random`, `adaptive`, `genetic`, `bayesian`, `surrogate`, and `hybrid` over fixed seeds, rounds, and max runs per round.
+- `random` is a baseline strategy that does not read best-candidate replay.
+- Every generated `figures/*.png` is listed in `figures/figure_manifest.json` with `source_type=matplotlib_local`, `ai_generated=false`, `llm_used=false`, data-source labels, and evidence level.
+
 中文名：芯智调参：基于仿真数据的电路参数智能推荐系统  
 English name: CircuitPilot: Simulation-Driven Intelligent Parameter Recommendation for Circuit Design
 
@@ -59,7 +81,7 @@ engineering_validity = simulation_only
 ### 4. 多轮优化驱动
 
 - 新增 `optimize-rounds`，在 `sky130-sweep` 外层运行多轮搜索，并把上一轮最佳 run 的 `next_candidates.csv` 反馈到下一轮参数空间。
-- 支持 `adaptive`、`genetic`、`bayesian`、`surrogate`、`hybrid` 策略。
+- 支持 `random`、`adaptive`、`genetic`、`bayesian`、`surrogate`、`hybrid` 策略；`random` 不读取 best candidate replay，作为纯随机/多样性基线。
 - `bayesian` 使用 Gaussian-process expected improvement；`surrogate` 使用 random-forest score model；`hybrid` 组合规则候选、遗传变异、模型排序和多样性回退。
 - 当历史样本不足或目标分数无有效方差时，模型策略会记录 fallback 状态，并选择未尝试过的多样化网格点，避免伪装成模型已学到规律。
 - 输出 `optimization_history.json`、`optimization_leaderboard.csv`、`round_summary.csv`、`final_param_space.yaml` 和 `best_next_candidates.csv`。

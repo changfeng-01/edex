@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 from goa_eval.io_utils import sha256_file, write_json
+from goa_eval.evidence import default_external_csv_evidence
 
 
 def write_run_manifest(
@@ -29,6 +30,7 @@ def write_run_manifest(
         "code_version_or_git_commit": _git_commit(),
         "data_source": data_source,
         "engineering_validity": engineering_validity,
+        **default_external_csv_evidence(),
     }
     write_json(path, manifest)
     return manifest

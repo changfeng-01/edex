@@ -35,6 +35,7 @@ from goa_eval.recommendation import build_recommendations, write_recommendations
 from goa_eval.sky130_mainline import run_sky130_mainline
 from goa_eval.sky130_sweep import run_sky130_sweep
 from goa_eval.sky130_transient import Sky130DependencyError, run_sky130_transient
+from goa_eval.strategy_benchmark import parse_seeds, run_strategy_benchmark
 from goa_eval.visualization.comparison_plotter import plot_v1_v8_comparison
 from goa_eval.visualization.metric_plotter import plot_voh_bar
 from goa_eval.visualization.version_compare_plotter import plot_timing_overview
@@ -372,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
                 mock_dataset_json=Path(args.mock_dataset_json) if args.mock_dataset_json else None,
                 mock_ngspice=args.mock_ngspice,
                 mock_if_unavailable=args.mock_if_unavailable,
+                require_real_ngspice=args.require_real_ngspice,
                 ngspice_cmd=args.ngspice_cmd,
                 spec_path=Path(args.spec),
                 param_space_path=Path(args.param_space),
@@ -379,6 +381,32 @@ def main(argv: list[str] | None = None) -> int:
                 seed=args.seed,
                 strategy=args.strategy,
                 full_validation=args.full_validation,
+            )
+        except Sky130DependencyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        return 0
+    if args.command == "strategy-benchmark":
+        try:
+            run_strategy_benchmark(
+                sweep_path=Path(args.sweep),
+                output_root=Path(args.output_root),
+                validation_config_path=Path(args.validation_config) if args.validation_config else None,
+                seeds=parse_seeds(args.seeds),
+                rounds=args.rounds,
+                max_runs_per_round=args.max_runs_per_round,
+                pdk_root=Path(args.pdk_root) if args.pdk_root else None,
+                split=args.split,
+                max_rows=args.max_rows,
+                topology=args.topology,
+                source_dataset=args.source_dataset,
+                dataset_name=args.dataset,
+                mock_dataset_json=Path(args.mock_dataset_json) if args.mock_dataset_json else None,
+                mock_ngspice=args.mock_ngspice,
+                ngspice_cmd=args.ngspice_cmd,
+                spec_path=Path(args.spec),
+                param_space_path=Path(args.param_space),
+                max_candidates=args.max_candidates,
             )
         except Sky130DependencyError as exc:
             print(str(exc), file=sys.stderr)
@@ -526,7 +554,7 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.add_argument("--max-candidates", type=int, default=10)
     optimize.add_argument("--seed", type=int, default=42)
     optimize.add_argument("--rounds", type=int, default=3)
-    optimize.add_argument("--strategy", choices=["adaptive", "genetic", "bayesian", "surrogate", "hybrid"], default="adaptive")
+    optimize.add_argument("--strategy", choices=["random", "adaptive", "genetic", "bayesian", "surrogate", "hybrid"], default="adaptive")
     optimize.add_argument("--max-runs-per-round", type=int, default=5)
     optimize.add_argument("--patience", type=int, default=2)
     optimize.add_argument("--min-improvement", type=float, default=0.0)
@@ -549,7 +577,7 @@ def build_parser() -> argparse.ArgumentParser:
     mainline.add_argument("--max-candidates", type=int, default=10)
     mainline.add_argument("--seed", type=int, default=42)
     mainline.add_argument("--rounds", type=int, default=1)
-    mainline.add_argument("--strategy", choices=["adaptive", "genetic", "bayesian", "surrogate", "hybrid"], default="adaptive")
+    mainline.add_argument("--strategy", choices=["random", "adaptive", "genetic", "bayesian", "surrogate", "hybrid"], default="adaptive")
     mainline.add_argument("--max-runs-per-round", type=int, default=3)
     mainline.add_argument("--patience", type=int, default=2)
     mainline.add_argument("--min-improvement", type=float, default=0.0)
@@ -558,10 +586,30 @@ def build_parser() -> argparse.ArgumentParser:
     mainline.add_argument("--ngspice-cmd", default="ngspice")
     mainline.add_argument("--mock-dataset-json", default="examples/sky130_candidate_chain_row.json")
     mainline.add_argument("--mock-ngspice", action="store_true")
+    mainline.add_argument("--require-real-ngspice", action="store_true")
     mainline.add_argument("--lightweight", action="store_true", default=True)
     mainline.add_argument("--full-validation", action="store_true")
     mainline.add_argument("--mock-if-unavailable", dest="mock_if_unavailable", action="store_true", default=True)
     mainline.add_argument("--no-mock-if-unavailable", dest="mock_if_unavailable", action="store_false")
+    benchmark_strategies = sub.add_parser("strategy-benchmark")
+    benchmark_strategies.add_argument("--sweep", default="config/sky130_candidate_sweep.yaml")
+    benchmark_strategies.add_argument("--pdk-root")
+    benchmark_strategies.add_argument("--dataset", default="pphilip/analog-circuits-sky130")
+    benchmark_strategies.add_argument("--split", choices=["train", "validation", "test"], default="train")
+    benchmark_strategies.add_argument("--max-rows", type=int, default=1)
+    benchmark_strategies.add_argument("--topology")
+    benchmark_strategies.add_argument("--source-dataset")
+    benchmark_strategies.add_argument("--output-root", default="outputs/strategy_benchmark")
+    benchmark_strategies.add_argument("--spec", default="config/sky130_transient_spec.yaml")
+    benchmark_strategies.add_argument("--param-space", default="examples/sample_params.yaml")
+    benchmark_strategies.add_argument("--max-candidates", type=int, default=10)
+    benchmark_strategies.add_argument("--seeds", default="42")
+    benchmark_strategies.add_argument("--rounds", type=int, default=2)
+    benchmark_strategies.add_argument("--max-runs-per-round", type=int, default=3)
+    benchmark_strategies.add_argument("--validation-config", default="config/sky130_validation.yaml")
+    benchmark_strategies.add_argument("--ngspice-cmd", default="ngspice")
+    benchmark_strategies.add_argument("--mock-dataset-json", default="examples/sky130_candidate_chain_row.json")
+    benchmark_strategies.add_argument("--mock-ngspice", action="store_true")
     return parser
 
 

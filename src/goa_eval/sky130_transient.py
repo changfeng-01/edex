@@ -13,6 +13,7 @@ from typing import Any, Iterable
 import numpy as np
 import pandas as pd
 
+from goa_eval.evidence import build_evidence_metadata
 from goa_eval.io_utils import write_json
 from goa_eval.netlist_structure import write_netlist_structure
 from goa_eval.optimizer import constrained_random_candidates, load_param_space, write_candidate_outputs
@@ -56,11 +57,18 @@ def run_sky130_transient(
     max_candidates: int = 10,
     seed: int = 42,
     skip_netlist_structure: bool = False,
+    evidence_metadata: dict | None = None,
 ) -> list[dict]:
     output_root.mkdir(parents=True, exist_ok=True)
     resolved_ngspice_cmd = resolve_ngspice_executable(ngspice_cmd)
     if not mock_ngspice and resolved_ngspice_cmd is None:
         raise Sky130DependencyError(f'ngspice executable not found: "{ngspice_cmd}". Install ngspice or use --mock-ngspice for tests.')
+    evidence_metadata = evidence_metadata or build_evidence_metadata(
+        simulation_backend="mock_ngspice" if mock_ngspice else "ngspice",
+        mock_used=mock_ngspice,
+        pdk_available=_pdk_root_from_env() is not None,
+        ngspice_available=resolved_ngspice_cmd is not None,
+    )
     rows = load_sky130_rows(
         split=split,
         max_rows=max_rows,
@@ -84,6 +92,7 @@ def run_sky130_transient(
             max_candidates=max_candidates,
             seed=seed,
             skip_netlist_structure=skip_netlist_structure,
+            evidence_metadata=evidence_metadata,
         )
         summaries.append(result)
     _write_runs_summary(output_root / "sky130_runs.csv", summaries)
@@ -140,16 +149,23 @@ def process_sky130_row(
     max_candidates: int,
     seed: int,
     skip_netlist_structure: bool = False,
+    evidence_metadata: dict | None = None,
 ) -> dict:
     run_dir.mkdir(parents=True, exist_ok=True)
+    evidence_metadata = evidence_metadata or build_evidence_metadata(
+        simulation_backend="mock_ngspice" if mock_ngspice else "ngspice",
+        mock_used=mock_ngspice,
+        pdk_available=_pdk_root_from_env() is not None,
+        ngspice_available=resolve_ngspice_executable(ngspice_cmd) is not None,
+    )
     provenance = _provenance(row, split, index, run_dir)
     structure = write_netlist_structure_artifacts(row, run_dir, skip=skip_netlist_structure)
     try:
         node_map = build_output_node_map(row)
         if not node_map:
-            return _status(run_dir, provenance, "skipped", "no output_v nodes found", structure=structure)
+            return _status(run_dir, provenance, "skipped", "no output_v nodes found", structure=structure, evidence_metadata=evidence_metadata)
         if not str(row.get("testbench_spice", "")).strip():
-            return _status(run_dir, provenance, "skipped", "missing testbench_spice", structure=structure)
+            return _status(run_dir, provenance, "skipped", "missing testbench_spice", structure=structure, evidence_metadata=evidence_metadata)
         prepared = prepare_testbench(row, run_dir, node_map)
         if mock_ngspice:
             write_mock_waveform(prepared.waveform_path, node_map)
@@ -164,6 +180,7 @@ def process_sky130_row(
             spec_path=spec_path,
             output_nodes=list(node_map),
             topology=row.get("topology"),
+            evidence_metadata=evidence_metadata,
         )
         _write_sky130_metadata(run_dir, provenance, node_map, structure)
         _write_recommendations_and_candidates(run_dir, param_space_path, max_candidates=max_candidates, seed=seed)
@@ -179,11 +196,12 @@ def process_sky130_row(
             structure=structure,
             score=score,
             analysis=analysis,
+            evidence_metadata=evidence_metadata,
         )
     except Sky130DependencyError as exc:
-        return _status(run_dir, provenance, "failed", str(exc), structure=structure)
+        return _status(run_dir, provenance, "failed", str(exc), structure=structure, evidence_metadata=evidence_metadata)
     except Exception as exc:
-        return _status(run_dir, provenance, "failed", f"{type(exc).__name__}: {exc}", structure=structure)
+        return _status(run_dir, provenance, "failed", f"{type(exc).__name__}: {exc}", structure=structure, evidence_metadata=evidence_metadata)
 
 
 def build_output_node_map(row: dict) -> dict[str, str]:
@@ -471,6 +489,7 @@ def _status(
     structure: dict | None = None,
     score: dict | None = None,
     analysis: dict | None = None,
+    evidence_metadata: dict | None = None,
 ) -> dict:
     structure = structure or {}
     score = score or {}
@@ -485,6 +504,7 @@ def _status(
         "run_dir": run_dir.name,
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
+        **(evidence_metadata or {}),
         "structure_status": structure.get("structure_status"),
         "structure_message": structure.get("structure_message"),
         "source_netlist_field": structure.get("source_netlist_field"),
@@ -514,6 +534,13 @@ def _write_runs_summary(path: Path, rows: list[dict]) -> None:
         "run_dir",
         "data_source",
         "engineering_validity",
+        "evidence_level",
+        "simulation_backend",
+        "mock_used",
+        "pdk_available",
+        "ngspice_available",
+        "reportable_as_real_ngspice",
+        "optimizer_claim_level",
         "structure_status",
         "structure_message",
         "source_netlist_field",

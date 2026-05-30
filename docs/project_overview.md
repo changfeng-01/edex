@@ -27,6 +27,19 @@ data_source = real_simulation_csv
 engineering_validity = simulation_only
 ```
 
+Evidence metadata is carried with machine-readable outputs:
+
+| Level | Scope |
+|---|---|
+| Level 0 | public demo CSV |
+| Level 1 | external CSV |
+| Level 2 | mock-ngspice |
+| Level 3 | real ngspice + SKY130 PDK |
+| Level 4 | multi-round optimization with nominal rerun evidence |
+| Level 5 | validation matrix |
+
+`reportable_as_real_ngspice` is true only when real ngspice and a SKY130 PDK are available and no mock path was used. `optimizer_claim_level` is limited to `candidate_generated`, `nominal_rerun_passed`, or `validation_matrix_passed`.
+
 这意味着：
 
 - 结果来自仿真 CSV，不是物理样机测试；
@@ -84,6 +97,7 @@ python -m goa_eval.cli evaluate-real --waveform examples/sample_waveform.csv --o
 - `optimization_dataset.csv`
 - `run_manifest_real.json`
 - `figures/`
+- `figures/figure_manifest.json`
 
 ### 单次推荐报告
 

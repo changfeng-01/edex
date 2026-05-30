@@ -98,6 +98,24 @@ def build_strategy_sweep_config(
     point_metadata: list[dict[str, object]] = []
     rng = random.Random(seed)
 
+    if strategy == "random":
+        rng.shuffle(grid)
+        for point in grid[: max(0, max_runs)]:
+            points.append(point)
+            point_metadata.append(
+                _source_metadata(
+                    "random_baseline",
+                    optimizer_strategy="random",
+                    model_status="random_no_replay",
+                )
+            )
+        config = {key: value for key, value in base_config.items() if key not in {"points", "point_metadata"}}
+        config["parameters"] = parameters
+        config["points"] = points
+        config["point_metadata"] = point_metadata
+        config["optimizer_strategy"] = "random"
+        return {"config": config, "points": points, "stop_reason": "" if points else "no new sweep points"}
+
     if strategy in {"hybrid", "genetic"}:
         accepted_candidates = 0
         for candidate, metadata in _candidate_points(best_run_dir, _best_parameter_row(history, parameters)):
@@ -256,6 +274,29 @@ def run_multi_round_optimization(
     best_run_dir: Path | None = None
 
     for round_index in range(1, max(0, rounds) + 1):
+        if strategy == "random":
+            random_config = build_strategy_sweep_config(
+                base_config=base_config,
+                history=pd.DataFrame(history_rows),
+                best_run_dir=None,
+                max_runs=max_runs_per_round,
+                seed=seed + round_index - 1,
+                exploration_ratio=exploration_ratio,
+                strategy="random",
+                candidate_limit=0,
+            )
+            current_config = random_config["config"]
+            if random_config["stop_reason"]:
+                round_rows.append(
+                    {
+                        "round_index": round_index,
+                        "run_count": 0,
+                        "best_score": best_score,
+                        "best_run_dir": str(best_run_dir) if best_run_dir else "",
+                        "stop_reason": random_config["stop_reason"],
+                    }
+                )
+                break
         round_dir = output_root / f"round_{round_index:03d}"
         round_sweep_path = output_root / f"round_{round_index:03d}_sweep.yaml"
         round_sweep_path.write_text(yaml.safe_dump(current_config, sort_keys=False, allow_unicode=True), encoding="utf-8")
