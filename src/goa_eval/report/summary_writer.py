@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 from goa_eval.evaluation.hard_checks import summarize_hard_checks
+from goa_eval.evidence import default_external_csv_evidence
 from goa_eval.io_utils import write_json
 
 
@@ -57,6 +58,7 @@ def write_summary_json(out_dir: Path, run_id: str, data_source: str, validity: s
         "run_id": run_id,
         "data_source": data_source,
         "engineering_validity": validity,
+        **default_external_csv_evidence(),
         "versions": versions,
         "hard_checks": summarize_hard_checks(results),
         "warning": MOCK_WARNING if data_source == "mock" else "",

@@ -8,9 +8,10 @@ from typing import Any
 import pandas as pd
 import yaml
 
+from goa_eval.evidence import build_evidence_metadata, infer_evidence_level
 from goa_eval.io_utils import write_json
 from goa_eval.multi_round_optimizer import enrich_history_row, run_multi_round_optimization
-from goa_eval.sky130_sweep import run_sky130_sweep
+from goa_eval.sky130_sweep import Sky130DependencyError, run_sky130_sweep
 
 
 def run_sky130_mainline(
@@ -32,6 +33,7 @@ def run_sky130_mainline(
     mock_dataset_json: Path | None = None,
     mock_ngspice: bool = False,
     mock_if_unavailable: bool = True,
+    require_real_ngspice: bool = False,
     ngspice_cmd: str = "ngspice",
     spec_path: Path = Path("config/sky130_transient_spec.yaml"),
     param_space_path: Path = Path("examples/sample_params.yaml"),
@@ -45,14 +47,25 @@ def run_sky130_mainline(
     target_config = validation_config.get("target", {}) if isinstance(validation_config.get("target"), dict) else {}
     target_metric = str(target_config.get("metric", "Max_overlap_ratio"))
     target_threshold = float(target_config.get("threshold", 0.1))
+    if require_real_ngspice and mock_ngspice:
+        raise Sky130DependencyError("--require-real-ngspice cannot be combined with --mock-ngspice.")
+    if require_real_ngspice:
+        mock_if_unavailable = False
     effective_mock_ngspice, preflight = _preflight(
         pdk_root=pdk_root,
         ngspice_cmd=ngspice_cmd,
         mock_ngspice=mock_ngspice,
         mock_if_unavailable=mock_if_unavailable,
+        require_real_ngspice=require_real_ngspice,
         sweep_path=sweep_path,
         validation_config_path=validation_config_path,
         mock_dataset_json=mock_dataset_json,
+    )
+    evidence_metadata = build_evidence_metadata(
+        simulation_backend="mock_ngspice" if effective_mock_ngspice else "ngspice",
+        mock_used=effective_mock_ngspice,
+        pdk_available=bool(preflight["pdk_available"]),
+        ngspice_available=bool(preflight["ngspice_available"]),
     )
     optimizer_validation_path = _write_optimizer_validation_config(output_root, validation_config)
     run_multi_round_optimization(
@@ -107,10 +120,12 @@ def run_sky130_mainline(
         validation_cases=validation_cases,
         target_metric=target_metric,
         target_threshold=target_threshold,
+        evidence_metadata=evidence_metadata,
     )
     write_json(output_root / "mainline_validation.json", payload)
     _write_mainline_report(output_root / "sky130_mainline_report.md", payload)
-    pd.DataFrame(validation_cases).to_csv(output_root / "validation_summary.csv", index=False, encoding="utf-8-sig")
+    validation_rows = _validation_rows_with_rollup(validation_cases, payload["validation_matrix_summary"])
+    pd.DataFrame(validation_rows).to_csv(output_root / "validation_summary.csv", index=False, encoding="utf-8-sig")
     return payload
 
 
@@ -120,23 +135,30 @@ def _preflight(
     ngspice_cmd: str,
     mock_ngspice: bool,
     mock_if_unavailable: bool,
+    require_real_ngspice: bool,
     sweep_path: Path,
     validation_config_path: Path | None,
     mock_dataset_json: Path | None,
 ) -> tuple[bool, dict[str, Any]]:
     env_pdk = _env_pdk_root()
-    pdk_available = bool(mock_ngspice or (pdk_root is not None and pdk_root.exists()) or env_pdk is not None)
-    ngspice_available = bool(mock_ngspice or _command_available(ngspice_cmd))
+    pdk_available = bool((pdk_root is not None and pdk_root.exists()) or env_pdk is not None)
+    ngspice_available = bool(_command_available(ngspice_cmd))
     missing = []
     if not pdk_available:
         missing.append("pdk_root")
     if not ngspice_available:
         missing.append("ngspice")
+    if require_real_ngspice and missing:
+        raise Sky130DependencyError(
+            "--require-real-ngspice requires real ngspice and a SKY130 PDK; missing: "
+            + ", ".join(missing)
+        )
     effective_mock = bool(mock_ngspice or (mock_if_unavailable and missing))
     return effective_mock, {
         "mock_ngspice": effective_mock,
         "mock_requested": mock_ngspice,
         "mock_if_unavailable": mock_if_unavailable,
+        "require_real_ngspice": require_real_ngspice,
         "fallback_reason": ", ".join(missing) if effective_mock and not mock_ngspice else "",
         "pdk_root": str(pdk_root) if pdk_root else "",
         "env_pdk_root": str(env_pdk) if env_pdk else "",
@@ -203,6 +225,7 @@ def _run_validation_cases(
     matrix = validation_config.get("validation_matrix", [])
     if not isinstance(matrix, list):
         matrix = []
+    matrix = _ensure_nominal_rerun(matrix)
     best = _best_leaderboard_row(output_root)
     target_passed = best.get("target_passed") is True or str(best.get("target_passed")).lower() == "true"
     base_parameters = _best_parameter_values(sweep_path, best)
@@ -360,14 +383,29 @@ def _mainline_payload(
     validation_cases: list[dict[str, Any]],
     target_metric: str,
     target_threshold: float,
+    evidence_metadata: dict[str, Any],
 ) -> dict[str, Any]:
     best = _best_leaderboard_row(output_root)
+    matrix_summary = _validation_matrix_summary(validation_cases, target_metric)
+    optimizer_claim_level = _optimizer_claim_level(best, validation_cases, matrix_summary)
+    evidence_metadata = {
+        **evidence_metadata,
+        "optimizer_claim_level": optimizer_claim_level,
+        "evidence_level": infer_evidence_level(
+            simulation_backend=str(evidence_metadata.get("simulation_backend", "external_csv")),
+            mock_used=bool(evidence_metadata.get("mock_used")),
+            pdk_available=bool(evidence_metadata.get("pdk_available")),
+            ngspice_available=bool(evidence_metadata.get("ngspice_available")),
+            optimizer_claim_level=optimizer_claim_level,
+        ),
+    }
     return {
         "schema_version": 1,
         "mode": "full_validation" if full_validation else "lightweight",
         "full_validation": bool(full_validation),
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
+        **evidence_metadata,
         "target": {
             "metric": target_metric,
             "threshold": target_threshold,
@@ -384,6 +422,7 @@ def _mainline_payload(
         },
         "preflight": preflight,
         "validation_cases": validation_cases,
+        "validation_matrix_summary": matrix_summary,
         "artifacts": {
             "leaderboard": "optimization_leaderboard.csv",
             "history": "optimization_history.json",
@@ -404,6 +443,11 @@ def _write_mainline_report(path: Path, payload: dict[str, Any]) -> None:
         f"- Mode: {payload['mode']}",
         f"- Data source: {payload['data_source']}",
         f"- Engineering validity: {payload['engineering_validity']}",
+        f"- Evidence level: {payload['evidence_level']}",
+        f"- Simulation backend: {payload['simulation_backend']}",
+        f"- Mock used: {payload['mock_used']}",
+        f"- Reportable as real ngspice: {payload['reportable_as_real_ngspice']}",
+        f"- Optimizer claim level: {payload['optimizer_claim_level']}",
         f"- Target: {target['metric']} < {target['threshold']}",
         f"- Target status: {target['status']}",
         f"- Target value: {target['value']}",
@@ -433,6 +477,63 @@ def _load_yaml(path: Path | None) -> dict[str, Any]:
         return {}
     payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _ensure_nominal_rerun(matrix: list[Any]) -> list[dict[str, Any]]:
+    normalized = [item for item in matrix if isinstance(item, dict)]
+    names = {str(item.get("name", "")).lower() for item in normalized}
+    if "nominal_rerun" not in names:
+        return [*normalized, {"name": "nominal_rerun", "max_runs": 1}]
+    return normalized
+
+
+def _validation_matrix_summary(cases: list[dict[str, Any]], target_metric: str) -> dict[str, Any]:
+    count = len(cases)
+    pass_count = sum(1 for case in cases if str(case.get("validation_status")) == "passed")
+    fail_count = sum(1 for case in cases if str(case.get("validation_status")) == "failed")
+    not_evaluable_count = count - pass_count - fail_count
+    worst_case = _worst_validation_case(cases)
+    return {
+        "validation_matrix_pass_rate": (pass_count / count) if count else 0.0,
+        "validation_case_count": count,
+        "validation_pass_count": pass_count,
+        "validation_fail_count": fail_count,
+        "validation_not_evaluable_count": not_evaluable_count,
+        "worst_case_name": worst_case.get("validation_name", ""),
+        "worst_case_metric": worst_case.get("target_metric", target_metric),
+        "worst_case_value": worst_case.get("_worst_value", ""),
+    }
+
+
+def _validation_rows_with_rollup(cases: list[dict[str, Any]], summary: dict[str, Any]) -> list[dict[str, Any]]:
+    return [{**case, **summary} for case in cases]
+
+
+def _worst_validation_case(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    best_case: dict[str, Any] = {}
+    best_value: float | None = None
+    for case in cases:
+        value = _as_float(case.get("worst_target_value"))
+        if value is None:
+            value = _as_float(case.get("target_value"))
+        if value is None:
+            continue
+        if best_value is None or value > best_value:
+            best_value = value
+            best_case = dict(case)
+            best_case["_worst_value"] = value
+    return best_case
+
+
+def _optimizer_claim_level(best: dict[str, Any], cases: list[dict[str, Any]], matrix_summary: dict[str, Any]) -> str:
+    if matrix_summary.get("validation_case_count") and matrix_summary.get("validation_pass_count") == matrix_summary.get("validation_case_count"):
+        return "validation_matrix_passed"
+    for case in cases:
+        if str(case.get("validation_name")).lower() == "nominal_rerun" and str(case.get("validation_status")) == "passed":
+            return "nominal_rerun_passed"
+    if best.get("target_passed") is True or str(best.get("target_passed")).lower() == "true":
+        return "nominal_rerun_passed"
+    return "candidate_generated"
 
 
 def _best_leaderboard_row(output_root: Path) -> dict[str, Any]:

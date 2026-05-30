@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 from goa_eval.schemas import RESULT_VERSION, SCHEMA_VERSION
+from goa_eval.evidence import evidence_from_payload
 from goa_eval.topology_profiles import load_eval_profiles, resolve_topology_profile
 
 
@@ -70,6 +71,9 @@ def score_real_evaluation(
     return {
         "schema_version": SCHEMA_VERSION,
         "result_version": RESULT_VERSION,
+        "data_source": summary.get("data_source", "real_simulation_csv"),
+        "engineering_validity": summary.get("engineering_validity", "simulation_only"),
+        **evidence_from_payload(summary),
         "hard_constraint_passed": not failures,
         "hard_constraint_failures": failures,
         "hard_constraints": hard_constraints,

@@ -9,11 +9,22 @@ import sys
 import pandas as pd
 
 from goa_eval.io_utils import sha256_file, write_json
+from goa_eval.evidence import default_external_csv_evidence, with_evidence
 from goa_eval.schemas import OPTIMIZATION_DATASET_COLUMNS, REAL_METRICS_COLUMNS, RESULT_VERSION, SCHEMA_VERSION
 
 
-def write_real_summary(path: Path, *, waveform_path: Path, high_threshold: float, low_threshold: float, evaluation, run_id: str | None = None, run_timestamp: str | None = None) -> dict:
-    summary = {
+def write_real_summary(
+    path: Path,
+    *,
+    waveform_path: Path,
+    high_threshold: float,
+    low_threshold: float,
+    evaluation,
+    run_id: str | None = None,
+    run_timestamp: str | None = None,
+    evidence_metadata: dict | None = None,
+) -> dict:
+    summary = with_evidence({
         "schema_version": SCHEMA_VERSION,
         "result_version": RESULT_VERSION,
         "run_id": run_id,
@@ -26,7 +37,7 @@ def write_real_summary(path: Path, *, waveform_path: Path, high_threshold: float
         **evaluation.summary,
         "stage_count": evaluation.summary["stage_count"],
         "notes": evaluation.notes,
-    }
+    }, evidence_metadata)
     write_json(path, summary)
     return summary
 
@@ -201,11 +212,19 @@ def write_real_report(
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def write_real_manifest(path: Path, *, run_id: str, waveform_path: Path, internal_waveform_path: Path | None, thresholds: dict) -> dict:
+def write_real_manifest(
+    path: Path,
+    *,
+    run_id: str,
+    waveform_path: Path,
+    internal_waveform_path: Path | None,
+    thresholds: dict,
+    evidence_metadata: dict | None = None,
+) -> dict:
     inputs = [waveform_path]
     if internal_waveform_path is not None and internal_waveform_path.exists():
         inputs.append(internal_waveform_path)
-    manifest = {
+    manifest = with_evidence({
         "schema_version": SCHEMA_VERSION,
         "result_version": RESULT_VERSION,
         "run_id": run_id,
@@ -217,7 +236,7 @@ def write_real_manifest(path: Path, *, run_id: str, waveform_path: Path, interna
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
         "code_version_or_git_commit": _git_commit(),
-    }
+    }, evidence_metadata)
     write_json(path, manifest)
     return manifest
 

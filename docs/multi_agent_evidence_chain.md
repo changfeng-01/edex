@@ -9,6 +9,8 @@ data_source = real_simulation_csv
 engineering_validity = simulation_only
 ```
 
+The agent layer must preserve evidence metadata when it reads or summarizes artifacts: `evidence_level`, `simulation_backend`, `mock_used`, `pdk_available`, `ngspice_available`, `reportable_as_real_ngspice`, and `optimizer_claim_level`. A run with `mock_used=true` must not be reported as real ngspice evidence.
+
 The multi-agent command is:
 
 ```bash
@@ -49,8 +51,11 @@ The layer can read current mainline artifacts by explicit path or by an `artifac
 - `validation_summary.csv`
 - `run_manifest_real.json`
 - `sky130_mainline_report.md`
+- `figures/figure_manifest.json`
 
 `optimization_leaderboard.csv` is treated as the shared leaderboard when no task-specific `leaderboard` is supplied. `best_next_candidates.csv` is treated as the candidate table when no task-specific `next_candidates` is supplied.
+
+`mainline_validation.json` and `validation_summary.csv` are the preferred sources for validation matrix rollups. Key fields are `validation_matrix_pass_rate`, `validation_case_count`, `validation_pass_count`, `validation_fail_count`, `validation_not_evaluable_count`, `worst_case_name`, `worst_case_metric`, and `worst_case_value`.
 
 ## Outputs
 
@@ -70,3 +75,5 @@ The optimization loop record stays rerun-aware. If candidate artifacts exist but
 ## Scope Boundary
 
 This branch keeps multi-agent behavior first-class while preserving the existing simulation-data ingestion and SKY130/ngspice capabilities. The agents may inspect and summarize evidence, but they must not claim silicon validation, physical validation, tape-out proof, real chip verification, or industrial-grade full automation.
+
+For real ngspice claims, the source artifact must have `reportable_as_real_ngspice=true`; otherwise the report should explicitly label the result as public/demo CSV, external CSV, or mock-ngspice evidence.
