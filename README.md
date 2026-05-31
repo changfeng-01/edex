@@ -10,6 +10,17 @@ python -m goa_eval.cli hybrid-goa-optimize \
   --output-root outputs/hybrid_goa
 ```
 
+## GOA Strategy Benchmark
+
+`goa-strategy-benchmark` compares random, adaptive, surrogate, repair, and hybrid_goa candidate-generation strategies for GOA circuits. It is simulation-only and does not require real ngspice or SKY130. See `docs/goa_strategy_benchmark.md`.
+
+```bash
+python -m goa_eval.cli goa-strategy-benchmark \
+  --leaderboard outputs/run/optimization_leaderboard.csv \
+  --param-space examples/sample_params.yaml \
+  --output-root outputs/goa_strategy_benchmark
+```
+
 ## Multi-Agent Evidence Chain
 
 The `multi-agent-run` command adds a local orchestration layer over the existing evidence tools. It routes tasks through Supervisor, Router, GOA/SKY130/Generic/Netlist, Evaluation, Optimization, Critic, and Report agents, then writes trace, handoff, memory, critic, decision, and optimization-loop artifacts. See `docs/multi_agent_evidence_chain.md`.
