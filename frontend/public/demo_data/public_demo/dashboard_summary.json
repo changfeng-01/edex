@@ -1,0 +1,20 @@
+{
+  "case_id": "public_demo",
+  "run_id": "public_demo_run",
+  "overall_status": "FAIL_OVERLAP",
+  "overall_score": 61.99999999999997,
+  "hard_constraint_passed": false,
+  "validation_status": "awaiting_rerun_results",
+  "candidate_status": "available",
+  "evidence": {
+    "data_source": "real_simulation_csv",
+    "engineering_validity": "simulation_only",
+    "evidence_level": "level_1_external_csv",
+    "simulation_backend": "external_csv",
+    "mock_used": false,
+    "pdk_available": false,
+    "ngspice_available": false,
+    "reportable_as_real_ngspice": false,
+    "optimizer_claim_level": "candidate_generated"
+  }
+}
