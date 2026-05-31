@@ -1,0 +1,27 @@
+*sub_0_8T1C
+****************************************
+* Type     : hspice
+* Tool     : AETHER-SE
+* Date     : Tue May 26 23:19:23 2026
+* User     : siduser30
+* Top Design : 8T1C/8T1C/schematic
+****************************************
+
+****************************************
+* Library : 8T1C
+* Cell    : 8T1C
+* View    : schematic
+****************************************
+
+.SUBCKT sub_0_8T1C clk clkb input output reset vss
+m7 clk pu output ntft L=5u W=850u
+m6 output pd vss ntft L=5u W=430u
+m5 output reset vss ntft L=5u W=360u
+m4 pd pu vss ntft L=5u W=280u
+m3 clkb clkb pd ntft L=5u W=70u
+m2 pu pd vss ntft L=5u W=180u
+m1 pu reset vss ntft L=5u W=180u
+m0 input input pu ntft L=5u W=300u
+CC0 pu output 1p
+.ENDS sub_0_8T1C
+

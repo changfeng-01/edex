@@ -67,3 +67,119 @@ export interface DashboardData {
   metrics: MetricRow[];
   optimization: OptimizationRow[];
 }
+
+export type ScalarValue = string | number | boolean | null | undefined;
+
+export interface EvidenceBoundary {
+  data_source?: string;
+  engineering_validity?: string;
+  evidence_level?: string;
+  simulation_backend?: string;
+  mock_used?: boolean | string;
+  pdk_available?: boolean | string;
+  ngspice_available?: boolean | string;
+  reportable_as_real_ngspice?: boolean | string;
+  optimizer_claim_level?: string;
+}
+
+export interface DashboardSummary {
+  case_id: string;
+  run_id?: string;
+  overall_status?: string;
+  overall_score?: number | string | null;
+  hard_constraint_passed?: boolean | string | null;
+  validation_status?: string;
+  candidate_status?: string;
+  evidence?: EvidenceBoundary;
+}
+
+export interface DashboardTable<T> {
+  file?: string;
+  rows?: T[];
+}
+
+export interface ConstraintRow {
+  constraint: string;
+  status: "pass" | "fail" | "unknown" | "missing" | string;
+  current_value?: string | number | null;
+  threshold?: string | number | null;
+  reason?: string;
+}
+
+export interface CandidateRow {
+  rank?: number | string;
+  candidate_id?: string;
+  priority?: string | number;
+  parameter_changes?: string;
+  trigger_metric?: string;
+  strategy?: string;
+  search_score?: string | number;
+  status?: string;
+  data_source?: string;
+  engineering_validity?: string;
+}
+
+export interface BeforeAfterRow {
+  metric: string;
+  before_value?: string | number | null;
+  after_value?: string | number | null;
+  delta?: string | number | null;
+  status?: string;
+  unit?: string | null;
+}
+
+export interface DashboardTables {
+  run_summary?: DashboardTable<Record<string, ScalarValue>>;
+  constraints?: DashboardTable<ConstraintRow>;
+  candidates?: DashboardTable<CandidateRow>;
+  before_after?: DashboardTable<BeforeAfterRow>;
+}
+
+export interface DashboardFigure {
+  key: string;
+  file: string;
+  title: string;
+  size_bytes?: number;
+  source_manifest_available?: boolean;
+  url: string;
+}
+
+export interface DashboardFiguresPayload {
+  [key: string]: {
+    file?: string;
+    title?: string;
+    size_bytes?: number;
+    source_manifest_available?: boolean;
+  };
+}
+
+export interface PresentationManifest {
+  case_id?: string;
+  package_version?: string;
+  input_dir?: string;
+  validation_status?: string;
+  candidate_status?: string;
+  evidence?: EvidenceBoundary;
+  tables?: Record<string, string>;
+  figures?: Record<string, string>;
+  reports?: string[];
+}
+
+export interface ReportPreview {
+  file: string;
+  title: string;
+  url: string;
+  content: string | null;
+  error?: string;
+}
+
+export interface ProductDemoDashboardData {
+  caseId: string;
+  basePath: string;
+  summary: DashboardSummary;
+  tables: DashboardTables;
+  figures: DashboardFigure[];
+  manifest: PresentationManifest | null;
+  reports: ReportPreview[];
+  resourceErrors: string[];
+}
