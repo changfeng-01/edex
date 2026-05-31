@@ -37,6 +37,7 @@ from goa_eval.sky130_mainline import run_sky130_mainline
 from goa_eval.sky130_sweep import run_sky130_sweep
 from goa_eval.sky130_transient import Sky130DependencyError, run_sky130_transient
 from goa_eval.strategy_benchmark import parse_seeds, run_strategy_benchmark
+from goa_eval.goa_strategy_benchmark import DEFAULT_STRATEGIES as GOA_BENCH_STRATEGIES, run_goa_strategy_benchmark
 from goa_eval.visualization.comparison_plotter import plot_v1_v8_comparison
 from goa_eval.visualization.metric_plotter import plot_voh_bar
 from goa_eval.visualization.version_compare_plotter import plot_timing_overview
@@ -423,6 +424,18 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
         )
         return 0
+    if args.command == "goa-strategy-benchmark":
+        run_goa_strategy_benchmark(
+            history_path=Path(args.history) if args.history else None,
+            leaderboard_path=Path(args.leaderboard) if args.leaderboard else None,
+            param_space_path=Path(args.param_space),
+            output_root=Path(args.output_root),
+            strategies=args.strategies.split(",") if args.strategies else None,
+            max_candidates=args.max_candidates,
+            seeds=[int(item.strip()) for item in args.seeds.split(",") if item.strip()],
+            top_k=args.top_k,
+        )
+        return 0
     parser.print_help()
     return 2
 
@@ -628,6 +641,15 @@ def build_parser() -> argparse.ArgumentParser:
     hybrid.add_argument("--output-root", default="outputs/hybrid_goa")
     hybrid.add_argument("--max-candidates", type=int, default=30)
     hybrid.add_argument("--seed", type=int, default=42)
+    goa_bench = sub.add_parser("goa-strategy-benchmark")
+    goa_bench.add_argument("--history")
+    goa_bench.add_argument("--leaderboard")
+    goa_bench.add_argument("--param-space", default="examples/sample_params.yaml")
+    goa_bench.add_argument("--output-root", default="outputs/goa_strategy_benchmark")
+    goa_bench.add_argument("--strategies", default=",".join(GOA_BENCH_STRATEGIES))
+    goa_bench.add_argument("--max-candidates", type=int, default=30)
+    goa_bench.add_argument("--seeds", default="1,2,3")
+    goa_bench.add_argument("--top-k", type=int, default=10)
     return parser
 
 
