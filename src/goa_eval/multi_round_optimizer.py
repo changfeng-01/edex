@@ -116,7 +116,7 @@ def build_strategy_sweep_config(
         config["optimizer_strategy"] = "random"
         return {"config": config, "points": points, "stop_reason": "" if points else "no new sweep points"}
 
-    if strategy in {"hybrid", "genetic"}:
+    if strategy in {"hybrid", "genetic", "repair", "hybrid_goa", "physics_guided_hybrid"}:
         accepted_candidates = 0
         for candidate, metadata in _candidate_points(best_run_dir, _best_parameter_row(history, parameters)):
             metadata = {**metadata, "optimizer_strategy": strategy, "model_status": "rule_seed"}
@@ -130,7 +130,7 @@ def build_strategy_sweep_config(
             metadata["optimizer_strategy"] = strategy
             _append_unique_point(points, point_metadata, point, metadata, parameters, seen, max_runs)
 
-    if strategy in {"bayesian", "surrogate", "hybrid"} and len(points) < max_runs:
+    if strategy in {"bayesian", "surrogate", "hybrid", "hybrid_goa", "physics_guided_hybrid"} and len(points) < max_runs:
         ranked_model_points = _model_ranked_points(parameters, history, grid, strategy=strategy, seed=seed)
         for point, metadata in ranked_model_points:
             metadata["optimizer_strategy"] = strategy

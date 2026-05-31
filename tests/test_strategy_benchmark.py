@@ -71,7 +71,7 @@ validation_matrix:
     summary = json.loads((output_root / "strategy_benchmark_summary.json").read_text(encoding="utf-8"))
     report = (output_root / "strategy_benchmark_report.md").read_text(encoding="utf-8")
 
-    assert set(rows["strategy"]) == {"random", "adaptive", "genetic", "bayesian", "surrogate", "hybrid"}
+    assert set(rows["strategy"]) == {"random", "adaptive", "surrogate", "repair", "hybrid_goa"}
     assert set(rows["seed"]) == {1, 2}
     for column in [
         "rank_status",
@@ -101,6 +101,13 @@ validation_matrix:
         "first_pass_sim_count_mean",
         "improvement_per_simulation",
         "mock_used_rate",
+        "pareto_front_hit_rate",
+        "avg_pareto_rank",
+        "best_predicted_score_mean",
+        "repair_candidate_ratio",
+        "surrogate_candidate_ratio",
+        "exploration_candidate_ratio",
+        "candidate_diversity_score",
         "score_improvement_vs_random",
         "target_pass_rate_gain_vs_random",
         "simulation_efficiency_gain_vs_random",
@@ -124,6 +131,47 @@ def test_strategy_benchmark_relative_gain_handles_missing_or_zero_baseline():
     assert _relative_gain(10.0, 0.0) is None
     assert _relative_gain(None, 10.0) is None
     assert _relative_gain(12.0, 10.0) == 0.2
+
+
+def test_strategy_leaderboard_includes_hybrid_goa_candidate_proxy_metrics():
+    summary = {
+        "strategies": {
+            "random": {
+                "hard_constraint_pass_rate": 0.0,
+                "target_pass_rate": 0.0,
+                "validation_pass_rate": 0.0,
+                "best_score_mean": 10.0,
+                "avg_sim_count": 2.0,
+                "pareto_front_hit_rate": 0.0,
+                "avg_pareto_rank": None,
+                "best_predicted_score_mean": None,
+                "repair_candidate_ratio": 0.0,
+                "surrogate_candidate_ratio": 0.0,
+                "exploration_candidate_ratio": 0.0,
+                "candidate_diversity_score": 0.0,
+            },
+            "hybrid_goa": {
+                "hard_constraint_pass_rate": 1.0,
+                "target_pass_rate": 0.5,
+                "validation_pass_rate": 0.0,
+                "best_score_mean": 20.0,
+                "avg_sim_count": 2.0,
+                "pareto_front_hit_rate": 0.5,
+                "avg_pareto_rank": 1.5,
+                "best_predicted_score_mean": 88.0,
+                "repair_candidate_ratio": 0.3,
+                "surrogate_candidate_ratio": 0.5,
+                "exploration_candidate_ratio": 0.2,
+                "candidate_diversity_score": 0.75,
+            },
+        }
+    }
+
+    leaderboard = _strategy_leaderboard(summary)
+
+    hybrid = leaderboard.set_index("strategy").loc["hybrid_goa"]
+    assert hybrid["pareto_front_hit_rate"] == 0.5
+    assert hybrid["candidate_diversity_score"] == 0.75
 
 
 def test_strategy_leaderboard_sorts_hard_pass_before_soft_score():
