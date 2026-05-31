@@ -27,6 +27,7 @@ from goa_eval.parsers.mapping_parser import parse_mapping
 from goa_eval.parsers.metric_table_parser import parse_metric_table
 from goa_eval.parsers.netlist_parser import parse_netlist
 from goa_eval.parsers.waveform_parser import read_waveform_csv
+from goa_eval.product_demo.workflow import run_product_demo
 from goa_eval.report.manifest import write_run_manifest
 from goa_eval.report.markdown_report import write_markdown_report
 from goa_eval.report.reporter import write_report_md
@@ -111,6 +112,14 @@ def main(argv: list[str] | None = None) -> int:
             metrics_path=Path(args.metrics) if args.metrics else None,
             output_path=Path(args.output),
         )
+        return 0
+    if args.command == "product-demo":
+        case_dir = run_product_demo(
+            input_dir=Path(args.input_dir),
+            output_dir=Path(args.output_dir),
+            case_id=args.case_id,
+        )
+        print(f"Product demo package written to {case_dir}")
         return 0
     if args.command == "evaluate-batch":
         run_batch_evaluation(runs_dir=Path(args.runs_dir), output_dir=Path(args.output_dir))
@@ -473,6 +482,10 @@ def build_parser() -> argparse.ArgumentParser:
     recommend.add_argument("--score")
     recommend.add_argument("--metrics")
     recommend.add_argument("--output", default="outputs/recommendations.md")
+    product_demo = sub.add_parser("product-demo")
+    product_demo.add_argument("--input-dir", required=True)
+    product_demo.add_argument("--output-dir", default="outputs/product_demo")
+    product_demo.add_argument("--case-id", required=True)
     batch = sub.add_parser("evaluate-batch")
     batch.add_argument("--runs-dir", required=True)
     batch.add_argument("--output-dir", default="outputs_batch")
