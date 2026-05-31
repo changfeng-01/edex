@@ -75,7 +75,7 @@ def build_goa_benchmark_metrics(*, summary: dict, stage_rows: list[dict], profil
     reference = profile.get("reference", {}) or {}
     load = reference.get("load", {}) or {}
     timing = reference.get("timing", {}) or {}
-    return {
+    metrics = {
         "benchmark_scope": "literature_reference",
         "reference_note": str(reference.get("note", "Literature reference only; not a reproduced simulation.")),
         "fall_time_s": _safe_mean([row.get("FallTime", row.get("falling_time")) for row in stage_rows]),
@@ -98,6 +98,8 @@ def build_goa_benchmark_metrics(*, summary: dict, stage_rows: list[dict], profil
         "width_proxy": None,
         "delta_vth_margin_v": None,
     }
+    metrics["baseline_comparisons"] = _baseline_comparisons(metrics, reference.get("baselines", {}))
+    return metrics
 
 
 def _profile_uses_goa_benchmark(profile: dict) -> bool:
@@ -122,6 +124,56 @@ def _missing_goa_metrics(metrics: dict) -> list[str]:
         ]
         if metrics.get(metric) is None
     ]
+
+
+def _baseline_comparisons(metrics: dict, baselines: dict) -> dict[str, dict]:
+    if not isinstance(baselines, dict):
+        return {}
+    mapping = {
+        "fall_time_s": ("tfall_s", "smaller_better"),
+        "power_total_w": ("power_total_w", "smaller_better"),
+        "delta_vth_margin_v": ("delta_vth_margin_v", "larger_better"),
+        "area_proxy": ("area_proxy", "smaller_better"),
+    }
+    comparisons: dict[str, dict] = {}
+    for baseline_name, baseline in baselines.items():
+        if not isinstance(baseline, dict):
+            continue
+        metric_rows = {}
+        for current_metric, (baseline_metric, direction) in mapping.items():
+            current_value = metrics.get(current_metric)
+            baseline_value = baseline.get(baseline_metric)
+            metric_rows[current_metric] = {
+                "current_value": current_value,
+                "baseline_value": baseline_value,
+                "direction": direction,
+                "relative_improvement": _relative_improvement(current_value, baseline_value, direction),
+                "status": "evaluated" if current_value is not None and baseline_value is not None else "not_evaluable",
+                "not_evaluable_reason": "" if current_value is not None and baseline_value is not None else _comparison_missing_reason(current_metric, baseline_metric, current_value, baseline_value),
+            }
+        comparisons[str(baseline_name)] = {
+            "structure": baseline.get("structure", ""),
+            "metrics": metric_rows,
+        }
+    return comparisons
+
+
+def _relative_improvement(current_value: object, baseline_value: object, direction: str) -> float | None:
+    current = _number(current_value)
+    baseline = _number(baseline_value)
+    if current is None or baseline in {None, 0.0}:
+        return None
+    if direction == "larger_better":
+        return (current - baseline) / abs(baseline)
+    return (baseline - current) / abs(baseline)
+
+
+def _comparison_missing_reason(current_metric: str, baseline_metric: str, current_value: object, baseline_value: object) -> str:
+    if current_value is None and baseline_value is None:
+        return f"missing current {current_metric} and literature {baseline_metric}"
+    if current_value is None:
+        return f"missing current {current_metric}"
+    return f"missing literature {baseline_metric}"
 
 
 def _goa_missing_reason(metric: str) -> str:

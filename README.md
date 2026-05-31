@@ -29,6 +29,7 @@ Evidence-loop CLI additions:
 - `sky130-mainline --require-real-ngspice` disables `--mock-ngspice` and mock fallback; missing PDK or ngspice causes the command to fail.
 - `strategy-benchmark` compares `random`, `adaptive`, `genetic`, `bayesian`, `surrogate`, and `hybrid` over fixed seeds, rounds, and max runs per round.
 - `random` is a baseline strategy that does not read best-candidate replay.
+- Benchmark outputs now include scenario/fairness metadata, hard-constraint pass rates, not-evaluable rates, validation rollups, baseline improvement fields, and `strategy_leaderboard.csv`.
 - Every generated `figures/*.png` is listed in `figures/figure_manifest.json` with `source_type=matplotlib_local`, `ai_generated=false`, `llm_used=false`, data-source labels, and evidence level.
 
 中文名：芯智调参：基于仿真数据的电路参数智能推荐系统  
@@ -86,6 +87,7 @@ engineering_validity = simulation_only
 - 当历史样本不足或目标分数无有效方差时，模型策略会记录 fallback 状态，并选择未尝试过的多样化网格点，避免伪装成模型已学到规律。
 - 输出 `optimization_history.json`、`optimization_leaderboard.csv`、`round_summary.csv`、`final_param_space.yaml` 和 `best_next_candidates.csv`。
 - Leaderboard 保留候选来源字段，包括 `candidate_source`、`source_candidate_id`、`source_candidate_trigger_metric`、`source_candidate_parameters_json` 和 `rank_status`。
+- `strategy-benchmark` 在多策略横向比较中额外输出 `strategy_leaderboard.csv`，并在 summary 中记录场景、同条件比较约束、baseline 分组、相对 random 的改进率、不可评价率和仿真效率。
 
 ### 5. 公开 demo、DeepSeek 分析和文档 schema
 

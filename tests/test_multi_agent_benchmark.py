@@ -114,6 +114,9 @@ def test_benchmark_run_cli_writes_summary_results_and_report(tmp_path: Path):
     assert result.returncode == 0, result.stderr
     summary = json.loads((output / "benchmark_summary.json").read_text(encoding="utf-8"))
     assert summary["case_count"] == 1
+    assert summary["hard_constraint_pass_rate"] == 1.0
+    assert summary["status_counts"] == {"passed": 1}
+    assert summary["not_evaluable_count"] == 0
     for metric in [
         "route_accuracy",
         "artifact_discovery_score",
@@ -127,8 +130,14 @@ def test_benchmark_run_cli_writes_summary_results_and_report(tmp_path: Path):
     assert summary["metrics"]["route_accuracy"] == 1.0
     assert summary["metrics"]["boundary_safety_score"] == 1.0
     assert summary["metrics"]["optimization_loop_status_score"] == 1.0
-    assert (output / "case_results.jsonl").exists()
-    assert (output / "benchmark_report.md").exists()
+    results = (output / "case_results.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    case_result = json.loads(results[0])
+    assert case_result["case_status"] == "passed"
+    assert case_result["hard_constraint_passed"] is True
+    assert case_result["hard_constraints"]["required_artifacts_present"] is True
+    report = (output / "benchmark_report.md").read_text(encoding="utf-8")
+    assert "Hard constraint pass rate" in report
+    assert "| case | status | hard_constraints |" in report
 
 
 def test_repository_benchmark_suite_has_required_case_format():
