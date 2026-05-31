@@ -391,6 +391,12 @@ def _goa_benchmark_section(analysis_metrics: dict, score_summary: dict) -> str:
             }
         )
     ) or "无"
+    grouped_rows = [
+        {"dimension": "性能/速度", "available_metrics": "FallTime, RiseTime, Max_overlap_ratio", "not_evaluable_metrics": ""},
+        {"dimension": "功耗/代价", "available_metrics": "", "not_evaluable_metrics": _missing_subset(not_evaluable, {"power_total_w", "power_static_w", "power_dynamic_w"})},
+        {"dimension": "稳定性", "available_metrics": "FalseTriggerCount, Max_overlap_ratio", "not_evaluable_metrics": _missing_subset(not_evaluable, {"delta_vth_margin_v"})},
+        {"dimension": "面积/复杂度", "available_metrics": "", "not_evaluable_metrics": _missing_subset(not_evaluable, {"area_proxy", "width_proxy"})},
+    ]
     return "\n".join(
         [
             "## 7. GOA 论文 benchmark 对比",
@@ -405,6 +411,48 @@ def _goa_benchmark_section(analysis_metrics: dict, score_summary: dict) -> str:
             "",
             _markdown_table(pd.DataFrame(rows)),
             "",
+            "### 7.1 维度分组",
+            "",
+            _markdown_table(pd.DataFrame(grouped_rows)),
+            "",
+            "### 7.2 文献 baseline 归一化对比",
+            "",
+            _goa_baseline_comparison_table(metrics),
+            "",
             "物理解释：下降时间代表 GOA 输出级下拉和扫描线放电能力；误脉冲代表错误选通风险，优先级高于单纯速度；overlap 代表相邻级时序窗口过近或波形窗口定义风险；功耗、面积和阈值漂移需要电源电流、器件参数或 PVT/漂移扫描证据，不能由当前输出 CSV 伪造。",
         ]
     )
+
+
+def _missing_subset(not_evaluable: dict, names: set[str]) -> str:
+    missing = sorted(str(name) for name in names if name in not_evaluable)
+    return ", ".join(missing) if missing else "无"
+
+
+def _goa_baseline_comparison_table(metrics: dict) -> str:
+    comparisons = metrics.get("baseline_comparisons", {})
+    if not isinstance(comparisons, dict) or not comparisons:
+        return "- 未配置文献 baseline comparisons。"
+    rows = []
+    for baseline, payload in comparisons.items():
+        metric_rows = payload.get("metrics", {}) if isinstance(payload, dict) else {}
+        if not isinstance(metric_rows, dict):
+            continue
+        for metric_name, item in metric_rows.items():
+            if not isinstance(item, dict):
+                continue
+            rows.append(
+                {
+                    "baseline": baseline,
+                    "structure": payload.get("structure", ""),
+                    "metric": metric_name,
+                    "current": item.get("current_value"),
+                    "literature": item.get("baseline_value"),
+                    "relative_improvement": item.get("relative_improvement"),
+                    "status": item.get("status"),
+                    "note": item.get("not_evaluable_reason", ""),
+                }
+            )
+    if not rows:
+        return "- 文献 baseline comparison 为空。"
+    return _markdown_table(pd.DataFrame(rows))

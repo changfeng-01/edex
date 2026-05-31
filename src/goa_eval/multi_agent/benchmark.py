@@ -63,22 +63,39 @@ def _case_result(case_dir: Path, output_dir: Path, final_state: dict[str, Any], 
     expected_optimization_status = expected.get("optimization_loop_status")
     diagnosis_terms = [str(item).lower() for item in expected.get("diagnosis_terms", [])]
     diagnosis_text = json.dumps(final_state.get("domain_diagnosis", {}), ensure_ascii=False).lower()
+    artifacts_ok = all(artifact_results.values()) if artifact_results else True
+    optimization_status_ok = expected_optimization_status in {None, optimization_status}
+    report_claims_ok = not report_forbidden_hits
+    boundary_safety_ok = boundary_ok and not forbidden_hits and report_claims_ok
+    hard_constraints = {
+        "route_ok": route_ok,
+        "required_artifacts_present": artifacts_ok,
+        "boundary_preserved": boundary_ok,
+        "forbidden_claims_absent": not forbidden_hits,
+        "report_forbidden_claims_absent": report_claims_ok,
+        "optimization_loop_status_matches": optimization_status_ok,
+    }
+    hard_constraint_passed = all(hard_constraints.values())
+    case_status = "passed" if hard_constraint_passed else "failed"
     case_metrics = {
         "route_accuracy": 1.0 if route_ok else 0.0,
         "artifact_discovery_score": _artifact_score(artifact_results),
         "diagnosis_match_score": _term_score(diagnosis_text, diagnosis_terms),
         "critic_risk_detection_score": _risk_score(risk_types, expected_risk_types),
-        "boundary_safety_score": 1.0 if boundary_ok and not forbidden_hits else 0.0,
-        "optimization_loop_status_score": 1.0 if expected_optimization_status in {None, optimization_status} else 0.0,
-        "report_forbidden_claim_score": 0.0 if report_forbidden_hits else 1.0,
+        "boundary_safety_score": 1.0 if boundary_safety_ok else 0.0,
+        "optimization_loop_status_score": 1.0 if optimization_status_ok else 0.0,
+        "report_forbidden_claim_score": 1.0 if report_claims_ok else 0.0,
     }
     return {
         "case_name": case_dir.name,
         "output_dir": str(output_dir),
+        "case_status": case_status,
+        "hard_constraint_passed": hard_constraint_passed,
+        "hard_constraints": hard_constraints,
         "selected_domain_agent": selected,
         "expected_domain_agent": expected_agent,
         "route_ok": route_ok,
-        "boundary_ok": boundary_ok and not forbidden_hits,
+        "boundary_ok": boundary_safety_ok,
         "required_artifacts": artifact_results,
         "forbidden_hits": forbidden_hits,
         "report_forbidden_hits": report_forbidden_hits,
@@ -105,10 +122,14 @@ def _summary(results: list[dict[str, Any]]) -> dict[str, Any]:
         "optimization_loop_status_score",
         "report_forbidden_claim_score",
     ]
+    status_counts = _status_counts(results)
     return {
         "schema_version": "1.0",
         "result_version": "1.0",
         "case_count": case_count,
+        "status_counts": status_counts,
+        "not_evaluable_count": status_counts.get("not_evaluable", 0),
+        "hard_constraint_pass_rate": _hard_constraint_pass_rate(results),
         "metrics": {name: _average(results, name) for name in metric_names},
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
@@ -191,20 +212,51 @@ def _average(results: list[dict[str, Any]], metric_name: str) -> float:
     return sum(float((result.get("metrics") or {}).get(metric_name, 0.0)) for result in results) / len(results)
 
 
+def _status_counts(results: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for result in results:
+        status = str(result.get("case_status") or "unknown")
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def _hard_constraint_pass_rate(results: list[dict[str, Any]]) -> float:
+    if not results:
+        return 0.0
+    return sum(1 for result in results if result.get("hard_constraint_passed") is True) / len(results)
+
+
 def _write_report(path: Path, summary: dict[str, Any], results: list[dict[str, Any]]) -> None:
     lines = [
         "# Multi-Agent Benchmark Report",
         "",
         f"- Cases: {summary['case_count']}",
+        f"- Hard constraint pass rate: {summary['hard_constraint_pass_rate']:.3f}",
+        f"- Status counts: {summary['status_counts']}",
         *[f"- {name}: {value:.3f}" for name, value in summary["metrics"].items()],
         "- Data source: real_simulation_csv",
         "- Engineering validity: simulation_only",
         "",
         "## Cases",
+        "",
+        "| case | status | hard_constraints | route_ok | boundary_ok | artifact_score | optimization_status | agent |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for result in results:
         lines.append(
-            f"- {result['case_name']}: route_ok={result['route_ok']}, boundary_ok={result['boundary_ok']}, "
-            f"agent={result['selected_domain_agent']}"
+            "| "
+            + " | ".join(
+                [
+                    str(result["case_name"]),
+                    str(result.get("case_status", "")),
+                    str(result.get("hard_constraint_passed", "")),
+                    str(result["route_ok"]),
+                    str(result["boundary_ok"]),
+                    f"{(result.get('metrics') or {}).get('artifact_discovery_score', 0.0):.3f}",
+                    str(result.get("optimization_loop_status", "")),
+                    str(result["selected_domain_agent"]),
+                ]
+            )
+            + " |"
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

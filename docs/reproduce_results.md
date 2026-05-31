@@ -77,7 +77,7 @@ python -m goa_eval.cli strategy-benchmark `
   --output-root outputs/strategy_benchmark
 ```
 
-The benchmark writes `strategy_benchmark.csv`, `strategy_benchmark_summary.json`, and `strategy_benchmark_report.md`.
+The benchmark writes `strategy_benchmark.csv`, `strategy_leaderboard.csv`, `strategy_benchmark_summary.json`, and `strategy_benchmark_report.md`. The summary includes scenario, fairness, baseline groups, not-evaluable rate, validation rollup, and improvement fields versus the `random` no-replay baseline.
 
 这表示结果只来自仿真 CSV，不是实物测试结论，也不表示已经完成自动优化闭环。
 

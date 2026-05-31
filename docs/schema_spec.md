@@ -579,13 +579,18 @@ candidate generation. AI output remains advisory and simulation-only.
 
 ## strategy-benchmark outputs
 
-`strategy-benchmark` compares `random`, `adaptive`, `genetic`, `bayesian`, `surrogate`, and `hybrid` over fixed seeds, rounds, and max runs per round. The `random` baseline does not read best-candidate replay.
+`strategy-benchmark` compares `random`, `adaptive`, `genetic`, `bayesian`, `surrogate`, and `hybrid` over fixed seeds, rounds, and max runs per round. The `random` baseline does not read best-candidate replay. The benchmark follows the engineering benchmark rules in `docs/algorithm_benchmark.md`: scenario first, hard constraints before soft scores, same-condition comparison, explicit baseline deltas, and simulation-only boundary labels.
 
 | File | Purpose |
 |---|---|
-| `strategy_benchmark.csv` | One row per strategy/seed run. |
-| `strategy_benchmark_summary.json` | Per-strategy `best_score_mean`, `best_score_std`, `target_pass_rate`, `hard_fail_rate`, `validation_pass_rate`, `avg_sim_count`, and `mock_used_rate`. |
-| `strategy_benchmark_report.md` | Human-readable summary table with boundary labels. |
+| `strategy_benchmark.csv` | One row per strategy/seed run, including rank/target status, hard constraint pass, not-evaluable counts, validation rollup, candidate provenance, changed parameters, and model status. |
+| `strategy_leaderboard.csv` | Per-strategy ranking sorted by hard-constraint pass rate, target pass rate, validation pass rate, mean score, and simulation count. |
+| `strategy_benchmark_summary.json` | Scenario, fairness guarantees, baseline groups, per-strategy scores/rates, not-evaluable rate, simulation efficiency, and improvement fields versus `random`. |
+| `strategy_benchmark_report.md` | Human-readable scenario, summary, strategy leaderboard, and boundary rules. |
+
+GOA literature benchmark metrics may include `baseline_comparisons`, keyed by literature baseline. Each comparison records current value, literature value, direction, relative improvement, status, and not-evaluable reason. Missing power, area, or Vth evidence remains `not_evaluable`.
+
+`benchmark-run` for the multi-agent suite writes per-case `hard_constraints`, `hard_constraint_passed`, `case_status`, summary `status_counts`, `hard_constraint_pass_rate`, and `not_evaluable_count` in addition to the existing metric averages.
 
 ## figure_manifest.json
 
