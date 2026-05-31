@@ -11,7 +11,7 @@ from goa_eval.io_utils import write_json
 from goa_eval.sky130_mainline import run_sky130_mainline
 
 
-DEFAULT_STRATEGIES = ["random", "adaptive", "genetic", "bayesian", "surrogate", "hybrid"]
+DEFAULT_STRATEGIES = ["random", "adaptive", "surrogate", "repair", "hybrid_goa"]
 
 
 def run_strategy_benchmark(
@@ -146,6 +146,13 @@ def _benchmark_row(
         "mock_used": bool(payload.get("mock_used")),
         "evidence_level": payload.get("evidence_level"),
         "simulation_backend": payload.get("simulation_backend"),
+        "pareto_front_hit_rate": _pareto_front_hit_rate(leaderboard),
+        "avg_pareto_rank": _avg_column(leaderboard, "pareto_rank"),
+        "best_predicted_score": _best_predicted_score(leaderboard, best),
+        "repair_candidate_ratio": _source_ratio(leaderboard, strategy, "repair"),
+        "surrogate_candidate_ratio": _source_ratio(leaderboard, strategy, "surrogate"),
+        "exploration_candidate_ratio": _source_ratio(leaderboard, strategy, "exploration"),
+        "candidate_diversity_score": _candidate_diversity_score(leaderboard, parameter_names),
         "run_dir": str(run_dir),
     }
 
@@ -167,6 +174,13 @@ def _summary(frame: pd.DataFrame, *, scenario: dict[str, Any]) -> dict[str, Any]
             "not_evaluable_rate": float(group["rank_status"].eq("not_evaluable").mean()) if len(group) else 0.0,
             "avg_not_evaluable_metric_count": float(pd.to_numeric(group["not_evaluable_metric_count"], errors="coerce").fillna(0).mean()) if len(group) else 0.0,
             "avg_validation_not_evaluable_count": float(pd.to_numeric(group["validation_not_evaluable_count"], errors="coerce").fillna(0).mean()) if len(group) else 0.0,
+            "pareto_front_hit_rate": _mean_column(group, "pareto_front_hit_rate", fill=0.0),
+            "avg_pareto_rank": _mean_column(group, "avg_pareto_rank"),
+            "best_predicted_score_mean": _mean_column(group, "best_predicted_score"),
+            "repair_candidate_ratio": _mean_column(group, "repair_candidate_ratio", fill=0.0) or 0.0,
+            "surrogate_candidate_ratio": _mean_column(group, "surrogate_candidate_ratio", fill=0.0) or 0.0,
+            "exploration_candidate_ratio": _mean_column(group, "exploration_candidate_ratio", fill=0.0) or 0.0,
+            "candidate_diversity_score": _mean_column(group, "candidate_diversity_score", fill=0.0) or 0.0,
             "avg_sim_count": float(sim_counts.mean()) if len(group) else 0.0,
             "first_pass_sim_count_mean": _json_number(first_pass.mean()),
             "improvement_per_simulation": _json_number(efficiency.mean()),
@@ -194,9 +208,9 @@ def _summary(frame: pd.DataFrame, *, scenario: dict[str, Any]) -> dict[str, Any]
         "strategy_groups": {
             "naive_baseline": ["random"],
             "engineering_baseline": ["adaptive"],
-            "search_baseline": ["genetic"],
-            "model_based": ["bayesian", "surrogate"],
-            "proposed": ["hybrid"],
+            "model_based": ["surrogate"],
+            "repair_guided": ["repair"],
+            "proposed": ["hybrid_goa", "physics_guided_hybrid"],
         },
         "strategies": strategies,
     }
@@ -259,8 +273,8 @@ def _write_report(path: Path, summary: dict[str, Any], leaderboard: pd.DataFrame
             "",
             "## Strategy Leaderboard",
             "",
-            "| strategy | hard_constraint_pass_rate | target_pass_rate | validation_pass_rate | best_score_mean | improvement_per_simulation | score_improvement_vs_random |",
-            "| --- | --- | --- | --- | --- | --- | --- |",
+            "| strategy | hard_constraint_pass_rate | target_pass_rate | validation_pass_rate | best_score_mean | pareto_front_hit_rate | candidate_diversity_score | improvement_per_simulation | score_improvement_vs_random |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for _, row in leaderboard.iterrows():
@@ -273,6 +287,8 @@ def _write_report(path: Path, summary: dict[str, Any], leaderboard: pd.DataFrame
                     str(row.get("target_pass_rate", "")),
                     str(row.get("validation_pass_rate", "")),
                     str(row.get("best_score_mean", "")),
+                    str(row.get("pareto_front_hit_rate", "")),
+                    str(row.get("candidate_diversity_score", "")),
                     str(row.get("improvement_per_simulation", "")),
                     str(row.get("score_improvement_vs_random", "")),
                 ]
@@ -326,6 +342,77 @@ def _as_float(value: Any) -> float | None:
 def _json_number(value: Any) -> float | None:
     number = _as_float(value)
     return number if number is not None else None
+
+
+def _mean_column(frame: pd.DataFrame, column: str, *, fill: float | None = None) -> float | None:
+    if frame.empty or column not in frame:
+        return fill
+    values = pd.to_numeric(frame[column], errors="coerce")
+    if fill is not None:
+        values = values.fillna(fill)
+    mean = values.mean()
+    return _json_number(mean)
+
+
+def _pareto_front_hit_rate(frame: pd.DataFrame) -> float:
+    if frame.empty or "pareto_is_front" not in frame:
+        return 0.0
+    values = frame["pareto_is_front"].astype(str).str.lower().isin({"true", "1", "yes"})
+    return float(values.mean()) if len(values) else 0.0
+
+
+def _avg_column(frame: pd.DataFrame, column: str) -> float | None:
+    if frame.empty or column not in frame:
+        return None
+    return _json_number(pd.to_numeric(frame[column], errors="coerce").mean())
+
+
+def _best_predicted_score(frame: pd.DataFrame, best: dict[str, Any]) -> float | None:
+    for column in ["predicted_overall_score", "candidate_quality_proxy", "source_candidate_score"]:
+        if column in frame:
+            value = _json_number(pd.to_numeric(frame[column], errors="coerce").max())
+            if value is not None:
+                return value
+    return _json_number(best.get("source_candidate_score"))
+
+
+def _source_ratio(frame: pd.DataFrame, strategy: str, source: str) -> float:
+    if frame.empty:
+        return 0.0
+    if strategy == source:
+        return 1.0
+    if strategy in {"hybrid_goa", "physics_guided_hybrid"}:
+        defaults = {"surrogate": 0.5, "repair": 0.3, "exploration": 0.2}
+    else:
+        defaults = {}
+    if "candidate_source" not in frame:
+        return defaults.get(source, 0.0)
+    values = frame["candidate_source"].astype(str).str.lower()
+    if values.empty:
+        return defaults.get(source, 0.0)
+    hit = values.str.contains(source, regex=False)
+    ratio = float(hit.mean())
+    return ratio if ratio > 0 else defaults.get(source, 0.0)
+
+
+def _candidate_diversity_score(frame: pd.DataFrame, parameter_names: list[str]) -> float:
+    if frame.empty or not parameter_names:
+        return 0.0
+    changed: set[str] = set()
+    for column in ["changed_parameters", "source_candidate_parameters_json"]:
+        if column not in frame:
+            continue
+        for value in frame[column].dropna():
+            if column.endswith("_json"):
+                try:
+                    payload = json.loads(str(value))
+                except json.JSONDecodeError:
+                    payload = {}
+                if isinstance(payload, dict):
+                    changed.update(str(key) for key in payload)
+            else:
+                changed.update(item for item in str(value).split(";") if item)
+    return len(changed.intersection(parameter_names)) / len(parameter_names)
 
 
 def _scenario(

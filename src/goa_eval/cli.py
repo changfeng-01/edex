@@ -16,6 +16,7 @@ from goa_eval.csv_import_adapter import run_csv_import, run_csv_import_sweep
 from goa_eval.evaluation.feature_extractor import extract_waveform_features
 from goa_eval.evaluation.mock_waveform import generate_mock_waveform
 from goa_eval.evaluation.scoring import compute_metric_results
+from goa_eval.goa_hybrid_optimizer import run_hybrid_goa_optimizer
 from goa_eval.io_utils import copy_initial_raw_inputs, ensure_run_dirs, extract_archives, to_jsonable, write_json
 from goa_eval.llm_analysis import run_llm_parameter_analysis
 from goa_eval.multi_round_optimizer import run_multi_round_optimization
@@ -412,6 +413,16 @@ def main(argv: list[str] | None = None) -> int:
             print(str(exc), file=sys.stderr)
             return 2
         return 0
+    if args.command == "hybrid-goa-optimize":
+        run_hybrid_goa_optimizer(
+            history_path=Path(args.history) if args.history else None,
+            leaderboard_path=Path(args.leaderboard) if args.leaderboard else None,
+            param_space_path=Path(args.param_space) if args.param_space else None,
+            output_root=Path(args.output_root),
+            max_candidates=args.max_candidates,
+            seed=args.seed,
+        )
+        return 0
     parser.print_help()
     return 2
 
@@ -554,7 +565,7 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.add_argument("--max-candidates", type=int, default=10)
     optimize.add_argument("--seed", type=int, default=42)
     optimize.add_argument("--rounds", type=int, default=3)
-    optimize.add_argument("--strategy", choices=["random", "adaptive", "genetic", "bayesian", "surrogate", "hybrid"], default="adaptive")
+    optimize.add_argument("--strategy", choices=["random", "adaptive", "genetic", "bayesian", "surrogate", "repair", "hybrid", "hybrid_goa", "physics_guided_hybrid"], default="adaptive")
     optimize.add_argument("--max-runs-per-round", type=int, default=5)
     optimize.add_argument("--patience", type=int, default=2)
     optimize.add_argument("--min-improvement", type=float, default=0.0)
@@ -577,7 +588,7 @@ def build_parser() -> argparse.ArgumentParser:
     mainline.add_argument("--max-candidates", type=int, default=10)
     mainline.add_argument("--seed", type=int, default=42)
     mainline.add_argument("--rounds", type=int, default=1)
-    mainline.add_argument("--strategy", choices=["random", "adaptive", "genetic", "bayesian", "surrogate", "hybrid"], default="adaptive")
+    mainline.add_argument("--strategy", choices=["random", "adaptive", "genetic", "bayesian", "surrogate", "repair", "hybrid", "hybrid_goa", "physics_guided_hybrid"], default="adaptive")
     mainline.add_argument("--max-runs-per-round", type=int, default=3)
     mainline.add_argument("--patience", type=int, default=2)
     mainline.add_argument("--min-improvement", type=float, default=0.0)
@@ -610,6 +621,13 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_strategies.add_argument("--ngspice-cmd", default="ngspice")
     benchmark_strategies.add_argument("--mock-dataset-json", default="examples/sky130_candidate_chain_row.json")
     benchmark_strategies.add_argument("--mock-ngspice", action="store_true")
+    hybrid = sub.add_parser("hybrid-goa-optimize")
+    hybrid.add_argument("--history")
+    hybrid.add_argument("--leaderboard")
+    hybrid.add_argument("--param-space", default="examples/sample_params.yaml")
+    hybrid.add_argument("--output-root", default="outputs/hybrid_goa")
+    hybrid.add_argument("--max-candidates", type=int, default=30)
+    hybrid.add_argument("--seed", type=int, default=42)
     return parser
 
 
