@@ -1,6 +1,6 @@
 # CircuitPilot Product-Demo Dashboard
 
-This frontend is a static product-demo dashboard for CircuitPilot engineering evidence packages. It reads JSON, PNG, and Markdown files from `public/demo_data/<case_id>/` and does not require a backend.
+This frontend is a product-demo dashboard for CircuitPilot engineering evidence packages. It can read static JSON, PNG, and Markdown files from `public/demo_data/<case_id>/`, or it can use the FastAPI dashboard adapter.
 
 ## Run
 
@@ -47,29 +47,29 @@ outputs/product_demo/<case_id>/07_report/*.md
 
 The checked-in `public_demo` data is a static example copied from `outputs/product_demo/public_demo/`.
 
+## API Mode
+
+Create `frontend/.env` from `frontend/.env.example`:
+
+```text
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+Static mode reads `public/demo_data/<case_id>/`. API mode should read the FastAPI service, starting with:
+
+```text
+GET /api/cases/<case_id>/bundle
+```
+
+Keep static JSON fallback available when `VITE_API_BASE_URL` is not set.
+
 ## Current Scope
 
-- Static display only.
+- Static display plus optional API-backed data loading.
 - No database, login, permissions, multi-user system, or task queue.
 - No Python optimizer or product-demo workflow changes.
 - The dashboard preserves evidence fields such as `data_source = real_simulation_csv` and `engineering_validity = simulation_only`.
 - `simulation_only` means the package is simulation/CSV evidence. It does not represent physical validation, silicon validation, or tapeout validation.
 - `awaiting_rerun_results` means rerun validation is still pending.
 
-## FastAPI Integration Later
-
-Keep the component contracts unchanged and replace the fetch adapter in `src/lib/demoData.ts`.
-
-For example, static paths like:
-
-```text
-/demo_data/<case_id>/dashboard_summary.json
-```
-
-can later become API paths like:
-
-```text
-/api/product-demo/<case_id>/dashboard-summary
-```
-
-The page should still receive the same summary, table, figure, manifest, and report shapes.
+See `../docs/dashboard_api.md` for backend startup, endpoint list, and evidence-boundary notes.
