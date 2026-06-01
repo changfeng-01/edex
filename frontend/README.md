@@ -1,6 +1,6 @@
 # CircuitPilot Product-Demo Dashboard
 
-This frontend is a product-demo dashboard for CircuitPilot engineering evidence packages. By default it reads JSON, PNG, and Markdown files from `public/demo_data/<case_id>/` and does not require a backend.
+This frontend is a product-demo dashboard for CircuitPilot engineering evidence packages. It can read static JSON, PNG, and Markdown files from `public/demo_data/<case_id>/`, or it can use the FastAPI dashboard adapter.
 
 ## Run
 
@@ -53,28 +53,18 @@ outputs/product_demo/<case_id>/07_report/*.md
 
 The checked-in `public_demo` data is a static example copied from `outputs/product_demo/public_demo/`.
 
-## Current Scope
+## API Mode
 
-- Static display only.
-- No database, login, permissions, multi-user system, or task queue.
-- No Python optimizer or product-demo workflow changes.
-- The dashboard preserves evidence fields such as `data_source = real_simulation_csv` and `engineering_validity = simulation_only`.
-- `simulation_only` means the package is simulation/CSV evidence. It does not represent physical validation, silicon validation, or tapeout validation.
-- `awaiting_rerun_results` means rerun validation is still pending.
+Create `frontend/.env` from `frontend/.env.example`:
 
-## FastAPI Integration
-
-Set `VITE_API_BASE_URL` to load a bundled dashboard payload from a FastAPI backend:
-
-```powershell
-$env:VITE_API_BASE_URL = "http://127.0.0.1:8000"
-npm run dev
+```text
+VITE_API_BASE_URL=http://localhost:8000
 ```
 
 When this variable is present, the dashboard loads:
 
 ```text
-/api/cases/<case_id>/bundle
+GET /api/cases/<case_id>/bundle
 ```
 
 When it is absent, the dashboard keeps using the static fallback:
@@ -83,4 +73,13 @@ When it is absent, the dashboard keeps using the static fallback:
 /demo_data/<case_id>/
 ```
 
-The page should still receive the same summary, table, figure, manifest, and report shapes.
+See `../docs/dashboard_api.md` for backend startup, endpoint list, and evidence-boundary notes.
+
+## Current Scope
+
+- Static display plus optional API-backed data loading.
+- No database, login, permissions, multi-user system, or task queue.
+- No Python optimizer or product-demo workflow changes.
+- The dashboard preserves evidence fields such as `data_source = real_simulation_csv` and `engineering_validity = simulation_only`.
+- `simulation_only` means the package is simulation/CSV evidence. It does not represent physical validation, silicon validation, or tapeout validation.
+- `awaiting_rerun_results` means rerun validation is still pending.

@@ -77,7 +77,7 @@ describe("product-demo 仪表盘数据", () => {
     const data = await loadProductDemoDashboard("api_demo");
 
     expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/api/cases/api_demo/bundle");
-    expect(data.basePath).toBe("/api/cases/api_demo");
+    expect(data.basePath).toBe("https://api.example.test/api/cases/api_demo");
     expect(data.summary.evidence?.engineering_validity).toBe("simulation_only");
     expect(data.tables.constraints?.rows?.[0]?.constraint).toBe("Seq_pass");
   });

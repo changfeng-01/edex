@@ -17,10 +17,12 @@ dependencies = [
   "tqdm",
   "beautifulsoup4",
   "lxml",
+  "fastapi",
+  "uvicorn",
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "httpx"]
 sky130 = ["datasets"]
 agent = ["langgraph"]
 api = ["fastapi", "uvicorn"]

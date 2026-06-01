@@ -7,3 +7,6 @@ tqdm
 pytest
 beautifulsoup4
 lxml
+fastapi
+uvicorn
+httpx

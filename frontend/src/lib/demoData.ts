@@ -25,6 +25,31 @@ const EXPECTED_REPORTS = [
   { file: "handoff_notes.md", title: "交付说明" },
 ] as const;
 
+interface ApiDashboardBundle {
+  case_id?: string;
+  summary?: DashboardSummary;
+  tables?: DashboardTables;
+  figures?: Array<{
+    key?: string;
+    title?: string;
+    file?: string;
+    url?: string;
+    exists?: boolean;
+    size_bytes?: number;
+    source_manifest_available?: boolean;
+  }>;
+  reports?: Array<{
+    name?: string;
+    file?: string;
+    title?: string;
+    url?: string;
+    exists?: boolean;
+    content?: string | null;
+    error?: string;
+  }>;
+  manifest?: PresentationManifest;
+}
+
 export function getCaseIdFromLocation(locationSearch = window.location.search): string {
   const params = new URLSearchParams(locationSearch);
   const caseId = params.get("case_id")?.trim();
@@ -83,9 +108,9 @@ async function loadProductDemoDashboardFromApi(
   caseId: string,
 ): Promise<ProductDemoDashboardData> {
   const url = `${apiBaseUrl}/api/cases/${encodedCaseId}/bundle`;
-  const result = await fetchJson<ProductDemoDashboardData>(url);
+  const result = await fetchJson<ApiDashboardBundle>(url);
   if (result.data) {
-    return result.data;
+    return normalizeApiBundle(result.data, apiBaseUrl, encodedCaseId, caseId);
   }
   return {
     caseId,
@@ -97,6 +122,72 @@ async function loadProductDemoDashboardFromApi(
     reports: [],
     resourceErrors: result.error ? [result.error] : [`${url} 加载失败`],
   };
+}
+
+async function normalizeApiBundle(
+  bundle: ApiDashboardBundle,
+  apiBaseUrl: string,
+  encodedCaseId: string,
+  fallbackCaseId: string,
+): Promise<ProductDemoDashboardData> {
+  const caseId = bundle.case_id ?? bundle.summary?.case_id ?? fallbackCaseId;
+  const basePath = `${apiBaseUrl}/api/cases/${encodedCaseId}`;
+  const summary = bundle.summary ?? fallbackSummary(caseId);
+  const reports = await normalizeApiReports(bundle.reports ?? [], apiBaseUrl);
+  const resourceErrors = reports.flatMap((report) => (report.error ? [report.error] : []));
+  return {
+    caseId,
+    basePath,
+    summary,
+    tables: bundle.tables ?? {},
+    figures: normalizeApiFigures(bundle.figures ?? [], apiBaseUrl),
+    manifest: bundle.manifest ?? null,
+    reports,
+    resourceErrors,
+  };
+}
+
+function normalizeApiFigures(figures: ApiDashboardBundle["figures"], apiBaseUrl: string): DashboardFigure[] {
+  return (figures ?? []).map((figure) => {
+    const expected = EXPECTED_FIGURES.find((item) => item.key === figure.key);
+    const file = figure.file ?? expected?.file ?? "";
+    return {
+      key: figure.key ?? file,
+      file,
+      title: expected?.title ?? figure.title ?? file,
+      size_bytes: figure.size_bytes,
+      source_manifest_available: figure.source_manifest_available,
+      url: resolveApiUrl(apiBaseUrl, figure.url ?? ""),
+    };
+  });
+}
+
+async function normalizeApiReports(reports: ApiDashboardBundle["reports"], apiBaseUrl: string): Promise<ReportPreview[]> {
+  return Promise.all(
+    (reports ?? []).map(async (report) => {
+      const file = report.file ?? report.name ?? "";
+      const known = EXPECTED_REPORTS.find((item) => item.file === file);
+      const url = resolveApiUrl(apiBaseUrl, report.url ?? "");
+      const result = report.content === undefined && url ? await fetchText(url) : { data: report.content ?? null, error: report.error };
+      return {
+        file,
+        title: known?.title ?? report.title ?? titleFromFile(file),
+        url,
+        content: result.data ?? null,
+        error: result.error,
+      };
+    }),
+  );
+}
+
+function resolveApiUrl(apiBaseUrl: string, url: string): string {
+  if (!url) {
+    return "";
+  }
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+  return `${apiBaseUrl}${url.startsWith("/") ? url : `/${url}`}`;
 }
 
 function getApiBaseUrl(): string {
