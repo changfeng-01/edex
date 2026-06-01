@@ -20,17 +20,17 @@ export function BeforeAfterPanel({ rows = [] }: BeforeAfterPanelProps) {
     .filter((row) => row.before !== null && row.after !== null);
 
   return (
-    <section className="rounded-lg border border-white/10 bg-white/[0.04] p-5" aria-label="Before-After Validation">
+    <section className="rounded-lg border border-white/10 bg-white/[0.04] p-5" aria-label="重跑前后对比">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-cyan-200">
             <GitCompareArrows size={17} />
-            Before-After Validation
+            重跑前后对比
           </div>
-          <h2 className="mt-2 text-2xl font-bold text-slate-50">Rerun comparison state</h2>
+          <h2 className="mt-2 text-2xl font-bold text-slate-50">重跑验证状态</h2>
         </div>
         <p className="max-w-xl text-sm leading-6 text-slate-400">
-          The comparison chart is shown only when after-run values exist in the package.
+          只有数据包中存在 after-run 数值时，才会展示前后对比图。
         </p>
       </div>
 
@@ -39,19 +39,19 @@ export function BeforeAfterPanel({ rows = [] }: BeforeAfterPanelProps) {
           <table className="min-w-[760px] w-full border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-white/10 text-xs uppercase text-slate-400">
-                <th className="py-3 pr-4">metric</th>
-                <th className="px-4 py-3">before_value</th>
-                <th className="px-4 py-3">after_value</th>
-                <th className="px-4 py-3">delta</th>
-                <th className="px-4 py-3">status</th>
-                <th className="py-3 pl-4">unit</th>
+                <th className="py-3 pr-4">指标</th>
+                <th className="px-4 py-3">重跑前</th>
+                <th className="px-4 py-3">重跑后</th>
+                <th className="px-4 py-3">变化量</th>
+                <th className="px-4 py-3">状态</th>
+                <th className="py-3 pl-4">单位</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-6 text-slate-400">
-                    before_after_table is missing from dashboard_tables.json
+                    dashboard_tables.json 中缺少重跑前后对比表。
                   </td>
                 </tr>
               ) : (
@@ -81,8 +81,8 @@ export function BeforeAfterPanel({ rows = [] }: BeforeAfterPanelProps) {
                 <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} />
                 <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.14)" }} />
                 <Legend />
-                <Bar dataKey="before" fill="#67e8f9" name="before" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="after" fill="#fbbf24" name="after" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="before" fill="#67e8f9" name="重跑前" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="after" fill="#fbbf24" name="重跑后" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -90,7 +90,7 @@ export function BeforeAfterPanel({ rows = [] }: BeforeAfterPanelProps) {
               <div>
                 <div className="text-lg font-semibold text-amber-100">尚未生成 after-run 结果</div>
                 <p className="mt-2 text-sm text-amber-100/75">
-                  Current status: {formatStatusLabel(rows[0]?.status ?? "awaiting_rerun_results")}. No before-after chart is rendered.
+                  当前状态：{formatStatusLabel(rows[0]?.status ?? "awaiting_rerun_results")}。因此不渲染前后对比图。
                 </p>
               </div>
             </div>

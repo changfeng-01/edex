@@ -1,7 +1,7 @@
 {
   "case_id": "public_demo",
   "package_version": "1.0",
-  "input_dir": "D:\\EDA大赛\\examples\\demo_run",
+  "input_dir": "D:\\EDA大赛\\outputs\\real_720_files",
   "validation_status": "awaiting_rerun_results",
   "candidate_status": "available",
   "evidence": {

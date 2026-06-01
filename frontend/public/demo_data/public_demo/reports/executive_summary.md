@@ -1,7 +1,7 @@
 # Executive Summary: public_demo
 
-- overall_status: FAIL_OVERLAP
-- overall_score: 61.99999999999997
+- overall_status: FAIL_RIPPLE
+- overall_score: 31.30559789102252
 - hard_constraint_passed: False
 - validation_status: awaiting_rerun_results
 - candidate_status: available

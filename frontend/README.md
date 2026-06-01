@@ -1,6 +1,6 @@
 # CircuitPilot Product-Demo Dashboard
 
-This frontend is a static product-demo dashboard for CircuitPilot engineering evidence packages. It reads JSON, PNG, and Markdown files from `public/demo_data/<case_id>/` and does not require a backend.
+This frontend is a product-demo dashboard for CircuitPilot engineering evidence packages. By default it reads JSON, PNG, and Markdown files from `public/demo_data/<case_id>/` and does not require a backend.
 
 ## Run
 
@@ -19,6 +19,12 @@ http://127.0.0.1:5173/?case_id=<case_id>
 ```
 
 ## Copy Product-Demo Data
+
+The one-click local demo command evaluates the sample waveform, packages the dashboard, and syncs this directory automatically:
+
+```powershell
+python -m goa_eval.cli demo
+```
 
 For a package generated at:
 
@@ -56,20 +62,25 @@ The checked-in `public_demo` data is a static example copied from `outputs/produ
 - `simulation_only` means the package is simulation/CSV evidence. It does not represent physical validation, silicon validation, or tapeout validation.
 - `awaiting_rerun_results` means rerun validation is still pending.
 
-## FastAPI Integration Later
+## FastAPI Integration
 
-Keep the component contracts unchanged and replace the fetch adapter in `src/lib/demoData.ts`.
+Set `VITE_API_BASE_URL` to load a bundled dashboard payload from a FastAPI backend:
 
-For example, static paths like:
-
-```text
-/demo_data/<case_id>/dashboard_summary.json
+```powershell
+$env:VITE_API_BASE_URL = "http://127.0.0.1:8000"
+npm run dev
 ```
 
-can later become API paths like:
+When this variable is present, the dashboard loads:
 
 ```text
-/api/product-demo/<case_id>/dashboard-summary
+/api/cases/<case_id>/bundle
+```
+
+When it is absent, the dashboard keeps using the static fallback:
+
+```text
+/demo_data/<case_id>/
 ```
 
 The page should still receive the same summary, table, figure, manifest, and report shapes.

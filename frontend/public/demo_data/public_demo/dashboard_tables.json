@@ -4,12 +4,12 @@
     "rows": [
       {
         "case_id": "public_demo",
-        "run_id": "public_demo_run",
-        "overall_status": "FAIL_OVERLAP",
-        "overall_score": 61.99999999999997,
+        "run_id": "real_20260601_163625",
+        "overall_status": "FAIL_RIPPLE",
+        "overall_score": 31.30559789102252,
         "hard_constraint_passed": false,
-        "stage_count": 3,
-        "resolved_output_node_count": 3,
+        "stage_count": 13,
+        "resolved_output_node_count": 13,
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
         "evidence_level": "level_1_external_csv",
@@ -46,36 +46,36 @@
       },
       {
         "constraint": "Max_overlap_ratio",
-        "status": "fail",
-        "current_value": "0.333333",
+        "status": "pass",
+        "current_value": "0",
         "threshold": "0.1",
         "reason": "Max_overlap_ratio exceeds max_overlap_ratio"
       },
       {
         "constraint": "Max_ripple",
-        "status": "pass",
-        "current_value": "0.2",
+        "status": "fail",
+        "current_value": "7.30553",
         "threshold": "0.5",
         "reason": "Max_ripple exceeds max_ripple_v"
       },
       {
         "constraint": "Max_voltage_loss",
         "status": "pass",
-        "current_value": "0.1",
+        "current_value": "0.278166",
         "threshold": "0.5",
         "reason": "Max_voltage_loss exceeds max_voltage_loss_v"
       },
       {
         "constraint": "Delay_std",
-        "status": "pass",
-        "current_value": "8.47033e-22",
+        "status": "fail",
+        "current_value": "0.00293173",
         "threshold": "5e-07",
         "reason": "Delay_std exceeds max_delay_std"
       },
       {
         "constraint": "VOH_min_margin",
         "status": "pass",
-        "current_value": "1.15",
+        "current_value": "9.20461",
         "threshold": "1",
         "reason": "VOH_min margin is below min_voh_margin_v"
       }
@@ -87,11 +87,11 @@
       {
         "rank": 1,
         "candidate_id": "cand_001",
-        "priority": 85,
-        "parameter_changes": "drive_resistance: 1000",
-        "trigger_metric": "Max_overlap_ratio",
+        "priority": 90,
+        "parameter_changes": "capacitance: 1.2e-12",
+        "trigger_metric": "Max_ripple",
         "strategy": "constrained_random",
-        "search_score": 85,
+        "search_score": 124.883,
         "status": "ready_for_rerun",
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only"
@@ -99,11 +99,11 @@
       {
         "rank": 2,
         "candidate_id": "cand_002",
-        "priority": 85,
-        "parameter_changes": "drive_resistance: 1500",
-        "trigger_metric": "Max_overlap_ratio",
+        "priority": 90,
+        "parameter_changes": "capacitance: 1e-12",
+        "trigger_metric": "Max_ripple",
         "strategy": "constrained_random",
-        "search_score": 85,
+        "search_score": 124.883,
         "status": "ready_for_rerun",
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only"
@@ -111,11 +111,11 @@
       {
         "rank": 3,
         "candidate_id": "cand_003",
-        "priority": 85,
-        "parameter_changes": "drive_resistance: 2000",
-        "trigger_metric": "Max_overlap_ratio",
+        "priority": 90,
+        "parameter_changes": "capacitance: 8e-13",
+        "trigger_metric": "Max_ripple",
         "strategy": "constrained_random",
-        "search_score": 85,
+        "search_score": 124.883,
         "status": "ready_for_rerun",
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only"
@@ -123,11 +123,11 @@
       {
         "rank": 4,
         "candidate_id": "cand_004",
-        "priority": 85,
-        "parameter_changes": "drive_resistance: 1000, transistor_width: 8e-07",
-        "trigger_metric": "Max_overlap_ratio;Delay_mean",
+        "priority": 90,
+        "parameter_changes": "capacitance: 1.2e-12, drive_resistance: 1500",
+        "trigger_metric": "Max_ripple;Delay_mean",
         "strategy": "constrained_random",
-        "search_score": 80,
+        "search_score": 119.883,
         "status": "ready_for_rerun",
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only"
@@ -135,11 +135,11 @@
       {
         "rank": 5,
         "candidate_id": "cand_005",
-        "priority": 85,
-        "parameter_changes": "drive_resistance: 1000, transistor_width: 1e-06",
-        "trigger_metric": "Max_overlap_ratio;Delay_mean",
+        "priority": 90,
+        "parameter_changes": "capacitance: 1.2e-12, drive_resistance: 2000",
+        "trigger_metric": "Max_ripple;Delay_mean",
         "strategy": "constrained_random",
-        "search_score": 80,
+        "search_score": 119.883,
         "status": "ready_for_rerun",
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only"
@@ -147,11 +147,11 @@
       {
         "rank": 6,
         "candidate_id": "cand_006",
-        "priority": 85,
-        "parameter_changes": "drive_resistance: 1000, transistor_width: 1.2e-06",
-        "trigger_metric": "Max_overlap_ratio;Delay_mean",
+        "priority": 90,
+        "parameter_changes": "capacitance: 1e-12, drive_resistance: 1500",
+        "trigger_metric": "Max_ripple;Delay_mean",
         "strategy": "constrained_random",
-        "search_score": 80,
+        "search_score": 119.883,
         "status": "ready_for_rerun",
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only"
@@ -159,11 +159,11 @@
       {
         "rank": 7,
         "candidate_id": "cand_007",
-        "priority": 85,
-        "parameter_changes": "drive_resistance: 1500, transistor_width: 8e-07",
-        "trigger_metric": "Max_overlap_ratio;Delay_mean",
+        "priority": 90,
+        "parameter_changes": "capacitance: 8e-13, drive_resistance: 1500",
+        "trigger_metric": "Max_ripple;Delay_mean",
         "strategy": "constrained_random",
-        "search_score": 80,
+        "search_score": 119.883,
         "status": "ready_for_rerun",
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only"
@@ -171,11 +171,11 @@
       {
         "rank": 8,
         "candidate_id": "cand_008",
-        "priority": 85,
-        "parameter_changes": "drive_resistance: 1500, transistor_width: 1e-06",
-        "trigger_metric": "Max_overlap_ratio;Delay_mean",
+        "priority": 90,
+        "parameter_changes": "capacitance: 8e-13, drive_resistance: 2000",
+        "trigger_metric": "Max_ripple;Delay_mean",
         "strategy": "constrained_random",
-        "search_score": 80,
+        "search_score": 119.883,
         "status": "ready_for_rerun",
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only"
@@ -183,11 +183,11 @@
       {
         "rank": 9,
         "candidate_id": "cand_009",
-        "priority": 85,
-        "parameter_changes": "drive_resistance: 2000, transistor_width: 1e-06",
-        "trigger_metric": "Max_overlap_ratio;Delay_mean",
+        "priority": 90,
+        "parameter_changes": "capacitance: 8e-13, load_cap: 1e-12",
+        "trigger_metric": "Max_ripple;Max_ripple",
         "strategy": "constrained_random",
-        "search_score": 80,
+        "search_score": 119.883,
         "status": "ready_for_rerun",
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only"
@@ -195,11 +195,11 @@
       {
         "rank": 10,
         "candidate_id": "cand_010",
-        "priority": 80,
-        "parameter_changes": "drive_resistance: 1000",
-        "trigger_metric": "Delay_mean",
+        "priority": 90,
+        "parameter_changes": "capacitance: 1e-12, transistor_width: 1.2e-06",
+        "trigger_metric": "Max_ripple;Delay_mean",
         "strategy": "constrained_random",
-        "search_score": 80,
+        "search_score": 119.883,
         "status": "ready_for_rerun",
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only"
@@ -211,7 +211,7 @@
     "rows": [
       {
         "metric": "overall_score",
-        "before_value": 62.0,
+        "before_value": 31.3056,
         "after_value": null,
         "delta": null,
         "status": "awaiting_rerun_results",
@@ -219,7 +219,7 @@
       },
       {
         "metric": "Max_overlap_ratio",
-        "before_value": 0.333333,
+        "before_value": 0.0,
         "after_value": null,
         "delta": null,
         "status": "awaiting_rerun_results",
@@ -227,7 +227,7 @@
       },
       {
         "metric": "Max_ripple",
-        "before_value": 0.2,
+        "before_value": 7.30553,
         "after_value": null,
         "delta": null,
         "status": "awaiting_rerun_results",
@@ -235,7 +235,7 @@
       },
       {
         "metric": "Max_voltage_loss",
-        "before_value": 0.1,
+        "before_value": 0.278166,
         "after_value": null,
         "delta": null,
         "status": "awaiting_rerun_results",

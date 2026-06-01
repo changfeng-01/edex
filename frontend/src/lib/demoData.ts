@@ -11,18 +11,18 @@ import type {
 export const DEFAULT_CASE_ID = "public_demo";
 
 const EXPECTED_FIGURES = [
-  { key: "waveform", file: "fig01_waveform_overview.png", title: "Waveform overview" },
-  { key: "constraints", file: "fig02_constraint_status.png", title: "Constraint status" },
-  { key: "metrics", file: "fig03_metric_comparison.png", title: "Metric comparison" },
-  { key: "candidates", file: "fig04_candidate_ranking.png", title: "Candidate ranking" },
-  { key: "before_after", file: "fig05_before_after_comparison.png", title: "Before-after comparison" },
-  { key: "evidence", file: "fig06_evidence_card.png", title: "Evidence card" },
+  { key: "waveform", file: "fig01_waveform_overview.png", title: "波形总览" },
+  { key: "constraints", file: "fig02_constraint_status.png", title: "约束状态" },
+  { key: "metrics", file: "fig03_metric_comparison.png", title: "指标对比" },
+  { key: "candidates", file: "fig04_candidate_ranking.png", title: "候选参数排序" },
+  { key: "before_after", file: "fig05_before_after_comparison.png", title: "重跑前后对比" },
+  { key: "evidence", file: "fig06_evidence_card.png", title: "证据边界卡片" },
 ] as const;
 
 const EXPECTED_REPORTS = [
-  { file: "executive_summary.md", title: "Executive Summary" },
-  { file: "demo_report.md", title: "Demo Report" },
-  { file: "handoff_notes.md", title: "Handoff Notes" },
+  { file: "executive_summary.md", title: "执行摘要" },
+  { file: "demo_report.md", title: "演示报告" },
+  { file: "handoff_notes.md", title: "交付说明" },
 ] as const;
 
 export function getCaseIdFromLocation(locationSearch = window.location.search): string {
@@ -33,6 +33,10 @@ export function getCaseIdFromLocation(locationSearch = window.location.search): 
 
 export async function loadProductDemoDashboard(caseId = getCaseIdFromLocation()): Promise<ProductDemoDashboardData> {
   const encodedCaseId = encodeURIComponent(caseId);
+  const apiBaseUrl = getApiBaseUrl();
+  if (apiBaseUrl) {
+    return loadProductDemoDashboardFromApi(apiBaseUrl, encodedCaseId, caseId);
+  }
   const basePath = `/demo_data/${encodedCaseId}`;
   const errors: string[] = [];
 
@@ -73,6 +77,32 @@ export async function loadProductDemoDashboard(caseId = getCaseIdFromLocation())
   };
 }
 
+async function loadProductDemoDashboardFromApi(
+  apiBaseUrl: string,
+  encodedCaseId: string,
+  caseId: string,
+): Promise<ProductDemoDashboardData> {
+  const url = `${apiBaseUrl}/api/cases/${encodedCaseId}/bundle`;
+  const result = await fetchJson<ProductDemoDashboardData>(url);
+  if (result.data) {
+    return result.data;
+  }
+  return {
+    caseId,
+    basePath: `${apiBaseUrl}/api/cases/${encodedCaseId}`,
+    summary: fallbackSummary(caseId),
+    tables: {},
+    figures: [],
+    manifest: null,
+    reports: [],
+    resourceErrors: result.error ? [result.error] : [`${url} 加载失败`],
+  };
+}
+
+function getApiBaseUrl(): string {
+  return (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
+}
+
 export function fallbackSummary(caseId: string): DashboardSummary {
   return {
     case_id: caseId,
@@ -99,11 +129,10 @@ export function fallbackSummary(caseId: string): DashboardSummary {
 export function formatStatusLabel(status: string | undefined | null): string {
   switch ((status ?? "").trim()) {
     case "awaiting_rerun_results":
-      return "等待重跑验证";
     case "ready_for_rerun":
       return "等待重跑验证";
     case "awaiting_candidate_generation":
-      return "等待候选生成";
+      return "候选待生成";
     case "available":
       return "可展示";
     case "pass":
@@ -126,7 +155,7 @@ export function formatValue(value: unknown): string {
     return "N/A";
   }
   if (typeof value === "boolean") {
-    return value ? "true" : "false";
+    return value ? "是" : "否";
   }
   if (typeof value === "number") {
     return Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
@@ -160,7 +189,7 @@ function buildFigures(
     return {
       key: expected.key,
       file,
-      title: payload.title ?? expected.title,
+      title: expected.title,
       size_bytes: payload.size_bytes,
       source_manifest_available: payload.source_manifest_available,
       url: `${basePath}/figures/${file}`,
@@ -194,11 +223,11 @@ async function fetchJson<T>(url: string): Promise<{ data: T | null; error?: stri
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      return { data: null, error: `${url} returned ${response.status}` };
+      return { data: null, error: `${url} 返回 ${response.status}` };
     }
     return { data: (await response.json()) as T };
   } catch (error) {
-    return { data: null, error: `${url} could not be loaded: ${String(error)}` };
+    return { data: null, error: `${url} 加载失败：${String(error)}` };
   }
 }
 
@@ -206,10 +235,10 @@ async function fetchText(url: string): Promise<{ data: string | null; error?: st
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      return { data: null, error: `${url} returned ${response.status}` };
+      return { data: null, error: `${url} 返回 ${response.status}` };
     }
     return { data: await response.text() };
   } catch (error) {
-    return { data: null, error: `${url} could not be loaded: ${String(error)}` };
+    return { data: null, error: `${url} 加载失败：${String(error)}` };
   }
 }

@@ -3,36 +3,36 @@
     "file": "fig01_waveform_overview.png",
     "title": "Waveform",
     "size_bytes": 22900,
-    "source_manifest_available": false
+    "source_manifest_available": true
   },
   "constraints": {
     "file": "fig02_constraint_status.png",
     "title": "Constraints",
-    "size_bytes": 29223,
-    "source_manifest_available": false
+    "size_bytes": 28817,
+    "source_manifest_available": true
   },
   "metrics": {
     "file": "fig03_metric_comparison.png",
     "title": "Metrics",
-    "size_bytes": 50488,
-    "source_manifest_available": false
+    "size_bytes": 49376,
+    "source_manifest_available": true
   },
   "candidates": {
     "file": "fig04_candidate_ranking.png",
     "title": "Candidates",
-    "size_bytes": 51189,
-    "source_manifest_available": false
+    "size_bytes": 50694,
+    "source_manifest_available": true
   },
   "before_after": {
     "file": "fig05_before_after_comparison.png",
     "title": "Before After",
     "size_bytes": 21394,
-    "source_manifest_available": false
+    "source_manifest_available": true
   },
   "evidence": {
     "file": "fig06_evidence_card.png",
     "title": "Evidence",
     "size_bytes": 57860,
-    "source_manifest_available": false
+    "source_manifest_available": true
   }
 }

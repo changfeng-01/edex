@@ -1,24 +1,29 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { formatStatusLabel, hasAfterValue, loadProductDemoDashboard } from "./demoData";
 
-describe("product-demo dashboard data", () => {
-  it("maps evidence workflow statuses to safe display labels", () => {
+describe("product-demo 仪表盘数据", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("将证据工作流状态映射为中文显示标签", () => {
     expect(formatStatusLabel("awaiting_rerun_results")).toBe("等待重跑验证");
     expect(formatStatusLabel("ready_for_rerun")).toBe("等待重跑验证");
-    expect(formatStatusLabel("awaiting_candidate_generation")).toBe("等待候选生成");
+    expect(formatStatusLabel("awaiting_candidate_generation")).toBe("候选待生成");
     expect(formatStatusLabel("pass")).toBe("通过");
     expect(formatStatusLabel("missing")).toBe("缺失");
   });
 
-  it("does not treat empty after values as chartable data", () => {
+  it("不会把空 after 值当作可绘图数据", () => {
     expect(hasAfterValue(null)).toBe(false);
     expect(hasAfterValue(undefined)).toBe(false);
     expect(hasAfterValue("")).toBe(false);
     expect(hasAfterValue(0)).toBe(true);
   });
 
-  it("loads partial static resources and keeps fallback data available", async () => {
+  it("加载部分静态资源时保留兜底数据", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.endsWith("/dashboard_summary.json")) {
@@ -40,6 +45,40 @@ describe("product-demo dashboard data", () => {
     expect(data.summary.evidence?.engineering_validity).toBe("simulation_only");
     expect(data.tables.constraints?.rows ?? []).toEqual([]);
     expect(data.figures).toHaveLength(6);
+    expect(data.figures[0].title).toBe("波形总览");
     expect(data.resourceErrors.length).toBeGreaterThan(0);
+  });
+
+  it("配置 VITE_API_BASE_URL 时加载后端 bundle", async () => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.example.test");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "https://api.example.test/api/cases/api_demo/bundle") {
+        return new Response(
+          JSON.stringify({
+            caseId: "api_demo",
+            basePath: "/api/cases/api_demo",
+            summary: {
+              case_id: "api_demo",
+              evidence: { data_source: "real_simulation_csv", engineering_validity: "simulation_only" },
+            },
+            tables: { constraints: { rows: [{ constraint: "Seq_pass", status: "fail" }] } },
+            figures: [],
+            manifest: { case_id: "api_demo" },
+            reports: [],
+            resourceErrors: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("", { status: 404 });
+    });
+
+    const data = await loadProductDemoDashboard("api_demo");
+
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/api/cases/api_demo/bundle");
+    expect(data.basePath).toBe("/api/cases/api_demo");
+    expect(data.summary.evidence?.engineering_validity).toBe("simulation_only");
+    expect(data.tables.constraints?.rows?.[0]?.constraint).toBe("Seq_pass");
   });
 });

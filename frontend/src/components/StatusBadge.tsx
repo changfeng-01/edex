@@ -23,7 +23,7 @@ export function StatusBadge({ status, emphasis = "normal" }: StatusBadgeProps) {
   const normalized = raw.trim();
   const key = normalized.toLowerCase();
   const classes = toneClasses[key] ?? "border-cyan-300/25 bg-white/5 text-slate-200";
-  const label = typeof status === "boolean" ? (status ? "true" : "false") : formatStatusLabel(normalized);
+  const label = typeof status === "boolean" ? (status ? "是" : "否") : formatStatusLabel(normalized);
 
   return (
     <span
