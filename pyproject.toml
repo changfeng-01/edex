@@ -25,6 +25,7 @@ dependencies = [
 test = ["pytest", "httpx"]
 sky130 = ["datasets"]
 agent = ["langgraph"]
+api = ["fastapi", "uvicorn"]
 
 [project.scripts]
 circuitpilot = "goa_eval.cli:main"

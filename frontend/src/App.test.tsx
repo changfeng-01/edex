@@ -8,7 +8,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("CircuitPilot dashboard", () => {
+describe("CircuitPilot 仪表盘", () => {
   beforeEach(() => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
@@ -88,23 +88,23 @@ describe("CircuitPilot dashboard", () => {
     });
   });
 
-  it("keeps product-demo status and simulation boundary visible", async () => {
+  it("保持产品演示状态和仿真边界可见", async () => {
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /CircuitPilot Dashboard/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /CircuitPilot 演示仪表盘/ })).toBeInTheDocument();
     expect(screen.getAllByText(/FAIL_OVERLAP/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/simulation_only/).length).toBeGreaterThan(0);
     expect(screen.getByText(/不代表物理验证、硅验证或流片验证/)).toBeInTheDocument();
     expect(screen.getAllByText("等待重跑验证").length).toBeGreaterThan(0);
   });
 
-  it("renders handoff modules without overstated validation wording", async () => {
+  it("用中文渲染交付模块且不夸大验证结论", async () => {
     render(<App />);
 
-    expect(await screen.findByRole("region", { name: "Candidate Ranking" })).toBeInTheDocument();
-    expect(screen.getByText(/Candidate recommendations for rerun/)).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "候选参数排序" })).toBeInTheDocument();
+    expect(screen.getByText(/下一轮重跑候选建议/)).toBeInTheDocument();
     expect(screen.getByText("尚未生成 after-run 结果")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Reports Handoff" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "报告交付" })).toBeInTheDocument();
     expect(screen.queryByText(/validated improvement/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/silicon verified/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/physical validation achieved/i)).not.toBeInTheDocument();

@@ -13,6 +13,7 @@ from goa_eval.batch_eval import run_batch_evaluation
 from goa_eval.ai_profile_assistant import run_ai_profile_assistant
 from goa_eval.circuit_profiles import validate_profile_references
 from goa_eval.csv_import_adapter import run_csv_import, run_csv_import_sweep
+from goa_eval.demo_mainline import run_demo_mainline
 from goa_eval.evaluation.feature_extractor import extract_waveform_features
 from goa_eval.evaluation.mock_waveform import generate_mock_waveform
 from goa_eval.evaluation.scoring import compute_metric_results
@@ -120,6 +121,22 @@ def main(argv: list[str] | None = None) -> int:
             case_id=args.case_id,
         )
         print(f"Product demo package written to {case_dir}")
+        return 0
+    if args.command == "demo":
+        manifest = run_demo_mainline(
+            case_id=args.case_id,
+            waveform_path=Path(args.waveform),
+            param_space_path=Path(args.param_space),
+            demo_run_dir=Path(args.demo_run_dir) if args.demo_run_dir else None,
+            product_demo_root=Path(args.output_root),
+            frontend_data_root=Path(args.frontend_data_root),
+            spec_path=Path(args.spec),
+            seed=args.seed,
+            max_candidates=args.max_candidates,
+            mock_response=args.mock_response,
+        )
+        print(f"CircuitPilot demo package written to {manifest['output_directories']['product_demo_case_dir']}")
+        print(f"Dashboard data synced to {manifest['output_directories']['frontend_demo_data_dir']}")
         return 0
     if args.command == "evaluate-batch":
         run_batch_evaluation(runs_dir=Path(args.runs_dir), output_dir=Path(args.output_dir))
@@ -486,6 +503,17 @@ def build_parser() -> argparse.ArgumentParser:
     product_demo.add_argument("--input-dir", required=True)
     product_demo.add_argument("--output-dir", default="outputs/product_demo")
     product_demo.add_argument("--case-id", required=True)
+    demo = sub.add_parser("demo")
+    demo.add_argument("--case-id", default="public_demo")
+    demo.add_argument("--waveform", default="examples/sample_waveform.csv")
+    demo.add_argument("--param-space", default="examples/sample_params.yaml")
+    demo.add_argument("--spec", default="config/spec.yaml")
+    demo.add_argument("--demo-run-dir")
+    demo.add_argument("--output-root", default="outputs/product_demo")
+    demo.add_argument("--frontend-data-root", default="frontend/public/demo_data")
+    demo.add_argument("--max-candidates", type=int, default=10)
+    demo.add_argument("--seed", type=int, default=42)
+    demo.add_argument("--mock-response", default=None)
     batch = sub.add_parser("evaluate-batch")
     batch.add_argument("--runs-dir", required=True)
     batch.add_argument("--output-dir", default="outputs_batch")

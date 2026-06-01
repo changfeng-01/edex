@@ -38,8 +38,8 @@ export default function App() {
       <main className="min-h-screen bg-slate-950 p-6 text-slate-100">
         <div className="mx-auto grid min-h-[70vh] max-w-5xl place-items-center rounded-lg border border-white/10 bg-white/[0.04]">
           <div className="text-center">
-            <div className="text-sm font-semibold uppercase tracking-wide text-cyan-200">CircuitPilot Dashboard</div>
-            <div className="mt-3 text-2xl font-bold">{loading ? "Loading product-demo package..." : "Dashboard data unavailable"}</div>
+            <div className="text-sm font-semibold uppercase tracking-wide text-cyan-200">CircuitPilot 演示仪表盘</div>
+            <div className="mt-3 text-2xl font-bold">{loading ? "正在加载演示数据包..." : "仪表盘数据不可用"}</div>
           </div>
         </div>
       </main>
@@ -53,8 +53,8 @@ export default function App() {
         <Header summary={data.summary} />
 
         {data.resourceErrors.length > 0 ? (
-          <section className="rounded-lg border border-amber-300/25 bg-amber-300/[0.08] p-4 text-sm text-amber-100" aria-label="Resource warnings">
-            Some static resources are missing or unavailable. The dashboard is showing available data and local fallback states.
+          <section className="rounded-lg border border-amber-300/25 bg-amber-300/[0.08] p-4 text-sm text-amber-100" aria-label="资源加载提示">
+            部分静态资源缺失或暂时不可用。当前页面会继续展示已加载的数据和本地兜底状态。
           </section>
         ) : null}
 

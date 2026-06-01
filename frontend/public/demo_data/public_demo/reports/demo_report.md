@@ -15,7 +15,7 @@
 ## What To Read
 
 - Run summary: `run_summary_table.csv`
-- Constraints: `constraint_table.csv` (fail: 1, pass: 7)
+- Constraints: `constraint_table.csv` (fail: 2, pass: 6)
 - Candidate ranking: `top_candidates_table.csv`
 - Before/after validation: `before_after_table.csv`
 

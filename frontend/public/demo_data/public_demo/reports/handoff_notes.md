@@ -5,12 +5,12 @@
 Run from the repository root:
 
 ```bash
-python -m goa_eval.cli product-demo --input-dir D:/EDA大赛/examples/demo_run --output-dir outputs/product_demo --case-id public_demo
+python -m goa_eval.cli product-demo --input-dir D:/EDA大赛/outputs/real_720_files --output-dir outputs/product_demo --case-id public_demo
 ```
 
 ## Missing Optional Inputs
 
-- analysis_metrics.json, validation_summary.csv, waveform.csv
+- validation_summary.csv, waveform.csv
 
 ## Evidence Rules For Teammates
 

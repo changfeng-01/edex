@@ -20,6 +20,12 @@ http://127.0.0.1:5173/?case_id=<case_id>
 
 ## Copy Product-Demo Data
 
+The one-click local demo command evaluates the sample waveform, packages the dashboard, and syncs this directory automatically:
+
+```powershell
+python -m goa_eval.cli demo
+```
+
 For a package generated at:
 
 ```text
@@ -55,13 +61,19 @@ Create `frontend/.env` from `frontend/.env.example`:
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
-Static mode reads `public/demo_data/<case_id>/`. API mode should read the FastAPI service, starting with:
+When this variable is present, the dashboard loads:
 
 ```text
 GET /api/cases/<case_id>/bundle
 ```
 
-Keep static JSON fallback available when `VITE_API_BASE_URL` is not set.
+When it is absent, the dashboard keeps using the static fallback:
+
+```text
+/demo_data/<case_id>/
+```
+
+See `../docs/dashboard_api.md` for backend startup, endpoint list, and evidence-boundary notes.
 
 ## Current Scope
 
@@ -71,5 +83,3 @@ Keep static JSON fallback available when `VITE_API_BASE_URL` is not set.
 - The dashboard preserves evidence fields such as `data_source = real_simulation_csv` and `engineering_validity = simulation_only`.
 - `simulation_only` means the package is simulation/CSV evidence. It does not represent physical validation, silicon validation, or tapeout validation.
 - `awaiting_rerun_results` means rerun validation is still pending.
-
-See `../docs/dashboard_api.md` for backend startup, endpoint list, and evidence-boundary notes.
