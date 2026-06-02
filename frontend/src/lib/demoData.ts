@@ -190,7 +190,7 @@ function resolveApiUrl(apiBaseUrl: string, url: string): string {
   return `${apiBaseUrl}${url.startsWith("/") ? url : `/${url}`}`;
 }
 
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
   return (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
 }
 

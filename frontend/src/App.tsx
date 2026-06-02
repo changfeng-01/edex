@@ -8,16 +8,31 @@ import { FiguresGallery } from "./components/FiguresGallery";
 import { Header } from "./components/Header";
 import { OverviewCards } from "./components/OverviewCards";
 import { ReportsPanel } from "./components/ReportsPanel";
-import { loadProductDemoDashboard } from "./lib/demoData";
+import { UploadWorkspace } from "./components/upload/UploadWorkspace";
+import { getApiBaseUrl, getCaseIdFromLocation, loadProductDemoDashboard, DEFAULT_CASE_ID } from "./lib/demoData";
 import type { ProductDemoDashboardData } from "./types";
 
 export default function App() {
   const [data, setData] = useState<ProductDemoDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [caseId, setCaseId] = useState(getCaseIdFromLocation());
+  const apiBaseUrl = getApiBaseUrl();
+  const shouldShowUpload = Boolean(apiBaseUrl) && caseId === DEFAULT_CASE_ID && !new URLSearchParams(window.location.search).get("case_id");
 
   useEffect(() => {
+    const onPopState = () => setCaseId(getCaseIdFromLocation());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (shouldShowUpload) {
+      setLoading(false);
+      return;
+    }
     let active = true;
-    loadProductDemoDashboard()
+    setLoading(true);
+    loadProductDemoDashboard(caseId)
       .then((loaded) => {
         if (active) {
           setData(loaded);
@@ -31,7 +46,11 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [caseId, shouldShowUpload]);
+
+  if (shouldShowUpload) {
+    return <UploadWorkspace apiBaseUrl={apiBaseUrl} onCaseCreated={setCaseId} />;
+  }
 
   if (!data) {
     return (
