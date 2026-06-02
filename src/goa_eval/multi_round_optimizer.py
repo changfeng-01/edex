@@ -14,6 +14,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern, WhiteKernel
 
+from goa_eval.physics_engine import rank_physics_guided_points
 from goa_eval.sky130_sweep import run_sky130_sweep
 
 
@@ -129,6 +130,18 @@ def build_strategy_sweep_config(
         for point, metadata in _genetic_points(parameters, history, max_runs=max_runs, seed=seed):
             metadata["optimizer_strategy"] = strategy
             _append_unique_point(points, point_metadata, point, metadata, parameters, seen, max_runs)
+
+    if strategy == "physics_guided_hybrid" and len(points) < max_runs:
+        physics_ranked_points = rank_physics_guided_points(
+            grid,
+            history=history,
+            max_points=None,
+        )
+        for point, metadata in physics_ranked_points:
+            metadata["optimizer_strategy"] = strategy
+            _append_unique_point(points, point_metadata, point, metadata, parameters, seen, max_runs)
+            if len(points) >= max_runs:
+                break
 
     if strategy in {"bayesian", "surrogate", "hybrid", "hybrid_goa", "physics_guided_hybrid"} and len(points) < max_runs:
         ranked_model_points = _model_ranked_points(parameters, history, grid, strategy=strategy, seed=seed)
@@ -845,6 +858,11 @@ def _source_metadata(candidate_source: str, **values) -> dict[str, object]:
         "objective_score": "",
         "model_status": "",
         "model_prediction": "",
+        "physics_score": "",
+        "physical_hard_passed": "",
+        "physics_proxy_json": "",
+        "physics_violations": "",
+        "physics_rationale": "",
     }
     metadata.update({key: "" if value is None or (isinstance(value, float) and pd.isna(value)) else value for key, value in values.items()})
     return metadata

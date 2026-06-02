@@ -11,7 +11,7 @@ from goa_eval.io_utils import write_json
 from goa_eval.sky130_mainline import run_sky130_mainline
 
 
-DEFAULT_STRATEGIES = ["random", "adaptive", "surrogate", "repair", "hybrid_goa"]
+DEFAULT_STRATEGIES = ["random", "adaptive", "surrogate", "repair", "hybrid_goa", "physics_guided_hybrid"]
 
 
 def run_strategy_benchmark(
@@ -142,6 +142,14 @@ def _benchmark_row(
         "source_candidate_trigger_metric": best.get("source_candidate_trigger_metric", ""),
         "source_candidate_rationale": best.get("source_candidate_rationale", ""),
         "model_status": best.get("model_status", ""),
+        "physics_score": _as_float(best.get("physics_score")),
+        "physical_hard_passed": _as_bool(best.get("physical_hard_passed")),
+        "physics_violations": best.get("physics_violations", ""),
+        "physics_rationale": best.get("physics_rationale", ""),
+        "physics_proxy_json": best.get("physics_proxy_json", ""),
+        "physics_pass_rate": _physics_pass_rate(leaderboard),
+        "avg_physics_score": _mean_column(leaderboard, "physics_score"),
+        "physics_violation_rate": _physics_violation_rate(leaderboard),
         "changed_parameters": _changed_parameters(best, parameter_names),
         "mock_used": bool(payload.get("mock_used")),
         "evidence_level": payload.get("evidence_level"),
@@ -181,6 +189,9 @@ def _summary(frame: pd.DataFrame, *, scenario: dict[str, Any]) -> dict[str, Any]
             "surrogate_candidate_ratio": _mean_column(group, "surrogate_candidate_ratio", fill=0.0) or 0.0,
             "exploration_candidate_ratio": _mean_column(group, "exploration_candidate_ratio", fill=0.0) or 0.0,
             "candidate_diversity_score": _mean_column(group, "candidate_diversity_score", fill=0.0) or 0.0,
+            "physics_pass_rate": _mean_column(group, "physics_pass_rate"),
+            "avg_physics_score": _mean_column(group, "avg_physics_score"),
+            "physics_violation_rate": _mean_column(group, "physics_violation_rate"),
             "avg_sim_count": float(sim_counts.mean()) if len(group) else 0.0,
             "first_pass_sim_count_mean": _json_number(first_pass.mean()),
             "improvement_per_simulation": _json_number(efficiency.mean()),
@@ -249,8 +260,8 @@ def _write_report(path: Path, summary: dict[str, Any], leaderboard: pd.DataFrame
         f"- Budget: `{scenario.get('rounds', '')}` rounds x `{scenario.get('max_runs_per_round', '')}` max runs per round",
         f"- Random baseline no replay: `{summary.get('fairness', {}).get('random_baseline_no_replay')}`",
         "",
-        "| strategy | best_score_mean | target_pass_rate | hard_fail_rate | validation_pass_rate | avg_sim_count | mock_used_rate |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| strategy | best_score_mean | target_pass_rate | hard_fail_rate | validation_pass_rate | physics_pass_rate | avg_physics_score | avg_sim_count | mock_used_rate |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for strategy, metrics in summary["strategies"].items():
         lines.append(
@@ -262,6 +273,8 @@ def _write_report(path: Path, summary: dict[str, Any], leaderboard: pd.DataFrame
                     str(metrics["target_pass_rate"]),
                     str(metrics["hard_fail_rate"]),
                     str(metrics["validation_pass_rate"]),
+                    str(metrics.get("physics_pass_rate")),
+                    str(metrics.get("avg_physics_score")),
                     str(metrics["avg_sim_count"]),
                     str(metrics["mock_used_rate"]),
                 ]
@@ -303,6 +316,7 @@ def _write_report(path: Path, summary: dict[str, Any], leaderboard: pd.DataFrame
             "- Hard constraints and target status gate interpretation before soft score comparisons.",
             "- `not_evaluable` is tracked separately from failed and skipped runs.",
             "- Candidate provenance fields keep parameter changes, trigger metrics, rationale, and model status visible for review.",
+            "- Physics prior metrics are pre-simulation ranking evidence only; they are unavailable for strategies that do not emit physics metadata.",
             "- Results remain simulation-only and must not be described as physical or silicon validation.",
         ]
     )
@@ -352,6 +366,37 @@ def _mean_column(frame: pd.DataFrame, column: str, *, fill: float | None = None)
         values = values.fillna(fill)
     mean = values.mean()
     return _json_number(mean)
+
+
+def _physics_pass_rate(frame: pd.DataFrame) -> float | None:
+    if frame.empty or "physical_hard_passed" not in frame:
+        return None
+    values = [_as_bool(value) for value in frame["physical_hard_passed"]]
+    available = [value for value in values if value is not None]
+    if not available:
+        return None
+    return float(sum(1 for value in available if value) / len(available))
+
+
+def _physics_violation_rate(frame: pd.DataFrame) -> float | None:
+    if frame.empty or "physics_violations" not in frame:
+        return None
+    available = _physics_available_mask(frame)
+    if not available.any():
+        return None
+    values = frame.loc[available, "physics_violations"].fillna("").astype(str).str.strip()
+    return float(values.ne("").mean()) if len(values) else None
+
+
+def _physics_available_mask(frame: pd.DataFrame) -> pd.Series:
+    available = pd.Series([False] * len(frame), index=frame.index)
+    if "physics_score" in frame:
+        available = available | pd.to_numeric(frame["physics_score"], errors="coerce").notna()
+    if "physical_hard_passed" in frame:
+        available = available | frame["physical_hard_passed"].map(lambda value: _as_bool(value) is not None)
+    if "physics_proxy_json" in frame:
+        available = available | frame["physics_proxy_json"].fillna("").astype(str).str.strip().ne("")
+    return available
 
 
 def _pareto_front_hit_rate(frame: pd.DataFrame) -> float:

@@ -261,6 +261,31 @@ def test_surrogate_strategy_prefers_predicted_high_score_region():
     assert result["config"]["point_metadata"][0]["candidate_source"] == "surrogate_model"
 
 
+def test_physics_guided_hybrid_uses_physics_prior_candidates_before_fallback():
+    history = pd.DataFrame(
+        [
+            {"status": "evaluated", "overall_score": 70.0, "m1_width": "1u", "load_cap": "1pF", "run_dir": "run_a"},
+        ]
+    )
+
+    result = build_strategy_sweep_config(
+        base_config=_base_config(),
+        history=history,
+        best_run_dir=None,
+        max_runs=2,
+        seed=5,
+        exploration_ratio=0.25,
+        strategy="physics_guided_hybrid",
+    )
+
+    metadata = result["config"]["point_metadata"]
+    assert result["points"]
+    assert {item["candidate_source"] for item in metadata} == {"physics_prior_engine"}
+    assert {item["optimizer_strategy"] for item in metadata} == {"physics_guided_hybrid"}
+    assert all(item["model_status"] == "physics_prior_engine_v1" for item in metadata)
+    assert {"physics_score", "physical_hard_passed", "physics_proxy_json", "physics_violations", "physics_rationale"} <= set(metadata[0])
+
+
 def test_should_stop_optimization_uses_patience_and_min_improvement():
     rounds = [
         {"round_index": 1, "best_score": 80.0},

@@ -12,6 +12,7 @@ CircuitPilot benchmarks are engineering evaluations, not score-only leaderboards
 6. Report more than final score: summaries include target pass rate, hard-fail rate, not-evaluable rate, validation pass rate, simulation efficiency, and relative improvement versus `random`.
 7. Nominal results require validation context: validation matrix rollups and worst-case values stay visible, and skipped/not-evaluable validation is not treated as proof.
 8. Simulation-only boundary is mandatory: `data_source=real_simulation_csv` and `engineering_validity=simulation_only` must remain visible in machine and human-readable outputs.
+9. Physics-prior metrics are pre-simulation ranking evidence only: `physics_pass_rate`, `avg_physics_score`, and `physics_violation_rate` may explain candidate selection, but they do not replace rerun evidence.
 
 ## Output Families
 

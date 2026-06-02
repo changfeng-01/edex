@@ -435,6 +435,7 @@ def main(argv: list[str] | None = None) -> int:
                 spec_path=Path(args.spec),
                 param_space_path=Path(args.param_space),
                 max_candidates=args.max_candidates,
+                strategies=parse_strategy_names(args.strategies) if args.strategies else None,
             )
         except Sky130DependencyError as exc:
             print(str(exc), file=sys.stderr)
@@ -671,6 +672,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_strategies.add_argument("--seeds", default="42")
     benchmark_strategies.add_argument("--rounds", type=int, default=2)
     benchmark_strategies.add_argument("--max-runs-per-round", type=int, default=3)
+    benchmark_strategies.add_argument("--strategies")
     benchmark_strategies.add_argument("--validation-config", default="config/sky130_validation.yaml")
     benchmark_strategies.add_argument("--ngspice-cmd", default="ngspice")
     benchmark_strategies.add_argument("--mock-dataset-json", default="examples/sky130_candidate_chain_row.json")
@@ -742,6 +744,10 @@ def parse_designs(extracted_dir: Path):
         mapping = parse_mapping(mapping_path) if mapping_path else None
         designs.append(build_design_version(_infer_design_name(root, netlist), root, parsed, mapping))
     return designs
+
+
+def parse_strategy_names(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def parse_single_design(design_dir: Path):

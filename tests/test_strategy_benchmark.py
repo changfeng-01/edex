@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from goa_eval.strategy_benchmark import _relative_gain, _strategy_leaderboard
+from goa_eval.strategy_benchmark import DEFAULT_STRATEGIES, _relative_gain, _strategy_leaderboard, _summary
 
 
-def test_strategy_benchmark_cli_compares_all_supported_strategies(tmp_path: Path):
+def test_strategy_benchmark_cli_compares_selected_strategies_with_physics_metrics(tmp_path: Path):
     rows_path = tmp_path / "rows.json"
     rows_path.write_text(json.dumps([_row()]), encoding="utf-8")
     sweep_path = tmp_path / "sweep.yaml"
@@ -54,9 +54,11 @@ validation_matrix:
             "--seeds",
             "1,2",
             "--rounds",
-            "1",
+            "2",
             "--max-runs-per-round",
             "1",
+            "--strategies",
+            "random,physics_guided_hybrid",
             "--output-root",
             str(output_root),
         ],
@@ -71,7 +73,7 @@ validation_matrix:
     summary = json.loads((output_root / "strategy_benchmark_summary.json").read_text(encoding="utf-8"))
     report = (output_root / "strategy_benchmark_report.md").read_text(encoding="utf-8")
 
-    assert set(rows["strategy"]) == {"random", "adaptive", "surrogate", "repair", "hybrid_goa"}
+    assert set(rows["strategy"]) == {"random", "physics_guided_hybrid"}
     assert set(rows["seed"]) == {1, 2}
     for column in [
         "rank_status",
@@ -86,6 +88,11 @@ validation_matrix:
         "source_candidate_trigger_metric",
         "source_candidate_rationale",
         "model_status",
+        "physics_score",
+        "physical_hard_passed",
+        "physics_violations",
+        "physics_rationale",
+        "physics_proxy_json",
         "changed_parameters",
     ]:
         assert column in rows.columns
@@ -108,6 +115,9 @@ validation_matrix:
         "surrogate_candidate_ratio",
         "exploration_candidate_ratio",
         "candidate_diversity_score",
+        "physics_pass_rate",
+        "avg_physics_score",
+        "physics_violation_rate",
         "score_improvement_vs_random",
         "target_pass_rate_gain_vs_random",
         "simulation_efficiency_gain_vs_random",
@@ -123,8 +133,57 @@ validation_matrix:
     strategy_leaderboard = pd.read_csv(output_root / "strategy_leaderboard.csv")
     assert {"strategy", "hard_constraint_pass_rate", "score_improvement_vs_random"} <= set(strategy_leaderboard.columns)
     assert "random" in report
-    assert "adaptive" in report
+    assert "physics_guided_hybrid" in report
     assert "Strategy Leaderboard" in report
+
+
+def test_default_strategies_include_physics_guided_hybrid():
+    assert "physics_guided_hybrid" in DEFAULT_STRATEGIES
+
+
+def test_strategy_summary_aggregates_physics_metrics_when_available():
+    frame = pd.DataFrame(
+        [
+            {
+                "strategy": "random",
+                "best_score": 10.0,
+                "target_passed": False,
+                "hard_constraint_passed": False,
+                "hard_failed": True,
+                "validation_passed": False,
+                "rank_status": "evaluated",
+                "not_evaluable_metric_count": 0,
+                "validation_not_evaluable_count": 0,
+                "simulation_count": 1,
+                "first_pass_sim_count": None,
+                "mock_used": True,
+            },
+            {
+                "strategy": "physics_guided_hybrid",
+                "best_score": 20.0,
+                "target_passed": True,
+                "hard_constraint_passed": True,
+                "hard_failed": False,
+                "validation_passed": False,
+                "rank_status": "evaluated",
+                "not_evaluable_metric_count": 0,
+                "validation_not_evaluable_count": 0,
+                "simulation_count": 2,
+                "first_pass_sim_count": 2,
+                "physics_pass_rate": 1.0,
+                "avg_physics_score": 82.5,
+                "physics_violation_rate": 0.0,
+                "mock_used": True,
+            },
+        ]
+    )
+
+    summary = _summary(frame, scenario={})
+
+    assert summary["strategies"]["random"]["avg_physics_score"] is None
+    assert summary["strategies"]["physics_guided_hybrid"]["physics_pass_rate"] == 1.0
+    assert summary["strategies"]["physics_guided_hybrid"]["avg_physics_score"] == 82.5
+    assert summary["strategies"]["physics_guided_hybrid"]["physics_violation_rate"] == 0.0
 
 
 def test_strategy_benchmark_relative_gain_handles_missing_or_zero_baseline():
