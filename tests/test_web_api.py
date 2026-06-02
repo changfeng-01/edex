@@ -69,6 +69,31 @@ def test_upload_waveform_creates_completed_case_and_bundle(tmp_path: Path):
     assert "must_resimulate = true" in report_response.text
 
 
+def test_sample_demo_case_creates_completed_case_and_readable_bundle(tmp_path: Path):
+    client = client_for(tmp_path / "web_cases")
+
+    response = client.post("/api/demo/sample-case")
+
+    assert response.status_code == 200
+    payload = response.json()
+    case_id = payload["case_id"]
+    assert case_id.startswith("demo_")
+    assert payload["status"] == "completed"
+    assert payload["bundle_url"] == f"/api/cases/{case_id}/bundle"
+    assert payload["evidence_boundary"] == {
+        "data_source": "real_simulation_csv",
+        "engineering_validity": "simulation_only",
+        "must_resimulate": True,
+    }
+
+    bundle_response = client.get(payload["bundle_url"])
+    assert bundle_response.status_code == 200
+    bundle = bundle_response.json()
+    assert bundle["case_id"] == case_id
+    assert bundle["summary"]["evidence"]["engineering_validity"] == "simulation_only"
+    assert bundle["summary"]["evidence"]["must_resimulate"] is True
+
+
 def test_missing_waveform_returns_clear_error(tmp_path: Path):
     response = client_for(tmp_path / "web_cases").post("/api/cases", data={"case_id": "missing_waveform"})
 

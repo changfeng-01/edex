@@ -1,4 +1,45 @@
 # CircuitPilot / 芯智调参
+
+## 5-Minute Upload-to-Dashboard Demo
+
+This is the recommended local demo path for the upload workflow.
+
+1. Install Python dependencies from the repository root:
+
+   ```bash
+   python -m pip install -e ".[test]"
+   ```
+
+2. Install frontend dependencies once:
+
+   ```bash
+   cd frontend
+   npm install
+   cd ..
+   ```
+
+3. Start both services and open the page:
+
+   ```bash
+   python scripts/run_upload_demo.py
+   ```
+
+4. Visit `http://127.0.0.1:5173` if the browser does not open automatically.
+
+5. Click **Run Built-in Demo** to analyze `examples/sample_waveform.csv` with `examples/sample_params.yaml`, generate a fresh case, and jump to `?case_id=<case_id>`.
+
+6. To use your own data, upload `waveform.csv` and optionally `params.yaml`, then click **Run Analysis**. Images can be uploaded only as displayed attachments in the MVP; they are not used for curve recognition.
+
+The upload demo writes cases under `outputs/web_cases/{case_id}/` and preserves the evidence boundary:
+
+```text
+data_source = real_simulation_csv
+engineering_validity = simulation_only
+must_resimulate = true
+```
+
+The dashboard results are `simulation_only`. They are not physical validation, silicon validation, tapeout validation, or verified optimization results. Candidate parameters remain next-run simulation suggestions and must be re-simulated before any improvement claim.
+
 ## Hybrid GOA Optimizer
 
 `hybrid-goa-optimize` adds a GOA-first, simulation-only candidate optimizer that combines surrogate prediction, failure-guided repair, and Pareto ranking without requiring real ngspice or SKY130. See `docs/goa_hybrid_optimizer.md`.

@@ -14,6 +14,7 @@ describe("UploadWorkspace", () => {
     render(<UploadWorkspace apiBaseUrl="https://api.example.test" />);
 
     expect(screen.getByRole("heading", { name: /Upload-to-Dashboard/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Run Built-in Demo/ })).toBeInTheDocument();
     expect(screen.getByText(/waveform.csv/)).toBeInTheDocument();
     expect(screen.getByText(/必需/)).toBeInTheDocument();
     expect(screen.getByText(/simulation_only/)).toBeInTheDocument();
@@ -56,6 +57,33 @@ describe("UploadWorkspace", () => {
     await waitFor(() => {
       expect(window.location.search).toBe("?case_id=uploaded_case");
     });
+  });
+
+  it("runs the built-in demo and redirects to the created case", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        case_id: "demo_20260602_120000",
+        status: "completed",
+        bundle_url: "/api/cases/demo_20260602_120000/bundle",
+      }),
+    );
+    const onCaseCreated = vi.fn();
+    render(<UploadWorkspace apiBaseUrl="https://api.example.test" onCaseCreated={onCaseCreated} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Run Built-in Demo/ }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://api.example.test/api/demo/sample-case",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+    await waitFor(() => {
+      expect(window.location.search).toBe("?case_id=demo_20260602_120000");
+    });
+    expect(onCaseCreated).toHaveBeenCalledWith("demo_20260602_120000");
+    expect(screen.queryByText(/silicon verified/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/physical validation achieved/i)).not.toBeInTheDocument();
   });
 });
 

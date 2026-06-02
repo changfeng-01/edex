@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 import uuid
+import datetime as dt
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,11 @@ ALLOWED_ASSET_EXTENSIONS = {".json", ".csv", ".md", ".png", ".jpg", ".jpeg", ".w
 
 def generate_case_id() -> str:
     return f"case_{uuid.uuid4().hex[:12]}"
+
+
+def generate_demo_case_id() -> str:
+    timestamp = dt.datetime.now(dt.UTC).strftime("%Y%m%d_%H%M%S")
+    return f"demo_{timestamp}_{uuid.uuid4().hex[:6]}"
 
 
 def validate_case_id(case_id: str) -> str:
@@ -81,6 +87,20 @@ async def save_uploads(case_dir: Path, files: list[UploadFile]) -> dict[str, Pat
         saved[target_name] = target
     if "waveform.csv" not in saved:
         raise HTTPException(status_code=400, detail="waveform.csv is required")
+    return saved
+
+
+def copy_sample_inputs(case_dir: Path, waveform_path: Path, params_path: Path | None = None) -> dict[str, Path]:
+    if not waveform_path.exists():
+        raise HTTPException(status_code=500, detail=f"sample waveform not found: {waveform_path}")
+    input_dir = case_dir / "input"
+    saved = {"waveform.csv": resolve_under(input_dir, "waveform.csv")}
+    shutil.copyfile(waveform_path, saved["waveform.csv"])
+    if params_path is not None:
+        if not params_path.exists():
+            raise HTTPException(status_code=500, detail=f"sample params not found: {params_path}")
+        saved["params.yaml"] = resolve_under(input_dir, "params.yaml")
+        shutil.copyfile(params_path, saved["params.yaml"])
     return saved
 
 
@@ -167,4 +187,3 @@ def _optional_bool(value: Any, *, default: bool) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
-

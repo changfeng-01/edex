@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -10,10 +9,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from starlette.datastructures import FormData, UploadFile
 
-from goa_eval.product_demo.schemas import DASHBOARD_FILES, DIRECTORIES
+from goa_eval.product_demo.schemas import DIRECTORIES
+from goa_eval.web_api.loaders import load_bundle
 from goa_eval.web.runners import run_uploaded_case
-from goa_eval.web.schemas import WebApiSettings, evidence_boundary
-from goa_eval.web.storage import build_config, prepare_case_dir, read_status, resolve_asset, resolve_under, save_uploads, validate_case_id
+from goa_eval.web.schemas import UploadedCaseConfig, WebApiSettings, evidence_boundary
+from goa_eval.web.storage import (
+    build_config,
+    copy_sample_inputs,
+    generate_demo_case_id,
+    prepare_case_dir,
+    read_status,
+    resolve_asset,
+    resolve_under,
+    save_uploads,
+    validate_case_id,
+)
 
 
 def create_app(settings: WebApiSettings | None = None) -> FastAPI:
@@ -39,12 +49,22 @@ def create_app(settings: WebApiSettings | None = None) -> FastAPI:
         uploads = _form_uploads(form)
         if not uploads:
             raise HTTPException(status_code=400, detail="waveform.csv is required")
+        result = await _run_case_from_uploads(settings, config, uploads)
+        return result.model_dump()
+
+    @app.post("/api/demo/sample-case")
+    def create_sample_case() -> dict[str, Any]:
+        case_id = generate_demo_case_id()
+        case_dir = prepare_case_dir(settings.web_cases_root, case_id)
+        copy_sample_inputs(case_dir, Path("examples/sample_waveform.csv"), Path("examples/sample_params.yaml"))
+        result = run_uploaded_case(case_dir, UploadedCaseConfig(case_id=case_id, generate_candidates=True))
+        return result.model_dump()
+
+    async def _run_case_from_uploads(settings: WebApiSettings, config: UploadedCaseConfig, uploads: list[UploadFile]):
         case_dir = prepare_case_dir(settings.web_cases_root, config.case_id)
         await save_uploads(case_dir, uploads)
         result = run_uploaded_case(case_dir, config)
-        if result.status == "failed":
-            return result.model_dump()
-        return result.model_dump()
+        return result
 
     @app.get("/api/cases/{case_id}/status")
     def case_status(case_id: str) -> dict[str, Any]:
@@ -53,22 +73,21 @@ def create_app(settings: WebApiSettings | None = None) -> FastAPI:
     @app.get("/api/cases/{case_id}/bundle")
     def case_bundle(case_id: str) -> dict[str, Any]:
         case_id = validate_case_id(case_id)
+        product_demo_root = resolve_under(settings.web_cases_root, case_id, "product_demo")
         case_dir = resolve_under(settings.web_cases_root, case_id, "product_demo", case_id)
         if not case_dir.exists():
             raise HTTPException(status_code=404, detail="case bundle not found")
-        summary = _read_json(case_dir / DIRECTORIES["dashboard"] / DASHBOARD_FILES["summary"])
-        tables = _read_json(case_dir / DIRECTORIES["dashboard"] / DASHBOARD_FILES["tables"])
-        figures = _figure_infos(case_id, case_dir)
-        reports = _report_infos(case_id, case_dir)
-        manifest = _read_json(case_dir / DIRECTORIES["dashboard"] / DASHBOARD_FILES["manifest"])
+        bundle = load_bundle(product_demo_root, case_id)
+        summary = bundle.get("summary", {})
+        manifest = bundle.get("manifest", {})
         _attach_boundary(summary)
         _attach_boundary(manifest)
         return {
             "case_id": case_id,
             "summary": summary,
-            "tables": tables,
-            "figures": figures,
-            "reports": reports,
+            "tables": bundle.get("tables", {}),
+            "figures": _upload_asset_figures(case_id, case_dir, bundle.get("figures", [])),
+            "reports": _upload_asset_reports(case_id, bundle.get("reports", [])),
             "manifest": manifest,
         }
 
@@ -96,11 +115,12 @@ def _form_uploads(form: FormData) -> list[UploadFile]:
     return uploads
 
 
-def _figure_infos(case_id: str, case_dir: Path) -> list[dict[str, Any]]:
-    dashboard_payload = _read_json(case_dir / DIRECTORIES["dashboard"] / DASHBOARD_FILES["figures"])
+def _upload_asset_figures(case_id: str, case_dir: Path, figures_payload: Any) -> list[dict[str, Any]]:
     figures_dir = case_dir / DIRECTORIES["figures"]
     figures: list[dict[str, Any]] = []
-    for key, details in dashboard_payload.items():
+    if not isinstance(figures_payload, list):
+        return figures
+    for details in figures_payload:
         if not isinstance(details, dict):
             continue
         file = str(details.get("file") or "")
@@ -108,8 +128,8 @@ def _figure_infos(case_id: str, case_dir: Path) -> list[dict[str, Any]]:
         asset_path = f"product_demo/{case_id}/{DIRECTORIES['figures']}/{file}"
         figures.append(
             {
-                "key": key,
-                "title": details.get("title") or key.replace("_", " ").title(),
+                "key": details.get("key") or Path(file).stem,
+                "title": details.get("title") or Path(file).stem.replace("_", " ").title(),
                 "file": file,
                 "url": f"/api/cases/{case_id}/assets/{asset_path}",
                 "exists": path.exists() and path.is_file(),
@@ -120,27 +140,27 @@ def _figure_infos(case_id: str, case_dir: Path) -> list[dict[str, Any]]:
     return figures
 
 
-def _report_infos(case_id: str, case_dir: Path) -> list[dict[str, Any]]:
-    report_dir = case_dir / DIRECTORIES["report"]
+def _upload_asset_reports(case_id: str, reports_payload: Any) -> list[dict[str, Any]]:
     reports = []
-    for path in sorted(report_dir.glob("*.md")):
-        asset_path = f"product_demo/{case_id}/{DIRECTORIES['report']}/{path.name}"
+    if not isinstance(reports_payload, list):
+        return reports
+    for report in reports_payload:
+        if not isinstance(report, dict):
+            continue
+        file = str(report.get("file") or report.get("name") or "")
+        if not file:
+            continue
+        asset_path = f"product_demo/{case_id}/{DIRECTORIES['report']}/{file}"
         reports.append(
             {
-                "name": path.name,
-                "file": path.name,
-                "title": path.stem.replace("_", " ").title(),
+                "name": report.get("name") or file,
+                "file": file,
+                "title": report.get("title") or Path(file).stem.replace("_", " ").title(),
                 "url": f"/api/cases/{case_id}/assets/{asset_path}",
-                "exists": True,
+                "exists": report.get("exists", True),
             }
         )
     return reports
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _attach_boundary(payload: dict[str, Any]) -> None:

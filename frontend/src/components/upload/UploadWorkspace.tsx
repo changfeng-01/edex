@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Play, ShieldAlert } from "lucide-react";
+import { Play, ShieldAlert, Sparkles } from "lucide-react";
 
 import { AnalysisProgress } from "./AnalysisProgress";
 import { FileDropzone, type UploadFiles } from "./FileDropzone";
@@ -34,6 +34,22 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
   const [status, setStatus] = useState<"idle" | "running" | "completed" | "failed">("idle");
   const [message, setMessage] = useState("");
 
+  async function runBuiltInDemo() {
+    setStatus("running");
+    setMessage("正在运行内置 examples/sample_waveform.csv 和 examples/sample_params.yaml 演示...");
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/demo/sample-case`, { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok || payload.status === "failed") {
+        throw new Error(payload.detail || payload.error || `API returned ${response.status}`);
+      }
+      completeCase(payload.case_id, "内置演示分析完成，正在进入 dashboard。");
+    } catch (error) {
+      setStatus("failed");
+      setMessage(`内置演示运行失败：${String(error)}`);
+    }
+  }
+
   async function submit() {
     if (!files.waveform) {
       setStatus("failed");
@@ -67,15 +83,18 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
       if (!response.ok || payload.status === "failed") {
         throw new Error(payload.detail || payload.error || `API returned ${response.status}`);
       }
-      const caseId = payload.case_id;
-      setStatus("completed");
-      setMessage("分析完成，正在进入 dashboard。");
-      window.history.pushState(null, "", `?case_id=${encodeURIComponent(caseId)}`);
-      onCaseCreated?.(caseId);
+      completeCase(payload.case_id, "分析完成，正在进入 dashboard。");
     } catch (error) {
       setStatus("failed");
       setMessage(`上传或分析失败：${String(error)}`);
     }
+  }
+
+  function completeCase(caseId: string, nextMessage: string) {
+    setStatus("completed");
+    setMessage(nextMessage);
+    window.history.pushState(null, "", `?case_id=${encodeURIComponent(caseId)}`);
+    onCaseCreated?.(caseId);
   }
 
   return (
@@ -97,15 +116,26 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
           </div>
           <div className="grid content-start gap-5">
             <RunConfigPanel config={config} onChange={setConfig} />
-            <button
-              className="flex items-center justify-center gap-2 rounded-lg border border-cyan-200/30 bg-cyan-300/15 px-4 py-3 text-sm font-semibold text-cyan-50 transition hover:bg-cyan-300/20 disabled:cursor-not-allowed disabled:opacity-60"
-              type="button"
-              disabled={status === "running"}
-              onClick={submit}
-            >
-              <Play size={18} />
-              Run Analysis
-            </button>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                className="flex items-center justify-center gap-2 rounded-lg border border-cyan-200/30 bg-cyan-300/15 px-4 py-3 text-sm font-semibold text-cyan-50 transition hover:bg-cyan-300/20 disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                disabled={status === "running"}
+                onClick={runBuiltInDemo}
+              >
+                <Sparkles size={18} />
+                Run Built-in Demo
+              </button>
+              <button
+                className="flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-slate-900/80 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-200/30 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                disabled={status === "running"}
+                onClick={submit}
+              >
+                <Play size={18} />
+                Run Analysis
+              </button>
+            </div>
             <AnalysisProgress status={status} message={message} />
           </div>
           <aside className="rounded-lg border border-amber-300/20 bg-slate-950/70 p-5 shadow-2xl shadow-black/20">

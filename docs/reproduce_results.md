@@ -16,7 +16,34 @@ python -m pip install -e ".[test]"
 npm install
 ```
 
-如果要演示网页上传流程，还需要启动 FastAPI 后端：
+## 1a. 一键 Upload-to-Dashboard 演示
+
+推荐使用仓库根目录的一键脚本启动上传演示：
+
+```bash
+python scripts/run_upload_demo.py
+```
+
+脚本会检查 `goa_eval.web.app` 是否可导入、`frontend/package.json` 是否存在、`frontend/node_modules` 是否已安装，然后启动：
+
+- FastAPI upload backend: `http://127.0.0.1:8000`
+- Vite frontend: `http://127.0.0.1:5173`
+
+打开页面后可以点击 **Run Built-in Demo**，后端会使用 `examples/sample_waveform.csv` 和 `examples/sample_params.yaml` 生成一个新的 `demo_<timestamp>_<id>` case，并自动跳转到 `?case_id=<case_id>` 展示 dashboard。
+
+上传自定义数据时，`waveform.csv` 是必需输入，`params.yaml` 可选。图片在当前 MVP 中只作为附件展示，不参与曲线识别。
+
+该流程仍然保持：
+
+```text
+data_source = real_simulation_csv
+engineering_validity = simulation_only
+must_resimulate = true
+```
+
+这些结果不是 physical validation、silicon validation 或已验证优化结论；候选参数只是下一轮仿真建议。
+
+如果要手动演示网页上传流程，可分别启动 FastAPI 后端和前端作为 fallback：
 
 ```bash
 python -m uvicorn goa_eval.web.app:app --reload --host 127.0.0.1 --port 8000
