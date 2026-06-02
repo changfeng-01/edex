@@ -19,13 +19,14 @@ dependencies = [
   "lxml",
   "fastapi",
   "uvicorn",
+  "python-multipart",
 ]
 
 [project.optional-dependencies]
 test = ["pytest", "httpx"]
 sky130 = ["datasets"]
 agent = ["langgraph"]
-api = ["fastapi", "uvicorn"]
+api = ["fastapi", "uvicorn", "python-multipart"]
 
 [project.scripts]
 circuitpilot = "goa_eval.cli:main"

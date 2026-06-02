@@ -16,6 +16,12 @@ python -m pip install -e ".[test]"
 npm install
 ```
 
+如果要演示网页上传流程，还需要启动 FastAPI 后端：
+
+```bash
+python -m uvicorn goa_eval.web.app:app --reload --host 127.0.0.1 --port 8000
+```
+
 ## 2. 重新生成 demo 结果
 
 在仓库根目录执行：
@@ -28,6 +34,35 @@ python scripts/build_public_demo.py
 
 - `examples/demo_run/`：完整公开 demo 输出包
 - `frontend/public/data/`：前端 dashboard 使用的数据快照
+
+## 2a. 可选：网页上传到 Dashboard
+
+启动后端后，在另一个终端启动前端：
+
+```bash
+cd frontend
+npm install
+VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
+
+打开前端页面后执行最短上传演示：
+
+```text
+1. 上传 examples/sample_waveform.csv。
+2. 可选上传 examples/sample_params.yaml。
+3. 点击 Run Analysis。
+4. 等待后端生成 outputs/web_cases/{case_id}/analysis/ 和 product_demo/{case_id}/。
+5. 页面自动跳转到 ?case_id={case_id} 并展示 dashboard。
+```
+
+上传流程与 public demo 使用同一套评估、推荐、候选生成和 product-demo
+打包逻辑。结果仍然必须保持：
+
+```text
+data_source = real_simulation_csv
+engineering_validity = simulation_only
+must_resimulate = true
+```
 
 ## 3. 检查关键输出
 

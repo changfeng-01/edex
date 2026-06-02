@@ -397,6 +397,46 @@ python scripts/build_public_demo.py
 
 最短复现步骤见 `docs/reproduce_results.md`，完整说明见 `docs/public_demo_run.md`。
 
+### Upload-to-Dashboard MVP
+
+本地网页上传原型在 public demo 之外新增一条主流程：上传 `waveform.csv`
+和可选 `params.yaml` 后，后端同步运行现有评价、推荐、候选生成和
+product-demo 打包逻辑，再由前端跳转到对应 `case_id` 的 dashboard。
+
+启动后端：
+
+```bash
+python -m uvicorn goa_eval.web.app:app --reload --host 127.0.0.1 --port 8000
+```
+
+启动前端：
+
+```bash
+cd frontend
+npm install
+VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
+
+最短演示路径：
+
+```text
+1. 启动后端。
+2. 启动前端并打开 Vite 输出的网址。
+3. 上传 examples/sample_waveform.csv。
+4. 可选上传 examples/sample_params.yaml。
+5. 点击 Run Analysis。
+6. 页面自动跳转到 ?case_id=<生成的 case_id> 并展示 dashboard。
+```
+
+上传 case 默认写入 `outputs/web_cases/{case_id}/`。该流程仍然只处理仿真
+文件，结果边界保持：
+
+```text
+data_source = real_simulation_csv
+engineering_validity = simulation_only
+must_resimulate = true
+```
+
 ## DeepSeek V4 参数分析
 
 `analyze-params` 可以把已有结构化输出交给 DeepSeek V4，生成面向汇报和人工复核的中文参数分析。该功能不会替代硬指标、评分器或规则推荐器。
