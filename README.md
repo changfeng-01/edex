@@ -43,6 +43,15 @@ python scripts/run_upload_demo.py
 outputs/web_cases/{case_id}/
 ```
 
+Upload-to-Dashboard now also supports **Preview Input** before the full analysis run. Recommended demo flow: start `python scripts/run_upload_demo.py`, open the frontend, upload `waveform.csv`, click **Preview Input**, inspect the detected time column, output nodes, parameter space, netlist summary, attachments, warnings, and suggestions, then click **Run Analysis** to generate the dashboard bundle.
+
+The preview layer checks whether uploaded inputs are readable and likely usable for evaluation. It is not simulation validation. Image attachments are currently listed for display only and are not used for OCR or curve recognition. Candidate parameters remain next-run simulation suggestions and must be rerun before any improvement claim.
+
+Preview API endpoints:
+
+- `POST /api/cases/preview` accepts the same multipart upload form as `POST /api/cases`, saves files under `outputs/web_cases/{case_id}/input/`, writes `input_preview.json`, and does not run the full analysis.
+- `GET /api/cases/{case_id}/input-preview` returns the saved preview JSON for a validated case id.
+
 上传分析后端与 public demo 使用同一套评价、推荐、候选生成和 product-demo 打包逻辑。输出仍然保持：
 
 ```text

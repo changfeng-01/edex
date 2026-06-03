@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Play, ShieldAlert, Sparkles } from "lucide-react";
+import { Eye, Play, ShieldAlert, Sparkles } from "lucide-react";
 
 import { AnalysisProgress } from "./AnalysisProgress";
 import { FileDropzone, type UploadFiles } from "./FileDropzone";
+import { InputPreviewPanel, type InputPreview } from "./InputPreviewPanel";
 import { RunConfigPanel, type RunConfig } from "./RunConfigPanel";
 import { UploadedFileList } from "./UploadedFileList";
 
@@ -33,6 +34,8 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
   const [config, setConfig] = useState<RunConfig>(initialConfig);
   const [status, setStatus] = useState<"idle" | "running" | "completed" | "failed">("idle");
   const [message, setMessage] = useState("");
+  const [inputPreview, setInputPreview] = useState<InputPreview | null>(null);
+  const [previewEvidenceBoundary, setPreviewEvidenceBoundary] = useState<Record<string, unknown> | undefined>();
 
   async function runBuiltInDemo() {
     setStatus("running");
@@ -58,24 +61,7 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
     }
     setStatus("running");
     setMessage("正在保存文件并运行仿真 CSV 评价...");
-    const form = new FormData();
-    form.append("waveform", files.waveform);
-    if (files.params) {
-      form.append("params", files.params);
-    }
-    if (files.netlist) {
-      form.append("netlist", files.netlist);
-    }
-    for (const attachment of files.attachments) {
-      form.append("attachments", attachment);
-    }
-    appendIfPresent(form, "case_id", config.caseId);
-    appendIfPresent(form, "topology", config.topology);
-    appendIfPresent(form, "circuit_profile", config.circuitProfile);
-    appendIfPresent(form, "stage_count", config.stageCount);
-    appendIfPresent(form, "output_node_pattern", config.outputNodePattern);
-    form.append("generate_candidates", String(config.generateCandidates));
-    form.append("run_llm_analysis", String(config.runLlmAnalysis));
+    const form = buildUploadForm(files, config);
 
     try {
       const response = await fetch(`${apiBaseUrl}/api/cases`, { method: "POST", body: form });
@@ -87,6 +73,36 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
     } catch (error) {
       setStatus("failed");
       setMessage(`上传或分析失败：${String(error)}`);
+    }
+  }
+
+  async function previewInput() {
+    if (!files.waveform) {
+      setStatus("failed");
+      setMessage("Please upload waveform.csv before preview.");
+      return;
+    }
+    setStatus("running");
+    setMessage("Previewing uploaded input files...");
+    const form = buildUploadForm(files, config);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/cases/preview`, { method: "POST", body: form });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || payload.error || `API returned ${response.status}`);
+      }
+      setStatus("idle");
+      setMessage(payload.preview?.ready_for_analysis ? "Input preview is ready. Run Analysis remains available." : "Input preview found issues. Run Analysis remains available for compatibility.");
+      setInputPreview(payload.preview);
+      setPreviewEvidenceBoundary(payload.evidence_boundary);
+      if (payload.case_id) {
+        setConfig((current) => ({ ...current, caseId: payload.case_id }));
+        window.history.pushState(null, "", `?case_id=${encodeURIComponent(payload.case_id)}`);
+      }
+    } catch (error) {
+      setStatus("failed");
+      setMessage(`Input preview failed: ${String(error)}`);
     }
   }
 
@@ -116,7 +132,7 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
           </div>
           <div className="grid content-start gap-5">
             <RunConfigPanel config={config} onChange={setConfig} />
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <button
                 className="flex items-center justify-center gap-2 rounded-lg border border-cyan-200/30 bg-cyan-300/15 px-4 py-3 text-sm font-semibold text-cyan-50 transition hover:bg-cyan-300/20 disabled:cursor-not-allowed disabled:opacity-60"
                 type="button"
@@ -125,6 +141,15 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
               >
                 <Sparkles size={18} />
                 Run Built-in Demo
+              </button>
+              <button
+                className="flex items-center justify-center gap-2 rounded-lg border border-emerald-200/30 bg-emerald-300/15 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-300/20 disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                disabled={status === "running"}
+                onClick={previewInput}
+              >
+                <Eye size={18} />
+                Preview Input
               </button>
               <button
                 className="flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-slate-900/80 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-200/30 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
@@ -136,6 +161,11 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
                 Run Analysis
               </button>
             </div>
+            {inputPreview && inputPreview.ready_for_analysis === false ? (
+              <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm text-amber-50">
+                Preview detected input issues. Run Analysis is still available, but review the panel first.
+              </div>
+            ) : null}
             <AnalysisProgress status={status} message={message} />
           </div>
           <aside className="rounded-lg border border-amber-300/20 bg-slate-950/70 p-5 shadow-2xl shadow-black/20">
@@ -157,9 +187,34 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
             </div>
           </aside>
         </div>
+        {inputPreview ? <InputPreviewPanel preview={inputPreview} evidenceBoundary={previewEvidenceBoundary} /> : null}
       </div>
     </main>
   );
+}
+
+function buildUploadForm(files: UploadFiles, config: RunConfig) {
+  const form = new FormData();
+  if (files.waveform) {
+    form.append("waveform", files.waveform);
+  }
+  if (files.params) {
+    form.append("params", files.params);
+  }
+  if (files.netlist) {
+    form.append("netlist", files.netlist);
+  }
+  for (const attachment of files.attachments) {
+    form.append("attachments", attachment);
+  }
+  appendIfPresent(form, "case_id", config.caseId);
+  appendIfPresent(form, "topology", config.topology);
+  appendIfPresent(form, "circuit_profile", config.circuitProfile);
+  appendIfPresent(form, "stage_count", config.stageCount);
+  appendIfPresent(form, "output_node_pattern", config.outputNodePattern);
+  form.append("generate_candidates", String(config.generateCandidates));
+  form.append("run_llm_analysis", String(config.runLlmAnalysis));
+  return form;
 }
 
 function appendIfPresent(form: FormData, key: string, value: string) {
