@@ -11,7 +11,7 @@ from goa_eval.io_utils import write_json
 from goa_eval.sky130_mainline import run_sky130_mainline
 
 
-DEFAULT_STRATEGIES = ["random", "adaptive", "surrogate", "repair", "hybrid_goa"]
+DEFAULT_STRATEGIES = ["random", "adaptive", "surrogate", "repair", "hybrid_goa", "physics_guided_hybrid"]
 
 
 def run_strategy_benchmark(
@@ -142,6 +142,10 @@ def _benchmark_row(
         "source_candidate_trigger_metric": best.get("source_candidate_trigger_metric", ""),
         "source_candidate_rationale": best.get("source_candidate_rationale", ""),
         "model_status": best.get("model_status", ""),
+        "physics_score": _as_float(best.get("physics_score")),
+        "physical_hard_passed": _as_bool(best.get("physical_hard_passed")),
+        "physics_violations": best.get("physics_violations", ""),
+        "physics_proxy_json": best.get("physics_proxy_json", ""),
         "changed_parameters": _changed_parameters(best, parameter_names),
         "mock_used": bool(payload.get("mock_used")),
         "evidence_level": payload.get("evidence_level"),
@@ -181,6 +185,9 @@ def _summary(frame: pd.DataFrame, *, scenario: dict[str, Any]) -> dict[str, Any]
             "surrogate_candidate_ratio": _mean_column(group, "surrogate_candidate_ratio", fill=0.0) or 0.0,
             "exploration_candidate_ratio": _mean_column(group, "exploration_candidate_ratio", fill=0.0) or 0.0,
             "candidate_diversity_score": _mean_column(group, "candidate_diversity_score", fill=0.0) or 0.0,
+            "physics_pass_rate": _physics_pass_rate(group),
+            "avg_physics_score": _mean_column(group, "physics_score"),
+            "physics_violation_rate": _physics_violation_rate(group),
             "avg_sim_count": float(sim_counts.mean()) if len(group) else 0.0,
             "first_pass_sim_count_mean": _json_number(first_pass.mean()),
             "improvement_per_simulation": _json_number(efficiency.mean()),
@@ -249,8 +256,8 @@ def _write_report(path: Path, summary: dict[str, Any], leaderboard: pd.DataFrame
         f"- Budget: `{scenario.get('rounds', '')}` rounds x `{scenario.get('max_runs_per_round', '')}` max runs per round",
         f"- Random baseline no replay: `{summary.get('fairness', {}).get('random_baseline_no_replay')}`",
         "",
-        "| strategy | best_score_mean | target_pass_rate | hard_fail_rate | validation_pass_rate | avg_sim_count | mock_used_rate |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| strategy | best_score_mean | target_pass_rate | hard_fail_rate | validation_pass_rate | avg_physics_score | physics_pass_rate | avg_sim_count | mock_used_rate |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for strategy, metrics in summary["strategies"].items():
         lines.append(
@@ -262,6 +269,8 @@ def _write_report(path: Path, summary: dict[str, Any], leaderboard: pd.DataFrame
                     str(metrics["target_pass_rate"]),
                     str(metrics["hard_fail_rate"]),
                     str(metrics["validation_pass_rate"]),
+                    str(metrics.get("avg_physics_score")),
+                    str(metrics.get("physics_pass_rate")),
                     str(metrics["avg_sim_count"]),
                     str(metrics["mock_used_rate"]),
                 ]
@@ -352,6 +361,24 @@ def _mean_column(frame: pd.DataFrame, column: str, *, fill: float | None = None)
         values = values.fillna(fill)
     mean = values.mean()
     return _json_number(mean)
+
+
+def _physics_pass_rate(frame: pd.DataFrame) -> float | None:
+    if frame.empty or "physical_hard_passed" not in frame:
+        return None
+    values = frame["physical_hard_passed"].map(_as_bool)
+    values = values[values.notna()]
+    return float(values.astype(bool).mean()) if len(values) else None
+
+
+def _physics_violation_rate(frame: pd.DataFrame) -> float | None:
+    if frame.empty or "physics_violations" not in frame:
+        return None
+    values = frame["physics_violations"].dropna().astype(str)
+    values = values[values.str.len() > 0]
+    if frame["physics_violations"].dropna().empty:
+        return None
+    return float(len(values) / len(frame))
 
 
 def _pareto_front_hit_rate(frame: pd.DataFrame) -> float:

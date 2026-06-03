@@ -14,6 +14,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern, WhiteKernel
 
+from goa_eval.physics_engine import rank_physics_guided_points
 from goa_eval.sky130_sweep import run_sky130_sweep
 
 
@@ -124,6 +125,16 @@ def build_strategy_sweep_config(
                 accepted_candidates += 1
             if candidate_limit is not None and accepted_candidates >= max(0, int(candidate_limit)):
                 break
+
+    if strategy == "physics_guided_hybrid" and len(points) < max_runs:
+        selected = {_point_key(point, parameters) for point in points}
+        physics_grid = [point for point in grid if _point_key(point, parameters) not in selected]
+        for point, metadata in rank_physics_guided_points(
+            physics_grid,
+            history=history,
+            max_points=max(0, max_runs - len(points)),
+        ):
+            _append_unique_point(points, point_metadata, point, metadata, parameters, seen, max_runs)
 
     if strategy in {"genetic", "hybrid"} and len(points) < max_runs:
         for point, metadata in _genetic_points(parameters, history, max_runs=max_runs, seed=seed):
