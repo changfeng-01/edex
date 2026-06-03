@@ -277,8 +277,8 @@ def write_optimization_dataset(
         "overall_status": summary.get("Overall_status"),
         "overall_score": score_summary.get("overall_score"),
         "metric_provenance": json.dumps(score_summary.get("metric_provenance", {}), ensure_ascii=False, sort_keys=True),
-        "data_source": "real_simulation_csv",
-        "engineering_validity": "simulation_only",
+        "data_source": summary.get("data_source", "real_simulation_csv"),
+        "engineering_validity": summary.get("engineering_validity", "simulation_only"),
     }
     frame = pd.DataFrame([row]).reindex(columns=OPTIMIZATION_DATASET_COLUMNS)
     frame.to_csv(path, mode="a", header=not path.exists(), index=False, encoding="utf-8-sig")

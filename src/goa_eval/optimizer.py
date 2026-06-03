@@ -391,13 +391,15 @@ def _rows_with_ids(candidates: list[dict]) -> list[dict]:
 
 
 def _candidate_markdown(rows: list[dict]) -> str:
+    data_source = rows[0].get("data_source", "real_simulation_csv") if rows else "real_simulation_csv"
+    engineering_validity = rows[0].get("engineering_validity", "simulation_only") if rows else "simulation_only"
     lines = [
         "# CircuitPilot 下一轮参数候选",
         "",
         f"- schema_version: `{SCHEMA_VERSION}`",
         f"- result_version: `{RESULT_VERSION}`",
-        "- data_source: `real_simulation_csv`",
-        "- engineering_validity: `simulation_only`",
+        f"- data_source: `{data_source}`",
+        f"- engineering_validity: `{engineering_validity}`",
         "",
         "本报告基于仿真 CSV 的结构化指标和规则建议生成，不是实物测试结果，也不表示自动优化闭环已经完成。",
         "候选项按约束、规则优先级和搜索得分排序；constrained_random 策略只生成单参数和两参数组合候选。",

@@ -1,0 +1,8 @@
+{
+  "library": "demo_library",
+  "top_cell": "pixel_cell",
+  "layers": [
+    {"name": "gate", "shape_count": 3},
+    {"name": "data", "shape_count": 2}
+  ]
+}

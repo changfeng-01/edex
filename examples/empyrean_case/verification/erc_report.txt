@@ -1,0 +1,6 @@
+ArgusFPD ERC Summary
+Result: PASSED
+Open Circuits: 0
+Short Circuits: 0
+Errors: 0
+Warnings: 0
