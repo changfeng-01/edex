@@ -1,0 +1,4 @@
+net,resistance_ohm,capacitance_f
+gate,12.5,1.2e-12
+data,8.0,8.0e-13
+pixel,20.0,2.5e-12

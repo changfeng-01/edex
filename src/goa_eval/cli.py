@@ -14,6 +14,7 @@ from goa_eval.ai_profile_assistant import run_ai_profile_assistant
 from goa_eval.circuit_profiles import validate_profile_references
 from goa_eval.csv_import_adapter import run_csv_import, run_csv_import_sweep
 from goa_eval.demo_mainline import run_demo_mainline
+from goa_eval.empyrean.case_importer import run_empyrean_import
 from goa_eval.evaluation.feature_extractor import extract_waveform_features
 from goa_eval.evaluation.mock_waveform import generate_mock_waveform
 from goa_eval.evaluation.scoring import compute_metric_results
@@ -221,6 +222,24 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=Path(args.output_dir),
             spec_path=Path(args.spec),
             param_space_path=Path(args.param_space),
+            circuit_profile=args.circuit_profile,
+            profile_file=Path(args.profile_file) if args.profile_file else None,
+            params_file=Path(args.params) if args.params else None,
+            max_candidates=args.max_candidates,
+            seed=args.seed,
+        )
+        return 0
+    if args.command == "empyrean-import":
+        run_empyrean_import(
+            input_dir=Path(args.input_dir),
+            output_dir=Path(args.output_dir),
+            case_id=args.case_id,
+            spec_path=Path(args.spec),
+            param_space_path=Path(args.param_space),
+            generate_candidates=args.generate_candidates,
+            stage_count=args.stage_count,
+            output_node_pattern=args.output_node_pattern,
+            topology=args.topology,
             circuit_profile=args.circuit_profile,
             profile_file=Path(args.profile_file) if args.profile_file else None,
             params_file=Path(args.params) if args.params else None,
@@ -560,6 +579,15 @@ def build_parser() -> argparse.ArgumentParser:
     assistant.add_argument("--output-dir", default="outputs/ai_profile_assistant")
     csv_import = sub.add_parser("csv-import")
     _add_csv_import_args(csv_import)
+    empyrean_import = sub.add_parser("empyrean-import")
+    empyrean_import.add_argument("--input-dir", default="examples/empyrean_case")
+    empyrean_import.add_argument("--output-dir", default="outputs/empyrean_case")
+    empyrean_import.add_argument("--case-id", required=True)
+    empyrean_import.add_argument("--generate-candidates", action="store_true")
+    empyrean_import.add_argument("--stage-count", type=int)
+    empyrean_import.add_argument("--output-node-pattern")
+    empyrean_import.add_argument("--topology")
+    _add_empyrean_import_args(empyrean_import)
     simulate_run = sub.add_parser("simulate-run")
     simulate_run.add_argument("--adapter", choices=["csv-import", "sky130-transient"], required=True)
     _add_csv_import_args(simulate_run)
@@ -708,6 +736,16 @@ def _add_csv_import_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--input-dir", default=".")
     parser.add_argument("--output-dir", default="outputs/csv_import")
     _add_common_profile_args(parser)
+
+
+def _add_empyrean_import_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--spec", default="config/spec.yaml")
+    parser.add_argument("--param-space", default="examples/sample_params.yaml")
+    parser.add_argument("--circuit-profile")
+    parser.add_argument("--profile-file")
+    parser.add_argument("--params")
+    parser.add_argument("--max-candidates", type=int, default=10)
+    parser.add_argument("--seed", type=int, default=42)
 
 
 def _add_sky130_common_args(parser: argparse.ArgumentParser, *, output_arg: str | None) -> None:

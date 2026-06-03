@@ -1,0 +1,4 @@
+ArgusFPD LVS Summary
+Result: CORRECT
+Mismatches: 0
+Warnings: 0

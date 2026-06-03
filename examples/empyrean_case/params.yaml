@@ -1,0 +1,5 @@
+parameters:
+  capacitance: 1.0e-12
+  drive_resistance: 1500
+  transistor_width: 1.0e-6
+  vdd: 15.0
