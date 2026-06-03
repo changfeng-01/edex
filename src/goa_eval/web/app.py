@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from starlette.datastructures import FormData, UploadFile
 
+from goa_eval.io_utils import write_json
 from goa_eval.product_demo.schemas import DIRECTORIES
+from goa_eval.web.input_inspector import inspect_uploaded_case_input
 from goa_eval.web_api.loaders import load_bundle
 from goa_eval.web.runners import run_uploaded_case
 from goa_eval.web.schemas import UploadedCaseConfig, WebApiSettings, evidence_boundary
@@ -52,6 +55,27 @@ def create_app(settings: WebApiSettings | None = None) -> FastAPI:
         result = await _run_case_from_uploads(settings, config, uploads)
         return result.model_dump()
 
+    @app.post("/api/cases/preview")
+    async def preview_case(request: Request) -> dict[str, Any]:
+        form = await request.form()
+        fields = _form_fields(form)
+        config = build_config(fields)
+        uploads = _form_uploads(form)
+        if not uploads:
+            raise HTTPException(status_code=400, detail="waveform.csv is required")
+        case_dir = prepare_case_dir(settings.web_cases_root, config.case_id)
+        await save_uploads(case_dir, uploads)
+        preview = inspect_uploaded_case_input(case_dir, config)
+        status = "preview_ready" if preview.get("ready_for_analysis") else "preview_failed"
+        payload = {
+            "case_id": config.case_id,
+            "status": status,
+            "preview": preview,
+            "evidence_boundary": evidence_boundary(),
+        }
+        write_json(case_dir / "input_preview.json", payload)
+        return payload
+
     @app.post("/api/demo/sample-case")
     def create_sample_case() -> dict[str, Any]:
         case_id = generate_demo_case_id()
@@ -69,6 +93,13 @@ def create_app(settings: WebApiSettings | None = None) -> FastAPI:
     @app.get("/api/cases/{case_id}/status")
     def case_status(case_id: str) -> dict[str, Any]:
         return read_status(settings.web_cases_root, case_id)
+
+    @app.get("/api/cases/{case_id}/input-preview")
+    def case_input_preview(case_id: str) -> dict[str, Any]:
+        path = resolve_under(settings.web_cases_root, validate_case_id(case_id), "input_preview.json")
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="input preview not found")
+        return json.loads(path.read_text(encoding="utf-8"))
 
     @app.get("/api/cases/{case_id}/bundle")
     def case_bundle(case_id: str) -> dict[str, Any]:

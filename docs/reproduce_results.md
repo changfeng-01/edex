@@ -77,10 +77,14 @@ VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 ```text
 1. 上传 examples/sample_waveform.csv。
 2. 可选上传 examples/sample_params.yaml。
-3. 点击 Run Analysis。
-4. 等待后端生成 outputs/web_cases/{case_id}/analysis/ 和 product_demo/{case_id}/。
-5. 页面自动跳转到 ?case_id={case_id} 并展示 dashboard。
+3. 点击 Preview Input。
+4. 检查时间列、输出节点、参数空间、netlist 摘要、附件、warnings 和 suggestions。
+5. 点击 Run Analysis。
+6. 等待后端生成 outputs/web_cases/{case_id}/analysis/ 和 product_demo/{case_id}/。
+7. 页面自动跳转到 ?case_id={case_id} 并展示 dashboard。
 ```
+
+Preview Input 只是输入可评价性检查，不是仿真验证。图片当前只作为附件展示，不参与 OCR 或曲线识别。候选参数仍然是下一轮仿真建议，必须重新仿真验证。
 
 上传流程与 public demo 使用同一套评估、推荐、候选生成和 product-demo
 打包逻辑。结果仍然必须保持：
