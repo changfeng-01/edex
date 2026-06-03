@@ -144,6 +144,7 @@ python -m goa_eval.cli sky130-mainline `
 - `optimize-rounds` 在 `sky130-sweep` 外层运行多轮搜索，并把上一轮最佳 run 的 `next_candidates.csv` 反馈到下一轮参数空间。
 - 支持 `random`、`adaptive`、`genetic`、`bayesian`、`surrogate`、`hybrid` 等策略。
 - `random` 是 no-replay baseline，不读取 best candidate replay。
+- `physics_guided_hybrid` uses the existing `physics_engine.py` prior for pre-simulation candidate ranking, then still requires re-simulation before any improvement claim. It does not replace SPICE, scorer logic, or `engineering_validity = simulation_only`.
 - Leaderboard 保留 `candidate_source`、`source_candidate_id`、`source_candidate_trigger_metric`、`source_candidate_parameters_json` 和 `rank_status`。
 
 GOA 专用优化与 benchmark：
@@ -172,6 +173,7 @@ python -m goa_eval.cli goa-strategy-benchmark \
 - `not_evaluable_metric_count`
 - validation rollup
 - baseline deltas versus `random`
+- physics-prior metadata for `physics_guided_hybrid` when available
 - `strategy_leaderboard.csv`
 
 示例：
@@ -195,7 +197,7 @@ python -m goa_eval.cli benchmark-run \
   --output-dir outputs/benchmark_multi_agent
 ```
 
-Benchmark 规则详见 `docs/algorithm_benchmark.md`；输出 schema 详见 `docs/schema_spec.md`。
+Benchmark 规则详见 `docs/algorithm_benchmark.md`；输出 schema 详见 `docs/schema_spec.md`。Physics-guided candidate ranking is documented in `docs/physics_guided_optimizer.md`.
 
 ### Multi-Agent Evidence Chain
 
@@ -257,6 +259,7 @@ config/
 docs/
 ├── algorithm_benchmark.md       # benchmark 工程规则
 ├── dashboard_api.md             # 只读 dashboard API
+├── physics_guided_optimizer.md  # physics-prior candidate ranking boundary
 ├── reproduce_results.md         # 复现公开结果的最短步骤
 ├── schema_spec.md               # 输出文件 schema 与字段约定
 ├── metrics_spec.md              # 指标定义、单位和判定策略
@@ -371,6 +374,7 @@ notepad .env
 - `docs/reproduce_results.md`：公开 demo、上传演示和测试复现。
 - `docs/schema_spec.md`：输出文件、字段和 evidence metadata 约定。
 - `docs/algorithm_benchmark.md`：benchmark 规则和报告边界。
+- `docs/physics_guided_optimizer.md`：physics-prior candidate ranking boundary.
 - `docs/dashboard_api.md`：只读 dashboard API。
 - `docs/goa_hybrid_optimizer.md`：GOA hybrid optimizer。
 - `docs/goa_strategy_benchmark.md`：GOA strategy benchmark。

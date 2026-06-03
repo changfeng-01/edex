@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+import goa_eval.multi_round_optimizer as optimizer_module
 from goa_eval.multi_round_optimizer import (
     build_adaptive_sweep_config,
     build_strategy_sweep_config,
@@ -259,6 +260,117 @@ def test_surrogate_strategy_prefers_predicted_high_score_region():
 
     assert result["points"][0]["m1_width"] == "3u"
     assert result["config"]["point_metadata"][0]["candidate_source"] == "surrogate_model"
+
+
+def test_physics_guided_hybrid_generates_physics_prior_metadata():
+    history = pd.DataFrame(
+        [
+            {"status": "evaluated", "overall_score": 45.0, "m1_width": "1u", "load_cap": "0.5pF", "run_dir": "run_a"},
+            {"status": "evaluated", "overall_score": 60.0, "m1_width": "2u", "load_cap": "1pF", "run_dir": "run_b"},
+        ]
+    )
+
+    result = build_strategy_sweep_config(
+        base_config=_base_config(),
+        history=history,
+        best_run_dir=None,
+        max_runs=2,
+        seed=5,
+        exploration_ratio=0.25,
+        strategy="physics_guided_hybrid",
+    )
+
+    metadata = result["config"]["point_metadata"]
+    assert result["points"]
+    assert metadata[0]["candidate_source"] == "physics_prior_engine"
+    assert metadata[0]["optimizer_strategy"] == "physics_guided_hybrid"
+    assert "physics_score" in metadata[0]
+    assert "physical_hard_passed" in metadata[0]
+    assert "physics_proxy_json" in metadata[0]
+
+
+def test_physics_guided_hybrid_preserves_candidate_replay_before_physics(tmp_path: Path):
+    history = pd.DataFrame(
+        [
+            {"status": "evaluated", "overall_score": 80.0, "m1_width": "2u", "load_cap": "1pF", "run_dir": "run_b"},
+        ]
+    )
+    best_run = tmp_path / "run_b"
+    best_run.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "candidate_id": "cand_physics_001",
+                "parameter": "m1_width",
+                "candidate_value": "3u",
+                "search_score": 99,
+                "trigger_metric": "Max_overlap_ratio",
+                "candidate_kind": "single_parameter",
+                "parameters_json": json.dumps({"m1_width": "3u"}),
+            }
+        ]
+    ).to_csv(best_run / "next_candidates.csv", index=False)
+
+    result = build_strategy_sweep_config(
+        base_config=_base_config(),
+        history=history,
+        best_run_dir=best_run,
+        max_runs=2,
+        seed=7,
+        exploration_ratio=0.25,
+        strategy="physics_guided_hybrid",
+    )
+
+    metadata = result["config"]["point_metadata"]
+    assert metadata[0]["candidate_source"] == "next_candidates"
+    assert metadata[0]["optimizer_strategy"] == "physics_guided_hybrid"
+    assert metadata[1]["candidate_source"] == "physics_prior_engine"
+
+
+def test_physics_guided_hybrid_does_not_change_random_no_replay_baseline(tmp_path: Path):
+    best_run = tmp_path / "run_b"
+    best_run.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "candidate_id": "cand_should_not_replay",
+                "parameter": "m1_width",
+                "candidate_value": "3u",
+                "search_score": 99,
+            }
+        ]
+    ).to_csv(best_run / "next_candidates.csv", index=False)
+
+    result = build_strategy_sweep_config(
+        base_config=_base_config(),
+        history=pd.DataFrame(),
+        best_run_dir=best_run,
+        max_runs=2,
+        seed=1,
+        exploration_ratio=0.25,
+        strategy="random",
+    )
+
+    assert {item["candidate_source"] for item in result["config"]["point_metadata"]} == {"random_baseline"}
+    assert {item["model_status"] for item in result["config"]["point_metadata"]} == {"random_no_replay"}
+
+
+def test_physics_guided_hybrid_falls_back_when_physics_prior_is_empty(monkeypatch):
+    monkeypatch.setattr(optimizer_module, "rank_physics_guided_points", lambda *args, **kwargs: [])
+
+    result = build_strategy_sweep_config(
+        base_config=_base_config(),
+        history=pd.DataFrame([{"status": "evaluated", "overall_score": 80.0, "m1_width": "1u", "load_cap": "0.5pF"}]),
+        best_run_dir=None,
+        max_runs=2,
+        seed=3,
+        exploration_ratio=0.25,
+        strategy="physics_guided_hybrid",
+    )
+
+    assert result["points"]
+    assert {item["candidate_source"] for item in result["config"]["point_metadata"]} == {"diversity_fallback"}
+    assert {item["optimizer_strategy"] for item in result["config"]["point_metadata"]} == {"physics_guided_hybrid"}
 
 
 def test_should_stop_optimization_uses_patience_and_min_improvement():

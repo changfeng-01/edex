@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from goa_eval.strategy_benchmark import _relative_gain, _strategy_leaderboard
+from goa_eval.strategy_benchmark import _relative_gain, _strategy_leaderboard, _summary
 
 
 def test_strategy_benchmark_cli_compares_all_supported_strategies(tmp_path: Path):
@@ -71,7 +71,7 @@ validation_matrix:
     summary = json.loads((output_root / "strategy_benchmark_summary.json").read_text(encoding="utf-8"))
     report = (output_root / "strategy_benchmark_report.md").read_text(encoding="utf-8")
 
-    assert set(rows["strategy"]) == {"random", "adaptive", "surrogate", "repair", "hybrid_goa"}
+    assert set(rows["strategy"]) == {"random", "adaptive", "surrogate", "repair", "hybrid_goa", "physics_guided_hybrid"}
     assert set(rows["seed"]) == {1, 2}
     for column in [
         "rank_status",
@@ -86,6 +86,10 @@ validation_matrix:
         "source_candidate_trigger_metric",
         "source_candidate_rationale",
         "model_status",
+        "physics_score",
+        "physical_hard_passed",
+        "physics_violations",
+        "physics_proxy_json",
         "changed_parameters",
     ]:
         assert column in rows.columns
@@ -108,6 +112,9 @@ validation_matrix:
         "surrogate_candidate_ratio",
         "exploration_candidate_ratio",
         "candidate_diversity_score",
+        "physics_pass_rate",
+        "avg_physics_score",
+        "physics_violation_rate",
         "score_improvement_vs_random",
         "target_pass_rate_gain_vs_random",
         "simulation_efficiency_gain_vs_random",
@@ -172,6 +179,70 @@ def test_strategy_leaderboard_includes_hybrid_goa_candidate_proxy_metrics():
     hybrid = leaderboard.set_index("strategy").loc["hybrid_goa"]
     assert hybrid["pareto_front_hit_rate"] == 0.5
     assert hybrid["candidate_diversity_score"] == 0.75
+
+
+def test_strategy_summary_includes_physics_prior_metrics_without_ranking_on_them():
+    frame = pd.DataFrame(
+        [
+            {
+                "strategy": "random",
+                "best_score": 95.0,
+                "target_passed": True,
+                "hard_constraint_passed": True,
+                "hard_failed": False,
+                "validation_passed": True,
+                "rank_status": "evaluated",
+                "not_evaluable_metric_count": 0,
+                "validation_not_evaluable_count": 0,
+                "simulation_count": 1,
+                "first_pass_sim_count": 1,
+                "mock_used": False,
+                "pareto_front_hit_rate": 0.0,
+                "avg_pareto_rank": None,
+                "best_predicted_score": None,
+                "repair_candidate_ratio": 0.0,
+                "surrogate_candidate_ratio": 0.0,
+                "exploration_candidate_ratio": 0.0,
+                "candidate_diversity_score": 0.0,
+                "physics_score": None,
+                "physical_hard_passed": None,
+                "physics_violations": "",
+            },
+            {
+                "strategy": "physics_guided_hybrid",
+                "best_score": 60.0,
+                "target_passed": False,
+                "hard_constraint_passed": False,
+                "hard_failed": True,
+                "validation_passed": False,
+                "rank_status": "evaluated",
+                "not_evaluable_metric_count": 0,
+                "validation_not_evaluable_count": 0,
+                "simulation_count": 1,
+                "first_pass_sim_count": None,
+                "mock_used": False,
+                "pareto_front_hit_rate": 0.0,
+                "avg_pareto_rank": None,
+                "best_predicted_score": None,
+                "repair_candidate_ratio": 0.0,
+                "surrogate_candidate_ratio": 0.0,
+                "exploration_candidate_ratio": 0.0,
+                "candidate_diversity_score": 0.0,
+                "physics_score": 98.0,
+                "physical_hard_passed": True,
+                "physics_violations": "",
+            },
+        ]
+    )
+
+    summary = _summary(frame, scenario={})
+    leaderboard = _strategy_leaderboard(summary)
+
+    physics = summary["strategies"]["physics_guided_hybrid"]
+    assert physics["physics_pass_rate"] == 1.0
+    assert physics["avg_physics_score"] == 98.0
+    assert physics["physics_violation_rate"] == 0.0
+    assert leaderboard.iloc[0]["strategy"] == "random"
 
 
 def test_strategy_leaderboard_sorts_hard_pass_before_soft_score():

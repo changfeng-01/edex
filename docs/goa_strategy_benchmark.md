@@ -40,7 +40,7 @@ At least one of `--history` or `--leaderboard` must be provided. If neither exis
 | **repair** | failure-guided | Diagnoses failure modes (overlap, ripple, voltage loss, delay dispersion) and applies targeted parameter mutations. |
 | **hybrid_goa** | proposed method | Combines surrogate (50%), repair (30%), and exploration (20%), then Pareto-ranks the result. |
 
-`physics_guided_hybrid` is treated as an alias for `hybrid_goa`.
+In this GOA-specific proxy benchmark, `physics_guided_hybrid` follows the existing `hybrid_goa` candidate-quality path. The separate SKY130 `strategy-benchmark` uses `physics_guided_hybrid` for physics-prior candidate ranking through `physics_engine.py`; see `docs/physics_guided_optimizer.md`.
 
 ## 4. Proxy Metrics
 
