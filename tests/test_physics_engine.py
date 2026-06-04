@@ -82,6 +82,40 @@ def test_rank_physics_guided_points_returns_physics_prior_metadata():
         assert key in metadata
 
 
+def test_rank_physics_guided_points_prefers_stronger_drive_under_same_load():
+    points = [
+        {"m1_width": "1u", "load_cap": "1pF"},
+        {"m1_width": "3u", "load_cap": "1pF"},
+    ]
+    history = pd.DataFrame([{"overall_score": 75.0, "m1_width": "1u", "load_cap": "1pF"}])
+
+    ranked = rank_physics_guided_points(points, history=history)
+
+    assert ranked[0][0]["m1_width"] == "3u"
+    assert ranked[0][1]["physics_score"] > ranked[1][1]["physics_score"]
+    assert "drive/load proxy improves versus baseline" in ranked[0][1]["source_candidate_rationale"]
+
+
+def test_heavier_load_gets_mask_penalty_and_specific_rationale():
+    baseline = {"m1_width": "2u", "load_cap": "1pF"}
+
+    nominal = evaluate_candidate_physics({"m1_width": "2u", "load_cap": "1pF"}, baseline=baseline)
+    heavy = evaluate_candidate_physics({"m1_width": "2u", "load_cap": "3pF"}, baseline=baseline)
+
+    assert heavy.physics_score < nominal.physics_score
+    assert "rc_delay_proxy_degraded_vs_baseline" in heavy.violations
+    assert "drive_load_proxy_weaker_than_baseline" in heavy.violations
+    assert "mask penalty: RC delay degraded versus baseline" in heavy.rationale
+    assert "mask penalty: drive/load ratio weakened versus baseline" in heavy.rationale
+
+
+def test_low_voltage_margin_has_specific_mask_penalty_rationale():
+    result = evaluate_candidate_physics({"vdd": "0.85", "vth": "0.75"})
+
+    assert "low_voltage_margin" in result.violations
+    assert "mask penalty: voltage margin is low" in result.rationale
+
+
 def test_evaluate_candidate_physics_does_not_run_ngspice_or_read_files(monkeypatch):
     def fail_open(*args, **kwargs):
         raise AssertionError("physics prior must not read external files")

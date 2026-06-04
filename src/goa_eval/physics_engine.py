@@ -73,6 +73,7 @@ def evaluate_candidate_physics(
                 penalty = min(18.0, 18.0 * (ratio - 1.0))
                 score -= penalty
                 violations.append("rc_delay_proxy_degraded_vs_baseline")
+                rationale_parts.append("mask penalty: RC delay degraded versus baseline")
         elif rc_delay > 0:
             score += _bounded_log_reward(1.0 / rc_delay, scale=5.0)
 
@@ -88,6 +89,7 @@ def evaluate_candidate_physics(
             elif ratio < 0.8:
                 score -= min(12.0, 12.0 * (1.0 - ratio))
                 violations.append("drive_load_proxy_weaker_than_baseline")
+                rationale_parts.append("mask penalty: drive/load ratio weakened versus baseline")
 
     storage_ratio = _as_float(proxy.get("storage_to_load_cap_ratio"))
     if storage_ratio is not None:
@@ -97,6 +99,7 @@ def evaluate_candidate_physics(
         else:
             score -= 18.0 * (1.0 - storage_ratio)
             violations.append("storage_cap_margin_below_load_cap")
+            rationale_parts.append("mask penalty: storage capacitance margin is below load capacitance")
 
     timing_margin = _as_float(proxy.get("timing_spacing_over_rc"))
     if timing_margin is not None:
@@ -106,6 +109,7 @@ def evaluate_candidate_physics(
         else:
             score -= 28.0 * (2.0 - timing_margin) / 2.0
             violations.append("timing_spacing_below_2x_rc_delay")
+            rationale_parts.append("mask penalty: timing spacing is below 2x RC delay")
 
     pulse_margin = _as_float(proxy.get("pulse_width_over_rc"))
     if pulse_margin is not None:
@@ -114,15 +118,18 @@ def evaluate_candidate_physics(
         else:
             score -= 18.0 * (3.0 - pulse_margin) / 3.0
             violations.append("pulse_width_below_3x_rc_delay")
+            rationale_parts.append("mask penalty: pulse width is below 3x RC delay")
 
     voltage_margin = _as_float(proxy.get("voltage_margin_v"))
     if voltage_margin is not None:
         if voltage_margin <= 0:
             score -= 35.0
             violations.append("non_positive_voltage_margin")
+            rationale_parts.append("mask penalty: voltage margin is non-positive")
         elif voltage_margin < 0.2:
             score -= 12.0 * (0.2 - voltage_margin) / 0.2
             violations.append("low_voltage_margin")
+            rationale_parts.append("mask penalty: voltage margin is low")
         else:
             score += min(6.0, 3.0 * voltage_margin)
 
