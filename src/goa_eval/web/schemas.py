@@ -6,18 +6,16 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-
-DATA_SOURCE = "real_simulation_csv"
-ENGINEERING_VALIDITY = "simulation_only"
-MUST_RESIMULATE = True
+from goa_eval.product_demo.schemas import (
+    DATA_SOURCE,
+    ENGINEERING_VALIDITY,
+    MUST_RESIMULATE,
+    default_evidence_boundary,
+)
 
 
 def evidence_boundary() -> dict[str, Any]:
-    return {
-        "data_source": DATA_SOURCE,
-        "engineering_validity": ENGINEERING_VALIDITY,
-        "must_resimulate": MUST_RESIMULATE,
-    }
+    return default_evidence_boundary()
 
 
 class WebApiSettings(BaseModel):

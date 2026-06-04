@@ -1,7 +1,31 @@
 from __future__ import annotations
 
+from typing import Any, Mapping
+
 DATA_SOURCE = "real_simulation_csv"
 ENGINEERING_VALIDITY = "simulation_only"
+MUST_RESIMULATE = True
+
+BOUNDARY_FIELDS = ("data_source", "engineering_validity", "must_resimulate")
+
+
+def default_evidence_boundary() -> dict[str, Any]:
+    return {
+        "data_source": DATA_SOURCE,
+        "engineering_validity": ENGINEERING_VALIDITY,
+        "must_resimulate": MUST_RESIMULATE,
+    }
+
+
+def normalize_evidence_boundary(
+    evidence: Mapping[str, Any] | None = None,
+    override: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized = dict(evidence or {})
+    if override:
+        normalized.update({key: value for key, value in override.items() if value not in (None, "")})
+    normalized.update(default_evidence_boundary())
+    return normalized
 
 AWAITING_RERUN_RESULTS = "awaiting_rerun_results"
 AWAITING_CANDIDATE_GENERATION = "awaiting_candidate_generation"
@@ -10,6 +34,7 @@ AVAILABLE = "available"
 EVIDENCE_FIELDS = [
     "data_source",
     "engineering_validity",
+    "must_resimulate",
     "evidence_level",
     "simulation_backend",
     "mock_used",

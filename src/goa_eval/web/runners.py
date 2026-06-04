@@ -86,9 +86,12 @@ def run_uploaded_case(case_dir: Path, config: UploadedCaseConfig) -> CaseRunResu
                 output_md=paths["analysis_md"],
                 output_json=paths["analysis_json"],
             )
-        product_demo_case_dir = run_product_demo(input_dir=analysis_dir, output_dir=product_demo_root, case_id=config.case_id)
-        _patch_dashboard_boundary(product_demo_case_dir)
-        _patch_report_boundary(product_demo_case_dir)
+        product_demo_case_dir = run_product_demo(
+            input_dir=analysis_dir,
+            output_dir=product_demo_root,
+            case_id=config.case_id,
+            evidence_boundary=boundary,
+        )
         result = CaseRunResult(
             case_id=config.case_id,
             status="completed",
@@ -131,38 +134,6 @@ def _pipeline_paths(output_dir: Path) -> dict[str, Path]:
         "analysis_md": output_dir / "llm_parameter_analysis.md",
         "analysis_json": output_dir / "llm_parameter_analysis.json",
     }
-
-
-def _patch_dashboard_boundary(case_dir: Path) -> None:
-    boundary = evidence_boundary()
-    for path in [
-        case_dir / "06_dashboard_data" / "dashboard_summary.json",
-        case_dir / "06_dashboard_data" / "presentation_manifest.json",
-    ]:
-        if not path.exists():
-            continue
-        payload = _read_json(path)
-        evidence = dict(payload.get("evidence", {}))
-        evidence.update(boundary)
-        payload["evidence"] = evidence
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
-def _patch_report_boundary(case_dir: Path) -> None:
-    report_dir = case_dir / "07_report"
-    if not report_dir.exists():
-        return
-    boundary_block = (
-        "\n\n## Upload Evidence Boundary\n\n"
-        "- data_source = real_simulation_csv\n"
-        "- engineering_validity = simulation_only\n"
-        "- must_resimulate = true\n"
-        "\nCandidates are next-run simulation suggestions, not physical or silicon validation.\n"
-    )
-    for path in report_dir.glob("*.md"):
-        text = path.read_text(encoding="utf-8")
-        if "must_resimulate = true" not in text:
-            path.write_text(text.rstrip() + boundary_block, encoding="utf-8")
 
 
 def _read_json(path: Path) -> dict[str, Any]:

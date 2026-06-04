@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import pandas as pd
 
@@ -16,6 +16,7 @@ from goa_eval.product_demo.schemas import (
     ENGINEERING_VALIDITY,
     EVIDENCE_FIELDS,
     INPUT_ARTIFACT_NAMES,
+    normalize_evidence_boundary,
 )
 
 
@@ -38,7 +39,7 @@ class ProductDemoArtifacts:
     candidate_status: str
 
 
-def collect_artifacts(input_dir: Path) -> ProductDemoArtifacts:
+def collect_artifacts(input_dir: Path, evidence_boundary: Mapping[str, Any] | None = None) -> ProductDemoArtifacts:
     input_dir = input_dir.resolve()
     files = _discover_files(input_dir)
     summary = _read_json(files.get("real_summary.json"))
@@ -59,7 +60,7 @@ def collect_artifacts(input_dir: Path) -> ProductDemoArtifacts:
     ]
     validation_status = AVAILABLE if not validation.empty else AWAITING_RERUN_RESULTS
     candidate_status = AVAILABLE if not candidates.empty else AWAITING_CANDIDATE_GENERATION
-    evidence = _collect_evidence(summary, score, manifest)
+    evidence = _collect_evidence(summary, score, manifest, evidence_boundary=evidence_boundary)
     return ProductDemoArtifacts(
         input_dir=input_dir,
         summary=summary,
@@ -139,7 +140,10 @@ def _read_csv(path: Path | None) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def _collect_evidence(*payloads: dict[str, Any]) -> dict[str, Any]:
+def _collect_evidence(
+    *payloads: dict[str, Any],
+    evidence_boundary: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     evidence = {
         "data_source": DATA_SOURCE,
         "engineering_validity": ENGINEERING_VALIDITY,
@@ -149,9 +153,7 @@ def _collect_evidence(*payloads: dict[str, Any]) -> dict[str, Any]:
         for field in EVIDENCE_FIELDS:
             if field in payload and payload[field] not in (None, ""):
                 evidence[field] = payload[field]
-    evidence["data_source"] = evidence.get("data_source") or DATA_SOURCE
-    evidence["engineering_validity"] = evidence.get("engineering_validity") or ENGINEERING_VALIDITY
-    return evidence
+    return normalize_evidence_boundary(evidence, evidence_boundary)
 
 
 def _has_fallback(name: str, files: dict[str, Path]) -> bool:
