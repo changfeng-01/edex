@@ -16,6 +16,8 @@ __pypackages__/
 .DS_Store
 .idea/
 .vscode/
+.codegraph/
+/node_modules/
 build/
 dist/
 *.egg-info/

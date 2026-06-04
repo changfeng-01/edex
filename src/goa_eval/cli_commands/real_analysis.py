@@ -20,6 +20,12 @@ from goa_eval.recommendation import build_recommendations, write_recommendations
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
+    register_real_evaluation_commands(subparsers)
+    register_candidate_analysis_commands(subparsers)
+    register_import_commands(subparsers)
+
+
+def register_real_evaluation_commands(subparsers: argparse._SubParsersAction) -> None:
     real = subparsers.add_parser("evaluate-real")
     real.add_argument("--waveform", required=True)
     real.add_argument("--internal-waveform")
@@ -47,6 +53,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     batch.add_argument("--output-dir", default="outputs_batch")
     batch.set_defaults(handler=handle_evaluate_batch)
 
+
+def register_candidate_analysis_commands(subparsers: argparse._SubParsersAction) -> None:
     candidates = subparsers.add_parser("propose-candidates")
     candidates.add_argument("--summary", required=True)
     candidates.add_argument("--score")
@@ -90,6 +98,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     assistant.add_argument("--output-dir", default="outputs/ai_profile_assistant")
     assistant.set_defaults(handler=handle_ai_profile_assistant)
 
+
+def register_import_commands(subparsers: argparse._SubParsersAction) -> None:
     csv_import = subparsers.add_parser("csv-import")
     add_csv_import_args(csv_import)
     csv_import.set_defaults(handler=handle_csv_import)

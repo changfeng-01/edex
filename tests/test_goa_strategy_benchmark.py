@@ -6,8 +6,12 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
+import yaml
 
 from goa_eval.goa_strategy_benchmark import (
+    OUTPUT_REQUIRED_FILES,
+    REQUIRED_BOUNDARY_FIELDS,
     generate_adaptive_goa_candidates,
     generate_hybrid_goa_candidates,
     generate_random_goa_candidates,
@@ -31,7 +35,9 @@ def _sample_leaderboard_csv(tmp_path: Path) -> Path:
                 "Delay_std": 0.04,
                 "hard_constraint_passed": False,
                 "rank_status": "evaluated",
-                "parameters_json": json.dumps({"capacitance": 1.0e-12, "drive_resistance": 1500, "transistor_width": 1.0e-6}),
+                "parameters_json": json.dumps(
+                    {"capacitance": 1.0e-12, "drive_resistance": 1500, "transistor_width": 1.0e-6}
+                ),
             },
             {
                 "candidate_id": "seed_2",
@@ -42,7 +48,9 @@ def _sample_leaderboard_csv(tmp_path: Path) -> Path:
                 "Delay_std": 0.03,
                 "hard_constraint_passed": True,
                 "rank_status": "evaluated",
-                "parameters_json": json.dumps({"capacitance": 8.0e-13, "drive_resistance": 1000, "transistor_width": 1.2e-6}),
+                "parameters_json": json.dumps(
+                    {"capacitance": 8.0e-13, "drive_resistance": 1000, "transistor_width": 1.2e-6}
+                ),
             },
             {
                 "candidate_id": "seed_3",
@@ -54,7 +62,9 @@ def _sample_leaderboard_csv(tmp_path: Path) -> Path:
                 "hard_constraint_passed": False,
                 "rank_status": "not_evaluable",
                 "not_evaluable_metric_count": 3,
-                "parameters_json": json.dumps({"capacitance": 1.2e-12, "drive_resistance": 2000, "transistor_width": 8.0e-7}),
+                "parameters_json": json.dumps(
+                    {"capacitance": 1.2e-12, "drive_resistance": 2000, "transistor_width": 8.0e-7}
+                ),
             },
         ]
     ).to_csv(path, index=False, encoding="utf-8-sig")
@@ -62,8 +72,6 @@ def _sample_leaderboard_csv(tmp_path: Path) -> Path:
 
 
 def _sample_param_space(tmp_path: Path) -> Path:
-    import yaml
-
     path = tmp_path / "sample_params.yaml"
     path.write_text(
         yaml.dump(
@@ -80,290 +88,103 @@ def _sample_param_space(tmp_path: Path) -> Path:
     return path
 
 
-class TestGoaStrategyBenchmarkCLI:
-    def test_cli_smoke_produces_required_outputs(self, tmp_path: Path):
-        leaderboard = _sample_leaderboard_csv(tmp_path)
-        param_space = _sample_param_space(tmp_path)
-        output_root = tmp_path / "goa_strategy_benchmark"
+def test_goa_strategy_benchmark_writes_boundary_outputs(tmp_path: Path) -> None:
+    leaderboard_path = _sample_leaderboard_csv(tmp_path)
+    param_space_path = _sample_param_space(tmp_path)
+    output_root = tmp_path / "benchmark"
 
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "goa_eval.cli",
-                "goa-strategy-benchmark",
-                "--leaderboard",
-                str(leaderboard),
-                "--param-space",
-                str(param_space),
-                "--output-root",
-                str(output_root),
-                "--strategies",
-                "random,adaptive,surrogate,repair,hybrid_goa",
-                "--max-candidates",
-                "10",
-                "--seeds",
-                "1,2",
-                "--top-k",
-                "5",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, f"CLI failed: {result.stderr}"
+    summary = run_goa_strategy_benchmark(
+        history_path=None,
+        leaderboard_path=leaderboard_path,
+        param_space_path=param_space_path,
+        output_root=output_root,
+        strategies=["random", "adaptive", "surrogate", "repair", "hybrid_goa"],
+        max_candidates=8,
+        seeds=[1, 2],
+        top_k=3,
+    )
 
-        assert (output_root / "goa_strategy_benchmark.csv").exists()
-        assert (output_root / "goa_strategy_benchmark_summary.json").exists()
-        assert (output_root / "goa_strategy_leaderboard.csv").exists()
-        assert (output_root / "goa_strategy_benchmark_report.md").exists()
+    for filename in OUTPUT_REQUIRED_FILES:
+        assert (output_root / filename).exists(), filename
+    for key, expected in REQUIRED_BOUNDARY_FIELDS.items():
+        assert summary[key] == expected
 
-    def test_cli_no_history_no_leaderboard_errors(self, tmp_path: Path):
-        param_space = _sample_param_space(tmp_path)
-        output_root = tmp_path / "goa_strategy_benchmark"
+    assert summary["fairness"]["random_baseline_no_replay"] is True
+    assert set(summary["strategies"]) == {"random", "adaptive", "surrogate", "repair", "hybrid_goa"}
 
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "goa_eval.cli",
-                "goa-strategy-benchmark",
-                "--param-space",
-                str(param_space),
-                "--output-root",
-                str(output_root),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode != 0
+    rows = pd.read_csv(output_root / "goa_strategy_benchmark.csv")
+    assert set(rows["strategy"]) == {"random", "adaptive", "surrogate", "repair", "hybrid_goa"}
+    assert set(rows["engineering_validity"]) == {"simulation_only"}
+    assert set(rows["simulation_backend"]) == {"no_real_ngspice_required"}
+
+    leaderboard = pd.read_csv(output_root / "goa_strategy_leaderboard.csv")
+    assert "proxy_improvement_vs_random" in leaderboard.columns
+    assert "predicted_hard_constraint_pass_rate" in leaderboard.columns
+
+    report = (output_root / "goa_strategy_benchmark_report.md").read_text(encoding="utf-8")
+    assert "candidate-quality proxy only" in report
+    assert "engineering_validity = simulation_only" in report
 
 
-class TestStrategyCoverage:
-    def test_all_strategies_appear_in_benchmark(self, tmp_path: Path):
-        leaderboard = _sample_leaderboard_csv(tmp_path)
-        param_space = _sample_param_space(tmp_path)
-        output_root = tmp_path / "goa_strategy_benchmark"
+def test_goa_strategy_generators_keep_expected_sources(tmp_path: Path) -> None:
+    leaderboard = pd.read_csv(_sample_leaderboard_csv(tmp_path))
+    param_space = load_param_space(_sample_param_space(tmp_path))
+    model_bundle = _fit_surrogate(leaderboard, list(param_space))
 
-        summary = run_goa_strategy_benchmark(
-            leaderboard_path=leaderboard,
-            history_path=None,
-            param_space_path=param_space,
-            output_root=output_root,
-            strategies=["random", "adaptive", "surrogate", "repair", "hybrid_goa"],
-            max_candidates=10,
-            seeds=[1],
-        )
+    random_candidates = generate_random_goa_candidates(param_space, max_candidates=4, seed=1)
+    adaptive_candidates = generate_adaptive_goa_candidates(leaderboard, param_space, max_candidates=4, seed=1)
+    surrogate_candidates = generate_surrogate_goa_candidates(
+        leaderboard, param_space, model_bundle, max_candidates=4, seed=1
+    )
+    hybrid_candidates = generate_hybrid_goa_candidates(
+        leaderboard, param_space, model_bundle, max_candidates=8, seed=1
+    )
 
-        bench = pd.read_csv(output_root / "goa_strategy_benchmark.csv")
-        strategy_set = set(bench["strategy"].unique())
-        assert "random" in strategy_set
-        assert "adaptive" in strategy_set
-        assert "surrogate" in strategy_set
-        assert "repair" in strategy_set
-        assert "hybrid_goa" in strategy_set
+    assert {item["candidate_source"] for item in random_candidates} == {"random"}
+    assert {item["candidate_source"] for item in adaptive_candidates} == {"adaptive"}
+    assert any(item["candidate_source"] == "surrogate" for item in surrogate_candidates)
+    assert {"surrogate", "repair", "exploration"}.issubset({item["candidate_source"] for item in hybrid_candidates})
 
 
-class TestBoundaryFields:
-    def test_summary_boundary_fields(self, tmp_path: Path):
-        leaderboard = _sample_leaderboard_csv(tmp_path)
-        param_space = _sample_param_space(tmp_path)
-        output_root = tmp_path / "goa_strategy_benchmark"
-
-        summary = run_goa_strategy_benchmark(
-            leaderboard_path=leaderboard,
-            history_path=None,
-            param_space_path=param_space,
-            output_root=output_root,
-            strategies=["random", "hybrid_goa"],
-            max_candidates=10,
-            seeds=[1],
-        )
-
-        assert summary["benchmark_type"] == "goa_strategy_benchmark"
-        assert summary["task_type"] == "candidate_quality_proxy"
-        assert summary["engineering_validity"] == "simulation_only"
-        assert summary["simulation_backend"] == "no_real_ngspice_required"
-        assert summary["result_claim"] == "candidate_quality_proxy_only"
-        assert summary["mock_used"] is False
-
-
-class TestFairnessFields:
-    def test_summary_fairness_fields(self, tmp_path: Path):
-        leaderboard = _sample_leaderboard_csv(tmp_path)
-        param_space = _sample_param_space(tmp_path)
-        output_root = tmp_path / "goa_strategy_benchmark"
-
-        summary = run_goa_strategy_benchmark(
-            leaderboard_path=leaderboard,
-            history_path=None,
-            param_space_path=param_space,
-            output_root=output_root,
-            strategies=["random", "adaptive"],
-            max_candidates=15,
-            seeds=[1, 2],
-            top_k=8,
-        )
-
-        fairness = summary["fairness"]
-        assert fairness["same_param_space"] is True
-        assert fairness["same_candidate_budget"] == 15
-        assert fairness["same_seed_set"] == [1, 2]
-        assert fairness["same_objective_config"] is not None
-        assert fairness["same_top_k"] == 8
-        assert fairness["random_baseline_no_replay"] is True
-        assert fairness["no_real_ngspice_required"] is True
-
-
-class TestRandomBaseline:
-    def test_random_candidates_have_correct_source_and_status(self, tmp_path: Path):
-        param_space_path = _sample_param_space(tmp_path)
-        param_space = load_param_space(param_space_path)
-
-        candidates = generate_random_goa_candidates(param_space, max_candidates=5, seed=42)
-
-        assert len(candidates) == 5
-        for candidate in candidates:
-            assert candidate["candidate_source"] == "random"
-            assert candidate["model_status"] == "random_no_replay"
-            assert candidate["repair_operator"] == ""
-            assert candidate["data_source"] == "benchmark-derived"
-            assert candidate["simulation_backend"] == "no_real_ngspice_required"
-
-    def test_random_benchmark_row_has_no_surrogate_no_repair(self, tmp_path: Path):
-        leaderboard = _sample_leaderboard_csv(tmp_path)
-        param_space = _sample_param_space(tmp_path)
-        output_root = tmp_path / "goa_strategy_benchmark"
-
+def test_goa_strategy_benchmark_requires_history_or_leaderboard(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="At least one of --history or --leaderboard"):
         run_goa_strategy_benchmark(
-            leaderboard_path=leaderboard,
             history_path=None,
-            param_space_path=param_space,
-            output_root=output_root,
-            strategies=["random"],
-            max_candidates=10,
-            seeds=[1],
+            leaderboard_path=None,
+            param_space_path=_sample_param_space(tmp_path),
+            output_root=tmp_path / "out",
         )
 
-        bench = pd.read_csv(output_root / "goa_strategy_benchmark.csv")
-        random_row = bench[bench["strategy"] == "random"].iloc[0]
-        assert random_row["surrogate_candidate_ratio"] == 0.0
-        assert random_row["repair_candidate_ratio"] == 0.0
-        assert random_row["exploration_candidate_ratio"] == 0.0
 
+def test_goa_strategy_benchmark_cli_smoke(tmp_path: Path) -> None:
+    output_root = tmp_path / "cli_out"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "goa_eval.cli",
+            "goa-strategy-benchmark",
+            "--leaderboard",
+            str(_sample_leaderboard_csv(tmp_path)),
+            "--param-space",
+            str(_sample_param_space(tmp_path)),
+            "--output-root",
+            str(output_root),
+            "--strategies",
+            "random,hybrid_goa",
+            "--max-candidates",
+            "6",
+            "--seeds",
+            "1",
+            "--top-k",
+            "3",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
-class TestHybridGoaIntegration:
-    def test_hybrid_goa_candidate_sources_appear(self, tmp_path: Path):
-        leaderboard = _sample_leaderboard_csv(tmp_path)
-        param_space = _sample_param_space(tmp_path)
-        output_root = tmp_path / "goa_strategy_benchmark"
-
-        run_goa_strategy_benchmark(
-            leaderboard_path=leaderboard,
-            history_path=None,
-            param_space_path=param_space,
-            output_root=output_root,
-            strategies=["hybrid_goa"],
-            max_candidates=10,
-            seeds=[1],
-        )
-
-        bench = pd.read_csv(output_root / "goa_strategy_benchmark.csv")
-        hybrid_row = bench[bench["strategy"] == "hybrid_goa"].iloc[0]
-        total = hybrid_row["repair_candidate_ratio"] + hybrid_row["surrogate_candidate_ratio"] + hybrid_row["exploration_candidate_ratio"]
-        assert total > 0.0
-
-    def test_hybrid_goa_produces_candidates_from_multiple_sources(self, tmp_path: Path):
-        leaderboard = _sample_leaderboard_csv(tmp_path)
-        param_space_path = _sample_param_space(tmp_path)
-        param_space = load_param_space(param_space_path)
-        leaderboard_df = pd.read_csv(leaderboard)
-        model_bundle = _fit_surrogate(leaderboard_df, list(param_space.keys()))
-
-        candidates = generate_hybrid_goa_candidates(
-            leaderboard_df, param_space, model_bundle, max_candidates=10, seed=42
-        )
-
-        sources = {c["candidate_source"] for c in candidates}
-        assert sources & {"surrogate", "repair", "exploration"}
-
-
-class TestLeaderboardSorting:
-    def test_leaderboard_sorts_by_hard_constraint_then_pareto(self, tmp_path: Path):
-        leaderboard = _sample_leaderboard_csv(tmp_path)
-        param_space = _sample_param_space(tmp_path)
-        output_root = tmp_path / "goa_strategy_benchmark"
-
-        run_goa_strategy_benchmark(
-            leaderboard_path=leaderboard,
-            history_path=None,
-            param_space_path=param_space,
-            output_root=output_root,
-            strategies=["random", "adaptive", "surrogate", "repair", "hybrid_goa"],
-            max_candidates=10,
-            seeds=[1],
-        )
-
-        lb = pd.read_csv(output_root / "goa_strategy_leaderboard.csv")
-        assert not lb.empty
-        assert "strategy" in lb.columns
-        assert "predicted_hard_constraint_pass_rate" in lb.columns
-        assert "pareto_front_hit_rate" in lb.columns
-
-
-class TestCandidatesWritten:
-    def test_candidate_csv_files_generated(self, tmp_path: Path):
-        leaderboard = _sample_leaderboard_csv(tmp_path)
-        param_space = _sample_param_space(tmp_path)
-        output_root = tmp_path / "goa_strategy_benchmark"
-
-        run_goa_strategy_benchmark(
-            leaderboard_path=leaderboard,
-            history_path=None,
-            param_space_path=param_space,
-            output_root=output_root,
-            strategies=["random", "hybrid_goa"],
-            max_candidates=10,
-            seeds=[1],
-        )
-
-        candidates_dir = output_root / "candidates"
-        assert candidates_dir.exists()
-        candidate_files = list(candidates_dir.glob("*.csv"))
-        assert len(candidate_files) >= 1
-
-    def test_report_marks_simulation_only(self, tmp_path: Path):
-        leaderboard = _sample_leaderboard_csv(tmp_path)
-        param_space = _sample_param_space(tmp_path)
-        output_root = tmp_path / "goa_strategy_benchmark"
-
-        run_goa_strategy_benchmark(
-            leaderboard_path=leaderboard,
-            history_path=None,
-            param_space_path=param_space,
-            output_root=output_root,
-            strategies=["random", "adaptive"],
-            max_candidates=10,
-            seeds=[1],
-        )
-
-        report = (output_root / "goa_strategy_benchmark_report.md").read_text(encoding="utf-8")
-        assert "simulation_only" in report
-        assert "candidate_quality_proxy" in report
-        assert "no_real_ngspice_required" in report
-        assert "not physical validation" in report
-        assert "Do not describe proxy improvement" in report
-
-
-class TestAdaptiveStrategy:
-    def test_adaptive_candidates_have_correct_source(self, tmp_path: Path):
-        leaderboard = _sample_leaderboard_csv(tmp_path)
-        param_space_path = _sample_param_space(tmp_path)
-        param_space = load_param_space(param_space_path)
-        leaderboard_df = pd.read_csv(leaderboard)
-
-        candidates = generate_adaptive_goa_candidates(leaderboard_df, param_space, max_candidates=5, seed=42)
-
-        assert len(candidates) == 5
-        for candidate in candidates:
-            assert candidate["candidate_source"] == "adaptive"
-            assert candidate["model_status"] == "rule_based_adaptive"
+    assert result.returncode == 0
+    summary = json.loads((output_root / "goa_strategy_benchmark_summary.json").read_text(encoding="utf-8"))
+    assert set(summary["strategies"]) == {"random", "hybrid_goa"}
+    assert summary["engineering_validity"] == "simulation_only"

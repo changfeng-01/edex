@@ -14,6 +14,12 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern, WhiteKernel
 
+from goa_eval.multi_round_strategy import (
+    uses_candidate_replay,
+    uses_genetic_search,
+    uses_model_ranking,
+    uses_physics_prior,
+)
 from goa_eval.physics_engine import rank_physics_guided_points
 from goa_eval.sky130_sweep import run_sky130_sweep
 
@@ -117,7 +123,7 @@ def build_strategy_sweep_config(
         config["optimizer_strategy"] = "random"
         return {"config": config, "points": points, "stop_reason": "" if points else "no new sweep points"}
 
-    if strategy in {"hybrid", "genetic", "repair", "hybrid_goa", "physics_guided_hybrid"}:
+    if uses_candidate_replay(strategy):
         accepted_candidates = 0
         for candidate, metadata in _candidate_points(best_run_dir, _best_parameter_row(history, parameters)):
             metadata = {**metadata, "optimizer_strategy": strategy, "model_status": "rule_seed"}
@@ -126,7 +132,7 @@ def build_strategy_sweep_config(
             if candidate_limit is not None and accepted_candidates >= max(0, int(candidate_limit)):
                 break
 
-    if strategy == "physics_guided_hybrid" and len(points) < max_runs:
+    if uses_physics_prior(strategy) and len(points) < max_runs:
         selected = {_point_key(point, parameters) for point in points}
         physics_grid = [point for point in grid if _point_key(point, parameters) not in selected]
         for point, metadata in rank_physics_guided_points(
@@ -136,12 +142,12 @@ def build_strategy_sweep_config(
         ):
             _append_unique_point(points, point_metadata, point, metadata, parameters, seen, max_runs)
 
-    if strategy in {"genetic", "hybrid"} and len(points) < max_runs:
+    if uses_genetic_search(strategy) and len(points) < max_runs:
         for point, metadata in _genetic_points(parameters, history, max_runs=max_runs, seed=seed):
             metadata["optimizer_strategy"] = strategy
             _append_unique_point(points, point_metadata, point, metadata, parameters, seen, max_runs)
 
-    if strategy in {"bayesian", "surrogate", "hybrid", "hybrid_goa", "physics_guided_hybrid"} and len(points) < max_runs:
+    if uses_model_ranking(strategy) and len(points) < max_runs:
         ranked_model_points = _model_ranked_points(parameters, history, grid, strategy=strategy, seed=seed)
         for point, metadata in ranked_model_points:
             metadata["optimizer_strategy"] = strategy

@@ -10,24 +10,24 @@ from typing import Any
 import pandas as pd
 
 from goa_eval.goa_hybrid_optimizer import (
-    _best_parameters,
-    _best_score,
-    _candidate,
-    _candidate_counts,
-    _changed_parameters,
-    _complete_output_columns,
-    _dedupe_candidates,
-    _ensure_source_coverage,
-    _fit_surrogate,
-    _generate_exploration_candidates,
-    _generate_surrogate_candidates,
-    _load_csv,
-    _load_history,
-    _merge_samples,
-    _mutation_strength,
-    _predict_metrics,
-    _sample_parameters,
-    _score_candidates,
+    best_goa_parameters,
+    best_goa_score,
+    build_goa_candidate,
+    changed_goa_parameters,
+    complete_goa_output_columns,
+    dedupe_goa_candidates,
+    ensure_goa_source_coverage,
+    fit_goa_surrogate,
+    generate_goa_exploration_candidates,
+    generate_goa_surrogate_candidates,
+    goa_candidate_counts,
+    goa_mutation_strength,
+    load_goa_csv,
+    load_goa_history,
+    merge_goa_samples,
+    predict_goa_metrics,
+    sample_goa_parameters,
+    score_goa_candidates,
     generate_repair_candidates,
 )
 from goa_eval.io_utils import write_json
@@ -75,12 +75,12 @@ def run_goa_strategy_benchmark(
     seeds = seeds or [1, 2, 3]
     output_root.mkdir(parents=True, exist_ok=True)
 
-    history = _load_history(history_path)
-    leaderboard = _load_csv(leaderboard_path)
-    samples = _merge_samples(history, leaderboard)
+    history = load_goa_history(history_path)
+    leaderboard = load_goa_csv(leaderboard_path)
+    samples = merge_goa_samples(history, leaderboard)
     param_space = load_param_space(param_space_path)
     param_names = list(param_space.keys())
-    model_bundle = _fit_surrogate(samples, param_names)
+    model_bundle = fit_goa_surrogate(samples, param_names)
 
     rows: list[dict[str, Any]] = []
     strategy_candidates: dict[str, dict[int, pd.DataFrame]] = {}
@@ -139,9 +139,9 @@ def generate_random_goa_candidates(
     rng = random.Random(seed)
     candidates = []
     for index in range(max_candidates):
-        params = _sample_parameters(param_space, rng)
+        params = sample_goa_parameters(param_space, rng)
         candidates.append(
-            _candidate(
+            build_goa_candidate(
                 source="random",
                 parameters=params,
                 changed_parameters=sorted(params.keys()),
@@ -160,7 +160,7 @@ def generate_adaptive_goa_candidates(
     seed: int = 42,
 ) -> list[dict[str, Any]]:
     rng = random.Random(seed)
-    baseline = _best_parameters(samples, param_space)
+    baseline = best_goa_parameters(samples, param_space)
     param_names = list(param_space.keys())
     candidates = []
     for _ in range(max_candidates):
@@ -170,15 +170,15 @@ def generate_adaptive_goa_candidates(
                 values = param_space.get(name, {}).get("values", [param_space.get(name)]) if isinstance(param_space.get(name), dict) else (param_space.get(name) if isinstance(param_space.get(name), list) else [param_space.get(name)])
                 if values and isinstance(values, list):
                     params[name] = rng.choice(values)
-        changed = _changed_parameters(baseline, params)
+        changed = changed_goa_parameters(baseline, params)
         candidates.append(
-            _candidate(
+            build_goa_candidate(
                 source="adaptive",
                 parameters=params,
                 changed_parameters=changed or sorted(params),
                 rationale="rule-based adaptive candidate — small perturbation around history best",
                 model_status="rule_based_adaptive",
-                mutation_strength=_mutation_strength(baseline, params),
+                mutation_strength=goa_mutation_strength(baseline, params),
             )
         )
     return candidates
@@ -192,7 +192,7 @@ def generate_surrogate_goa_candidates(
     seed: int = 42,
 ) -> list[dict[str, Any]]:
     rng = random.Random(seed)
-    return _generate_surrogate_candidates(samples, param_space, model_bundle, max_candidates, rng)
+    return generate_goa_surrogate_candidates(samples, param_space, model_bundle, max_candidates, rng)
 
 
 def generate_hybrid_goa_candidates(
@@ -204,17 +204,17 @@ def generate_hybrid_goa_candidates(
     hybrid_candidate_mix: dict[str, float] | None = None,
 ) -> list[dict[str, Any]]:
     mix = hybrid_candidate_mix or {"surrogate": 0.5, "repair": 0.3, "exploration": 0.2}
-    counts = _candidate_counts(max_candidates, mix)
+    counts = goa_candidate_counts(max_candidates, mix)
     rng = random.Random(seed)
     param_names = list(param_space.keys())
 
     candidates: list[dict[str, Any]] = []
-    candidates.extend(_generate_surrogate_candidates(samples, param_space, model_bundle, counts["surrogate"], rng))
+    candidates.extend(generate_goa_surrogate_candidates(samples, param_space, model_bundle, counts["surrogate"], rng))
     candidates.extend(generate_repair_candidates(samples, param_space, max_candidates=counts["repair"], seed=seed + 17))
-    candidates.extend(_generate_exploration_candidates(samples, param_space, counts["exploration"], rng))
-    candidates = _ensure_source_coverage(candidates, samples, param_space, model_bundle, rng, max_candidates)
-    candidates = _dedupe_candidates(candidates)[:max_candidates]
-    candidates = _score_candidates(candidates, samples, model_bundle, param_names)
+    candidates.extend(generate_goa_exploration_candidates(samples, param_space, counts["exploration"], rng))
+    candidates = ensure_goa_source_coverage(candidates, samples, param_space, model_bundle, rng, max_candidates)
+    candidates = dedupe_goa_candidates(candidates)[:max_candidates]
+    candidates = score_goa_candidates(candidates, samples, model_bundle, param_names)
     return candidates
 
 
@@ -250,7 +250,7 @@ def _benchmark_row(
 ) -> dict[str, Any]:
     candidate_count = len(frame)
     topk = frame.head(top_k) if not frame.empty else frame
-    history_best_score = _best_score(samples) or 0.0
+    history_best_score = best_goa_score(samples) or 0.0
 
     source_counts = Counter(frame["candidate_source"]) if "candidate_source" in frame.columns and not frame.empty else Counter()
     total = candidate_count or 1
@@ -529,7 +529,7 @@ def _write_candidate_csvs(
         for seed, frame in list(seed_frames.items())[:max_seeds]:
             if frame.empty:
                 continue
-            frame = _complete_output_columns(frame)
+            frame = complete_goa_output_columns(frame)
             frame.to_csv(candidates_dir / f"{strategy}_seed_{seed}.csv", index=False, encoding="utf-8-sig")
 
 

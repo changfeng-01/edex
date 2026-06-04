@@ -14,6 +14,12 @@ from goa_eval.strategy_benchmark import parse_seeds, run_strategy_benchmark
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
+    register_simulation_adapter_commands(subparsers)
+    register_sky130_run_commands(subparsers)
+    register_optimization_commands(subparsers)
+
+
+def register_simulation_adapter_commands(subparsers: argparse._SubParsersAction) -> None:
     simulate_run = subparsers.add_parser("simulate-run")
     simulate_run.add_argument("--adapter", choices=["csv-import", "sky130-transient"], required=True)
     add_csv_import_args(simulate_run)
@@ -31,6 +37,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     add_sky130_common_args(simulate_sweep, output_arg=None)
     simulate_sweep.set_defaults(handler=handle_simulate_sweep)
 
+
+def register_sky130_run_commands(subparsers: argparse._SubParsersAction) -> None:
     sky130 = subparsers.add_parser("sky130-transient")
     sky130.add_argument("--dataset", default="pphilip/analog-circuits-sky130")
     sky130.add_argument("--split", choices=["train", "validation", "test"], default="train")
@@ -67,6 +75,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     sweep.add_argument("--mock-ngspice", action="store_true")
     sweep.set_defaults(handler=handle_sky130_sweep)
 
+
+def register_optimization_commands(subparsers: argparse._SubParsersAction) -> None:
     optimize = subparsers.add_parser("optimize-rounds")
     optimize.add_argument("--sweep", default="config/sky130_sweep.yaml")
     optimize.add_argument("--pdk-root")

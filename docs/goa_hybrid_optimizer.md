@@ -114,3 +114,37 @@ The strategy benchmark framework now recognizes `repair` and `hybrid_goa` strate
 - `candidate_diversity_score`
 
 These are prediction / candidate-quality proxy fields unless backed by a later simulation run. They must not be reported as `real_improvement`, `validated_gain`, or `silicon_verified`.
+
+## 8. GOA Strategy Benchmark
+
+`goa-strategy-benchmark` is the GOA-specific candidate-quality proxy benchmark. It stays separate from the SKY130 `strategy-benchmark` so GOA workflows do not require ngspice, a SKY130 PDK, or a transistor-level sweep.
+
+| Aspect | `goa-strategy-benchmark` | `strategy-benchmark` |
+| --- | --- | --- |
+| Target | GOA candidate generation | SKY130 multi-round strategy comparison |
+| Backend | No real ngspice required | ngspice/SKY130 path or explicit mock |
+| Evidence | Existing GOA history or leaderboard CSV | Sweep and validation artifacts |
+| Claim | Candidate-quality proxy only | Simulation-only strategy benchmark |
+
+Example:
+
+```bash
+python -m goa_eval.cli goa-strategy-benchmark \
+  --leaderboard outputs/run/optimization_leaderboard.csv \
+  --param-space examples/sample_params.yaml \
+  --output-root outputs/goa_strategy_benchmark \
+  --strategies random,adaptive,surrogate,repair,hybrid_goa \
+  --max-candidates 30 \
+  --seeds 1,2,3 \
+  --top-k 10
+```
+
+At least one of `--history` or `--leaderboard` must be provided. The benchmark writes `goa_strategy_benchmark.csv`, `goa_strategy_benchmark_summary.json`, `goa_strategy_leaderboard.csv`, `goa_strategy_benchmark_report.md`, and per-strategy candidate CSVs.
+
+The summary preserves:
+
+- `benchmark_type = goa_strategy_benchmark`
+- `task_type = candidate_quality_proxy`
+- `engineering_validity = simulation_only`
+- `simulation_backend = no_real_ngspice_required`
+- `result_claim = candidate_quality_proxy_only`
