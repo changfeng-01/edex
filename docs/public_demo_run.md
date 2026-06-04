@@ -10,7 +10,7 @@ The demo exercises the current CircuitPilot workflow end to end:
 - `recommend` turns the score and metric summary into a human-readable recommendation report.
 - `propose-candidates` generates 10 deterministic constrained-random next-run candidates with `seed=42`.
 - The generalized semantic-candidate path is documented in `README.md` and `docs/schema_spec.md`; the fixed public demo keeps the smaller legacy sample inputs so it remains lightweight and deterministic.
-- `analyze-params` writes a DeepSeek-compatible parameter analysis using a fixed mock response, so no API key or network call is required.
+- `analyze-params` writes a DeepSeek-compatible parameter analysis using a fixed mock response, so no API key or network call is required. When the response is structured JSON, the local pipeline validates candidate IDs, metric names, and simulation-only boundary wording before rendering the human-readable Markdown report.
 - Dashboard data in `frontend/public/data/` is refreshed from the same run.
 
 All demo outputs keep the public boundary labels:
