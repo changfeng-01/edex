@@ -11,6 +11,12 @@ from goa_eval.product_demo.workflow import run_product_demo
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
+    register_demo_commands(subparsers)
+    register_multi_agent_commands(subparsers)
+    register_goa_commands(subparsers)
+
+
+def register_demo_commands(subparsers: argparse._SubParsersAction) -> None:
     product_demo = subparsers.add_parser("product-demo")
     product_demo.add_argument("--input-dir", required=True)
     product_demo.add_argument("--output-dir", default="outputs/product_demo")
@@ -30,6 +36,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     demo.add_argument("--mock-response", default=None)
     demo.set_defaults(handler=handle_demo)
 
+
+def register_multi_agent_commands(subparsers: argparse._SubParsersAction) -> None:
     multi_agent = subparsers.add_parser("multi-agent-run")
     multi_agent.add_argument("--task", required=True)
     multi_agent.add_argument("--output-dir", required=True)
@@ -40,6 +48,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     benchmark.add_argument("--output-dir", required=True)
     benchmark.set_defaults(handler=handle_benchmark_run)
 
+
+def register_goa_commands(subparsers: argparse._SubParsersAction) -> None:
     hybrid = subparsers.add_parser("hybrid-goa-optimize")
     hybrid.add_argument("--history")
     hybrid.add_argument("--leaderboard")

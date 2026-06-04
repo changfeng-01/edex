@@ -919,3 +919,23 @@ def _as_float(value: Any) -> float | None:
 def _json_number(value: Any) -> float | None:
     number = _as_float(value)
     return number if number is not None else None
+
+
+best_goa_parameters = _best_parameters
+best_goa_score = _best_score
+build_goa_candidate = _candidate
+changed_goa_parameters = _changed_parameters
+complete_goa_output_columns = _complete_output_columns
+dedupe_goa_candidates = _dedupe_candidates
+ensure_goa_source_coverage = _ensure_source_coverage
+fit_goa_surrogate = _fit_surrogate
+generate_goa_exploration_candidates = _generate_exploration_candidates
+generate_goa_surrogate_candidates = _generate_surrogate_candidates
+goa_candidate_counts = _candidate_counts
+goa_mutation_strength = _mutation_strength
+load_goa_csv = _load_csv
+load_goa_history = _load_history
+merge_goa_samples = _merge_samples
+predict_goa_metrics = _predict_metrics
+sample_goa_parameters = _sample_parameters
+score_goa_candidates = _score_candidates
