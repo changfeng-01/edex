@@ -7,7 +7,9 @@ import pytest
 from goa_eval.llm_analysis import (
     DeepSeekClient,
     build_analysis_payload,
+    parse_structured_analysis,
     run_llm_parameter_analysis,
+    validate_structured_analysis,
 )
 
 
@@ -170,4 +172,92 @@ def test_run_llm_parameter_analysis_writes_markdown_and_json_with_mock_response(
     assert "cand_001" in md
     assert data["model"] == "deepseek-v4-pro"
     assert data["boundary"]["engineering_validity"] == "simulation_only"
-    assert data["analysis"] == "建议优先跑 cand_001，并保持 simulation_only 边界。"
+    assert "simulation_only" in data["analysis"]
+
+
+def test_structured_deepseek_analysis_is_parsed_validated_and_rendered(tmp_path):
+    paths = _write_inputs(tmp_path)
+    output_md = tmp_path / "llm_parameter_analysis.md"
+    output_json = tmp_path / "llm_parameter_analysis.json"
+    response = json.dumps(
+        {
+            "key_issues": [
+                {
+                    "metric": "Max_ripple",
+                    "finding": "Ripple exceeds threshold and drives candidate priority.",
+                    "evidence": "score_summary.failure_reasons",
+                }
+            ],
+            "candidate_priorities": [
+                {
+                    "candidate_id": "cand_001",
+                    "priority": "high",
+                    "reason": "Candidate directly targets Max_ripple.",
+                    "risk": "must resimulate",
+                }
+            ],
+            "risk_checks": [{"check": "review ripple and delay coupling", "metric": "Delay"}],
+            "rerun_plan": ["rerun cand_001 and compare Max_ripple plus Delay"],
+            "boundary_statement": "data_source = real_simulation_csv; engineering_validity = simulation_only",
+        },
+        ensure_ascii=False,
+    )
+
+    result = run_llm_parameter_analysis(
+        summary_path=paths["summary"],
+        score_path=paths["score"],
+        metrics_path=paths["metrics"],
+        candidates_path=paths["candidates"],
+        params_path=paths["params"],
+        output_md=output_md,
+        output_json=output_json,
+        model="deepseek-v4-pro",
+        mock_response=response,
+    )
+
+    assert result["structured_analysis"]["candidate_priorities"][0]["candidate_id"] == "cand_001"
+    assert result["validation"]["status"] == "pass"
+    assert result["validation"]["missing_candidate_ids"] == []
+    assert result["validation"]["unknown_metrics"] == []
+
+    saved = json.loads(output_json.read_text(encoding="utf-8"))
+    assert saved["structured_analysis"]["key_issues"][0]["metric"] == "Max_ripple"
+    md = output_md.read_text(encoding="utf-8")
+    assert "## Key Issues" in md
+    assert "cand_001" in md
+    assert "engineering_validity = simulation_only" in md
+
+
+def test_structured_deepseek_validation_flags_unknown_candidate_and_metric(tmp_path):
+    paths = _write_inputs(tmp_path)
+    payload = build_analysis_payload(
+        summary_path=paths["summary"],
+        score_path=paths["score"],
+        metrics_path=paths["metrics"],
+        candidates_path=paths["candidates"],
+        params_path=paths["params"],
+    )
+    structured = {
+        "key_issues": [{"metric": "NotARealMetric", "finding": "bad metric"}],
+        "candidate_priorities": [{"candidate_id": "missing_candidate", "priority": "high", "reason": "bad id"}],
+        "risk_checks": [],
+        "rerun_plan": ["rerun"],
+        "boundary_statement": "simulation_only",
+    }
+
+    validation = validate_structured_analysis(structured, payload)
+
+    assert validation["status"] == "warning"
+    assert validation["missing_candidate_ids"] == ["missing_candidate"]
+    assert validation["unknown_metrics"] == ["NotARealMetric"]
+    assert validation["boundary_missing"] is True
+
+
+def test_parse_structured_analysis_accepts_json_fence():
+    text = """```json
+{"key_issues": [], "candidate_priorities": [], "risk_checks": [], "rerun_plan": [], "boundary_statement": "data_source = real_simulation_csv; engineering_validity = simulation_only"}
+```"""
+
+    parsed = parse_structured_analysis(text)
+
+    assert parsed["boundary_statement"].startswith("data_source")

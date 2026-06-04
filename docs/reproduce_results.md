@@ -195,6 +195,8 @@ DEEPSEEK_API_KEY=你的真实key
 - `examples/demo_run/llm_parameter_analysis_real.md`
 - `examples/demo_run/llm_parameter_analysis_real.json`
 
+DeepSeek 回复会优先按结构化 JSON 解析，并由本地代码校验候选 ID、指标名和证据边界。Markdown 报告仍然是给人阅读的最终报告；JSON 中的 `structured_analysis` 和 `validation` 用于校验、归档和 dashboard/报告脚本读取。
+
 提交前不要提交 `.env`，也不要误提交真实 API 输出，除非你已经确认内容适合公开。
 
 ## 6. 预期结论

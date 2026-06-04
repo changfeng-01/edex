@@ -472,19 +472,23 @@ conditions:
 
 ## llm_parameter_analysis.md
 
-用途：面向人工阅读的 DeepSeek V4 参数分析结果。
+用途：面向人工阅读的 DeepSeek 参数分析报告。报告由本地模板渲染，顶部必须保留模型、`data_source`、`engineering_validity` 和 `validation_status`。
 
-内容应包含：
+新版流程要求 DeepSeek 优先返回结构化 JSON；本地代码会先校验候选 ID、指标名和证据边界，再把结构化内容渲染为 Markdown。若模型只返回自由文本，Markdown 仍会输出原始分析，但 `validation_status` 会标记为 `warning`。
 
-- 使用模型，例如 `deepseek-v4-pro`；
-- `data_source = real_simulation_csv`；
-- `engineering_validity = simulation_only`；
-- 基于当前参数、指标、评分和候选项生成的分析正文；
-- 明确说明：该分析不是实物测试结论，也不是自动优化闭环完成证明。
+固定栏目：
+
+- `Validation`
+- `Key Issues`
+- `Candidate Priorities`
+- `Risk Checks`
+- `Rerun Plan`
+- `Boundary Statement`
+- `Analysis`
 
 ## llm_parameter_analysis.json
 
-用途：保留 DeepSeek V4 参数分析的结构化结果，便于后续归档或汇报脚本读取。
+用途：保留 DeepSeek 原始回复、结构化分析结果和本地校验结果，便于归档、dashboard 展示和后续审计。
 
 稳定字段：
 
@@ -492,9 +496,19 @@ conditions:
 |---|---|
 | `model` | 调用模型，默认 `deepseek-v4-pro`。 |
 | `boundary` | 包含 `data_source` 和 `engineering_validity`。 |
-| `analysis` | 模型返回的分析正文。 |
+| `analysis` | 模型原始返回文本。 |
+| `structured_analysis` | 从模型回复中解析出的结构化 JSON；自由文本回复时为空对象。 |
+| `validation` | 本地校验结果，包括 `status`、`warnings`、`missing_candidate_ids`、`unknown_metrics`、`boundary_missing` 和 `forbidden_claims`。 |
 | `metadata` | 模型、token 用量或 mock 标记等元数据。 |
 | `input_files` | 本次分析读取的 summary、score、metrics、candidates 和 params 文件路径。 |
+
+`structured_analysis` 期望包含：
+
+- `key_issues`
+- `candidate_priorities`
+- `risk_checks`
+- `rerun_plan`
+- `boundary_statement`
 
 ## recommendations.md
 
