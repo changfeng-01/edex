@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from goa_eval.product_demo.schemas import DASHBOARD_FILES, DIRECTORIES, ENGINEERING_VALIDITY, TABLE_FILES
+from goa_eval.product_demo.schemas import DASHBOARD_FILES, DIRECTORIES, TABLE_FILES, default_evidence_boundary
 from goa_eval.web_api.security import ALLOWED_FIGURE_EXTENSIONS, CASE_ID_RE, resolve_case_dir
 
 
@@ -145,9 +145,7 @@ def _missing_summary(case_id: str, message: str) -> dict[str, Any]:
         "message": message,
         "validation_status": "unknown",
         "candidate_status": "unknown",
-        "evidence": {
-            "engineering_validity": ENGINEERING_VALIDITY,
-        },
+        "evidence": default_evidence_boundary(),
     }
 
 

@@ -71,6 +71,18 @@ EXPECTED_TABLE_COLUMNS = {
     ],
 }
 
+EXPECTED_EVIDENCE_BOUNDARY = {
+    "data_source": "real_simulation_csv",
+    "engineering_validity": "simulation_only",
+    "must_resimulate": True,
+}
+
+EXPECTED_REPORT_BOUNDARY_LINES = [
+    "data_source = real_simulation_csv",
+    "engineering_validity = simulation_only",
+    "must_resimulate = true",
+]
+
 
 def run_product_demo(input_dir: Path, output_dir: Path, case_id: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -110,14 +122,19 @@ def test_product_demo_cli_writes_handoff_ready_package(tmp_path):
             reader = csv.DictReader(handle)
             assert reader.fieldnames == columns
 
+    summary = json.loads((case_dir / "06_dashboard_data" / "dashboard_summary.json").read_text(encoding="utf-8"))
     manifest = json.loads((case_dir / "06_dashboard_data" / "presentation_manifest.json").read_text(encoding="utf-8"))
+    input_manifest = json.loads((case_dir / "01_input_snapshot" / "input_artifact_manifest.json").read_text(encoding="utf-8"))
     assert manifest["case_id"] == "public_demo"
-    assert manifest["evidence"]["data_source"] == "real_simulation_csv"
-    assert manifest["evidence"]["engineering_validity"] == "simulation_only"
+    for payload in [summary, manifest, input_manifest]:
+        for key, value in EXPECTED_EVIDENCE_BOUNDARY.items():
+            assert payload["evidence"][key] == value
     assert manifest["validation_status"] == "awaiting_rerun_results"
 
-    executive = (case_dir / "07_report" / "executive_summary.md").read_text(encoding="utf-8")
-    assert "engineering_validity = simulation_only" in executive
+    for report in (case_dir / "07_report").glob("*.md"):
+        text = report.read_text(encoding="utf-8")
+        for line in EXPECTED_REPORT_BOUNDARY_LINES:
+            assert line in text
 
 
 def test_product_demo_missing_validation_does_not_fake_improvement(tmp_path):

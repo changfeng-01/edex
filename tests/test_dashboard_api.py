@@ -42,6 +42,7 @@ def make_case(root: Path, case_id: str = "public_demo") -> Path:
         "evidence": {
             "data_source": "real_simulation_csv",
             "engineering_validity": "simulation_only",
+            "must_resimulate": True,
             "optimizer_claim_level": "candidate_suggestion_only",
         },
     }
@@ -114,6 +115,7 @@ def test_summary_reads_dashboard_summary_and_preserves_evidence_boundary(tmp_pat
     assert payload["validation_status"] == "awaiting_rerun_results"
     assert payload["evidence"]["data_source"] == "real_simulation_csv"
     assert payload["evidence"]["engineering_validity"] == "simulation_only"
+    assert payload["evidence"]["must_resimulate"] is True
 
 
 def test_missing_summary_returns_structured_empty_state(tmp_path):
@@ -121,7 +123,9 @@ def test_missing_summary_returns_structured_empty_state(tmp_path):
 
     assert response.status_code == 200
     assert response.json()["missing"] is True
+    assert response.json()["evidence"]["data_source"] == "real_simulation_csv"
     assert response.json()["evidence"]["engineering_validity"] == "simulation_only"
+    assert response.json()["evidence"]["must_resimulate"] is True
 
 
 def test_tables_reads_dashboard_tables_json(tmp_path):
@@ -204,6 +208,7 @@ def test_bundle_returns_dashboard_first_screen_payload(tmp_path):
     assert payload["figures"][0]["exists"] is True
     assert payload["reports"][0]["exists"] is True
     assert payload["manifest"]["evidence"]["engineering_validity"] == "simulation_only"
+    assert payload["manifest"]["evidence"]["must_resimulate"] is True
 
 
 def test_invalid_case_id_is_rejected(tmp_path):

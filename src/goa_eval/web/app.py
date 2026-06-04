@@ -111,8 +111,6 @@ def create_app(settings: WebApiSettings | None = None) -> FastAPI:
         bundle = load_bundle(product_demo_root, case_id)
         summary = bundle.get("summary", {})
         manifest = bundle.get("manifest", {})
-        _attach_boundary(summary)
-        _attach_boundary(manifest)
         return {
             "case_id": case_id,
             "summary": summary,
@@ -192,12 +190,5 @@ def _upload_asset_reports(case_id: str, reports_payload: Any) -> list[dict[str, 
             }
         )
     return reports
-
-
-def _attach_boundary(payload: dict[str, Any]) -> None:
-    evidence = dict(payload.get("evidence", {}))
-    evidence.update(evidence_boundary())
-    payload["evidence"] = evidence
-
 
 app = create_app()

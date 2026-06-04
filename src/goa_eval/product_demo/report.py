@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from goa_eval.product_demo.artifact_collector import ProductDemoArtifacts
-from goa_eval.product_demo.schemas import ENGINEERING_VALIDITY, REPORT_FILES
+from goa_eval.product_demo.schemas import REPORT_FILES, normalize_evidence_boundary
 
 
 def write_reports(
@@ -28,6 +28,7 @@ def write_reports(
 
 
 def _executive_summary(artifacts: ProductDemoArtifacts, case_id: str) -> str:
+    boundary_lines = _boundary_lines(artifacts.evidence)
     return "\n".join(
         [
             f"# Executive Summary: {case_id}",
@@ -37,8 +38,7 @@ def _executive_summary(artifacts: ProductDemoArtifacts, case_id: str) -> str:
             f"- hard_constraint_passed: {artifacts.score.get('hard_constraint_passed', 'unknown')}",
             f"- validation_status: {artifacts.validation_status}",
             f"- candidate_status: {artifacts.candidate_status}",
-            f"- data_source: {artifacts.evidence.get('data_source')}",
-            f"- engineering_validity = {artifacts.evidence.get('engineering_validity', ENGINEERING_VALIDITY)}",
+            *boundary_lines,
             "",
             "This package is a presentation layer over existing CircuitPilot artifacts. It does not claim physical validation, silicon validation, tape-out proof, or lab verification.",
             "",
@@ -53,14 +53,14 @@ def _demo_report(
     figure_paths: dict[str, Path],
 ) -> str:
     constraints = _count_constraint_status(table_paths["constraints"])
+    boundary_lines = _boundary_lines(artifacts.evidence)
     return "\n".join(
         [
             f"# Product Demo Report: {case_id}",
             "",
             "## Evidence Boundary",
             "",
-            f"- data_source: {artifacts.evidence.get('data_source')}",
-            f"- engineering_validity = {artifacts.evidence.get('engineering_validity', ENGINEERING_VALIDITY)}",
+            *boundary_lines,
             f"- evidence_level: {artifacts.evidence.get('evidence_level')}",
             f"- simulation_backend: {artifacts.evidence.get('simulation_backend')}",
             f"- mock_used: {artifacts.evidence.get('mock_used')}",
@@ -90,6 +90,7 @@ def _demo_report(
 
 def _handoff_notes(artifacts: ProductDemoArtifacts, case_id: str) -> str:
     missing = ", ".join(artifacts.missing_files) if artifacts.missing_files else "none"
+    boundary_lines = _boundary_lines(artifacts.evidence)
     return "\n".join(
         [
             f"# Handoff Notes: {case_id}",
@@ -108,12 +109,28 @@ def _handoff_notes(artifacts: ProductDemoArtifacts, case_id: str) -> str:
             "",
             "## Evidence Rules For Teammates",
             "",
-            f"- Keep `engineering_validity = {artifacts.evidence.get('engineering_validity', ENGINEERING_VALIDITY)}` unless a source artifact explicitly provides another boundary.",
+            *boundary_lines,
+            "- Keep these evidence boundary values unless a future workflow introduces a separately validated source contract.",
             "- Add rerun or validation artifacts before claiming improvement.",
             "- Do not add claims of physical validation, silicon validation, tape-out proof, or lab verification to this package.",
             "",
         ]
     )
+
+
+def _boundary_lines(evidence: dict[str, object]) -> list[str]:
+    boundary = normalize_evidence_boundary(evidence)
+    return [
+        f"- data_source = {boundary['data_source']}",
+        f"- engineering_validity = {boundary['engineering_validity']}",
+        f"- must_resimulate = {_format_boundary_value(boundary['must_resimulate'])}",
+    ]
+
+
+def _format_boundary_value(value: object) -> str:
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value)
 
 
 def _count_constraint_status(path: Path) -> str:

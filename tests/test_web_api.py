@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -19,7 +20,8 @@ def test_health_returns_ok(tmp_path: Path):
 
 
 def test_upload_waveform_creates_completed_case_and_bundle(tmp_path: Path):
-    client = client_for(tmp_path / "web_cases")
+    web_cases_root = tmp_path / "web_cases"
+    client = client_for(web_cases_root)
 
     with Path("examples/sample_waveform.csv").open("rb") as waveform, Path("examples/sample_params.yaml").open("rb") as params:
         response = client.post(
@@ -47,6 +49,15 @@ def test_upload_waveform_creates_completed_case_and_bundle(tmp_path: Path):
     assert status["status"] == "completed"
     assert status["case_id"] == "sample_case"
     assert status["evidence_boundary"]["engineering_validity"] == "simulation_only"
+
+    product_demo_case_dir = web_cases_root / "sample_case" / "product_demo" / "sample_case"
+    persisted_summary = product_demo_case_dir / "06_dashboard_data" / "dashboard_summary.json"
+    persisted_manifest = product_demo_case_dir / "06_dashboard_data" / "presentation_manifest.json"
+    for path in [persisted_summary, persisted_manifest]:
+        evidence = json.loads(path.read_text(encoding="utf-8"))["evidence"]
+        assert evidence["data_source"] == "real_simulation_csv"
+        assert evidence["engineering_validity"] == "simulation_only"
+        assert evidence["must_resimulate"] is True
 
     bundle_response = client.get("/api/cases/sample_case/bundle")
     assert bundle_response.status_code == 200
