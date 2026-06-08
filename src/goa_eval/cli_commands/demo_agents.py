@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from goa_eval.demo_mainline import run_demo_mainline
+from goa_eval.eclipse_benchmark.benchmark import run_offline_replay_benchmark
 from goa_eval.goa_hybrid_optimizer import run_hybrid_goa_optimizer
 from goa_eval.goa_strategy_benchmark import DEFAULT_STRATEGIES as GOA_BENCH_STRATEGIES, run_goa_strategy_benchmark
 from goa_eval.product_demo.workflow import run_product_demo
@@ -69,6 +70,13 @@ def register_goa_commands(subparsers: argparse._SubParsersAction) -> None:
     goa_bench.add_argument("--seeds", default="1,2,3")
     goa_bench.add_argument("--top-k", type=int, default=10)
     goa_bench.set_defaults(handler=handle_goa_strategy_benchmark)
+
+    eclipse_bench = subparsers.add_parser("eclipse-benchmark")
+    eclipse_bench.add_argument("--runs-root", default="outputs/eclipse_runs")
+    eclipse_bench.add_argument("--output-root", default="outputs/eclipse_benchmark")
+    eclipse_bench.add_argument("--score-threshold", type=float, default=80.0)
+    eclipse_bench.add_argument("--baseline", default="random")
+    eclipse_bench.set_defaults(handler=handle_eclipse_benchmark)
 
 
 def handle_product_demo(args: argparse.Namespace) -> int:
@@ -141,5 +149,15 @@ def handle_goa_strategy_benchmark(args: argparse.Namespace) -> int:
         max_candidates=args.max_candidates,
         seeds=[int(item.strip()) for item in args.seeds.split(",") if item.strip()],
         top_k=args.top_k,
+    )
+    return 0
+
+
+def handle_eclipse_benchmark(args: argparse.Namespace) -> int:
+    run_offline_replay_benchmark(
+        runs_root=Path(args.runs_root),
+        output_root=Path(args.output_root),
+        score_threshold=args.score_threshold,
+        baseline=args.baseline,
     )
     return 0

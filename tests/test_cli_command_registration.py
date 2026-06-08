@@ -30,6 +30,7 @@ COMMAND_ARGV = {
     "strategy-benchmark": ["strategy-benchmark"],
     "hybrid-goa-optimize": ["hybrid-goa-optimize"],
     "goa-strategy-benchmark": ["goa-strategy-benchmark"],
+    "eclipse-benchmark": ["eclipse-benchmark"],
 }
 
 
