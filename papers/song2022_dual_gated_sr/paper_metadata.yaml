@@ -1,0 +1,30 @@
+schema_version: '1.0'
+paper_id: song2022_dual_gated_sr
+title: High-Speed Shift Register with Dual-Gated Thin-Film Transistors for a 31-Inch
+  4K AMOLED Display
+authors:
+- Rong Song
+- Yonghe Wu
+- Chengkai Lin
+- Kai Liu
+- Zhenjun Qing
+- Yingxiang Li
+- Yan Xue
+year: 2022
+venue: Micromachines
+doi: 10.3390/mi13101696
+url: https://doi.org/10.3390/mi13101696
+main_role: Auxiliary dual-gated shift-register dataset for Q-node and multistage propagation
+  understanding.
+source_priority: 2
+circuit_type: dual-gated shift register
+device_type: dual-gated TFT
+topology_id: GOA_DualGated_SR
+data_use:
+- topology_reference
+- parameter_table
+- waveform_digitization
+- weak_label
+claim_boundary: literature_extraction_only
+notes: Bibliographic metadata verified from attached PDF metadata/text; numerical
+  extraction remains manual.

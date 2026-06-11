@@ -44,7 +44,7 @@ def _plot_waveform_overview(artifacts: ProductDemoArtifacts, path: Path) -> None
         _placeholder(ax, "Waveform overview", "waveform.csv unavailable")
         _save(fig, path)
         return
-    time_col = _first_existing(waveform, ["time", "Time", "t", "T"])
+    time_col = _first_existing(waveform, ["time", "Time", "TIME", "t", "T", "XVAL", "xval"])
     if time_col is None:
         _placeholder(ax, "Waveform overview", "No time column found in waveform.csv")
         _save(fig, path)

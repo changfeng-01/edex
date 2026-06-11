@@ -1,0 +1,6 @@
+sample_id,TFT_pullup_W,TFT_pullup_L,TFT_pulldown_W,TFT_pulldown_L,TFT_reset_W,TFT_reset_L,TFT_bootstrap_W,TFT_bootstrap_L,C_boot,C_load,CLK_amp,CLK_rise_time,CLK_fall_time,VGH,VGL,Vth_shift,overall_score,hard_constraint_passed,sim_success,status,source
+h1,420,5,210,5,160,5,120,5,2.2,1.0,20,0.10,0.10,15,-5,1.2,92,true,true,evaluated_feasible,imported
+h2,360,5,220,5,150,5,110,5,1.8,1.1,20,0.12,0.11,15,-5,1.5,83,true,true,evaluated_feasible,imported
+h3,250,5,260,5,130,5,90,5,1.0,1.4,20,0.20,0.21,14,-5,2.2,58,false,true,evaluated_soft_fail,imported
+h4,160,5,300,5,100,5,80,5,0.7,1.8,18,0.30,0.32,13,-4,3.0,20,false,false,sim_failed,imported
+h5,390,5,200,5,150,5,115,5,2.0,1.0,20,0.11,0.10,15,-5,1.3,88,true,true,evaluated_feasible,imported

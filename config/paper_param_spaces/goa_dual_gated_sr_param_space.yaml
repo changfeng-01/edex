@@ -1,0 +1,10 @@
+parameters:
+  CK_period_s:
+    unit: s
+    values: [TODO_NEEDS_MANUAL_EXTRACTION]
+  pulse_width_target_s:
+    unit: s
+    values: [TODO_NEEDS_MANUAL_EXTRACTION]
+  stage_count:
+    unit: count
+    values: [TODO_NEEDS_MANUAL_EXTRACTION]

@@ -1,0 +1,13 @@
+parameters:
+  VGH_V:
+    unit: V
+    values: [TODO_NEEDS_MANUAL_EXTRACTION]
+  VGL_V:
+    unit: V
+    values: [TODO_NEEDS_MANUAL_EXTRACTION]
+  CLOAD_F:
+    unit: F
+    values: [TODO_NEEDS_MANUAL_EXTRACTION]
+  RLOAD_ohm:
+    unit: ohm
+    values: [TODO_NEEDS_MANUAL_EXTRACTION]

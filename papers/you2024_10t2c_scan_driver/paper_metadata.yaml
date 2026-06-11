@@ -1,0 +1,31 @@
+schema_version: '1.0'
+paper_id: you2024_10t2c_scan_driver
+title: A Simple Scan Driver Circuit Suitable for Depletion-Mode Metal-Oxide Thin-Film
+  Transistors in Active-Matrix Displays
+authors:
+- Yikyoung You
+- Junhyung Lim
+- Kyoungseok Son
+- Jaybum Kim
+- Youngoo Kim
+- Kyunghoe Lee
+- Kyunghoon Chung
+- Keechan Park
+year: 2024
+venue: Electronics
+doi: 10.3390/electronics13122254
+url: https://doi.org/10.3390/electronics13122254
+main_role: Main 10T-2C GOA/scan-driver benchmark for weak-label waveform and parameter
+  extraction.
+source_priority: 1
+circuit_type: 10T-2C scan driver / GOA
+device_type: depletion-mode metal-oxide TFT
+topology_id: GOA_10T2C_MOx
+data_use:
+- topology_reference
+- parameter_table
+- waveform_digitization
+- weak_label
+claim_boundary: literature_extraction_only
+notes: Bibliographic metadata verified from attached PDF metadata/text; numerical
+  extraction remains manual.

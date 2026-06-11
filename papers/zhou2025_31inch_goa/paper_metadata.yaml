@@ -1,0 +1,32 @@
+schema_version: '1.0'
+paper_id: zhou2025_31inch_goa
+title: A 31-Inch AMOLED Display Integrating a Gate Driver with Metal Oxide TFTs
+authors:
+- Xianjie Zhou
+- Qiming Zeng
+- Li Guo
+- Yicheng Yu
+- Fei Yu
+- Guo Tian
+- Xiaopeng Lu
+- Zhiqiang Zhang
+- Baixiang Han
+- Yan Xue
+year: 2025
+venue: Micromachines
+doi: 10.3390/mi16121325
+url: https://doi.org/10.3390/mi16121325
+main_role: Large-panel GOA calibration dataset for dimensions, input signals, Vth
+  shift, RC load, and measured waveform weak labels.
+source_priority: 3
+circuit_type: 31-inch AMOLED GOA
+device_type: metal-oxide TFT / IGZO TFT
+topology_id: GOA_31inch_IGZO
+data_use:
+- topology_reference
+- parameter_table
+- waveform_digitization
+- weak_label
+claim_boundary: literature_extraction_only
+notes: Bibliographic metadata verified from attached PDF metadata/text; numerical
+  extraction remains manual.

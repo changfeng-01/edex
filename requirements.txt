@@ -3,6 +3,7 @@ pandas
 matplotlib
 scipy
 pyyaml
+pyarrow
 tqdm
 pytest
 beautifulsoup4

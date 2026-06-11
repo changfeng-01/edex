@@ -2,12 +2,15 @@
 
 This repo uses two Vercel projects for the upload-analysis demo:
 
-- `circuitpilot-api`: repo root, FastAPI entrypoint at `api/index.py`.
+- `circuitpilot-api`: repo root, FastAPI entrypoint from `pyproject.toml`: `src.goa_eval.web.app:app`.
 - `circuitpilot-dashboard`: `frontend/`, Vite static dashboard.
 
 ## API Project
 
 Create the API project from `origin/main` with the repository root as the project root.
+The API project must use the root `pyproject.toml` entrypoint. Do not configure
+`vercel.json` rewrites or functions to route through `api/index.py`; that pattern
+is intentionally unused so Vercel deploys only `src.goa_eval.web.app:app`.
 
 Required environment variables:
 

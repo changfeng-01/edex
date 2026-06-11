@@ -1,0 +1,56 @@
+# PIA-CA-LLSO
+
+PIA-CA-LLSO is an experimental optimizer module inside the existing EDA repository. It emits next-run simulation suggestions for expensive circuit optimization.
+
+## 1. Method Background
+
+The module targets candidate selection under limited simulation budget. It keeps the current project boundary explicit:
+
+- data_source = real_simulation_csv
+- engineering_validity = simulation_only
+
+## 2. CA-LLSO Baseline
+
+The baseline follows classifier-assisted LLSO style candidate selection: classify candidate levels, find predicted L1-like candidates, then rank by raw parameter-space distance to known L1 samples.
+
+## 3. Raw Euclidean Distance Limitation
+
+Raw parameter distance treats all numeric parameters as comparable, even when circuit behavior depends on ratios, loads, margins, and timing proxies.
+
+## 4. Physics Features phi(x)
+
+The first implementation extracts GOA-profile and generic physical features such as W/L, Cboot/Cload, pullup/pulldown ratio, clock slew proxy, and voltage margins.
+
+## 5. Level Classifier
+
+The labeler assigns L1/L2/L3/L4 from externally evaluated rows. Hard failures cannot enter L1/L2. predicted_only rows cannot enter external benchmark scoring.
+
+## 6. Physics Distance
+
+Physics distance computes weighted distance in feature space:
+
+`sqrt(sum_k w_k * (phi_i_k - phi_j_k)^2)`
+
+## 7. Learned Latent Metric
+
+The first version exposes a PCA-based latent interface and keeps torch optional. If torch is absent, the optional encoder returns unavailable without affecting the basic flow.
+
+## 8. Memory Attention
+
+The first version uses numpy dot-product attention over historical samples, with optional physics-distance penalty. Attention supports candidate explanation, not final proof of algorithm quality.
+
+## 9. Acquisition Function
+
+Candidate acquisition combines P(L1), predicted score, P(hard_pass), uncertainty, attention mass, distance, and diversity.
+
+## 10. Closed-Loop Expensive Optimization
+
+PIA selects candidates for the next simulation run. The EDA pipeline remains responsible for netlist generation, simulator execution, waveform parsing, and metric extraction.
+
+## 11. Relation To Existing EDA Project
+
+The module lives under `src/goa_eval/pia_ca_llso/` and is reached through the existing `goa_eval.cli` command system. It does not rewrite optimize-rounds, strategy-benchmark, sky130-mainline, or simulate-run.
+
+## 12. Current Boundaries And Limits
+
+The current implementation is CSV/offline first. It does not claim silicon validation, physical measurement validation, or completed chip optimization. Outputs are next-run simulation suggestions.

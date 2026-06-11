@@ -14,6 +14,7 @@ dependencies = [
   "scipy",
   "scikit-learn",
   "pyyaml",
+  "pyarrow",
   "tqdm",
   "beautifulsoup4",
   "lxml",
@@ -31,6 +32,9 @@ dev = ["ruff"]
 
 [project.scripts]
 circuitpilot = "goa_eval.cli:main"
+
+[tool.vercel]
+entrypoint = "src.goa_eval.web.app:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]

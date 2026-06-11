@@ -16,7 +16,6 @@ __pypackages__/
 .DS_Store
 .idea/
 .vscode/
-.codegraph/
 /node_modules/
 build/
 dist/
@@ -65,3 +64,6 @@ report_ppt*/
 !examples/sample_params.yaml
 
 sitecustomize.py
+
+# CodeGraph index (local cache, regenerate with: codegraph index)
+.codegraph/

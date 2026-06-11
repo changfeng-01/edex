@@ -1,0 +1,45 @@
+schema_version: '1.0'
+paper_id: song2022_dual_gated_sr
+targets:
+- target_id: text_timing_multistage
+  source_location: text
+  source_type: text
+  expected_outputs:
+  - paper_params
+  - weak_label
+  manual_steps: Extract CK period, pulse width, stage count, and G1/G10/G20/G30/G46
+    propagation notes.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.
+- target_id: fig5_or_fig6_sim_output
+  source_location: Figure 5 or Figure 6
+  source_type: figure
+  expected_outputs:
+  - waveform_csv
+  - weak_label
+  manual_steps: Digitize simulation output waveform if manually selected.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.
+- target_id: fig8_g46_qnode
+  source_location: Figure 8
+  source_type: figure
+  expected_outputs:
+  - waveform_csv
+  - internal_waveform_csv
+  - weak_label
+  manual_steps: Digitize G46 output and Q-node waveform.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.
+- target_id: rise_time_comparison
+  source_location: text/table TODO_NEEDS_MANUAL_EXTRACTION
+  source_type: text
+  expected_outputs:
+  - paper_params
+  - weak_label
+  manual_steps: Record single-gated vs dual-gated rise time comparison.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.
