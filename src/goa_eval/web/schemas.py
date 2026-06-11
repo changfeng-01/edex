@@ -21,6 +21,7 @@ def evidence_boundary() -> dict[str, Any]:
 class WebApiSettings(BaseModel):
     web_cases_root: Path = Field(default=Path("outputs/web_cases"))
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"])
+    blob_storage_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> "WebApiSettings":
@@ -33,7 +34,8 @@ class WebApiSettings(BaseModel):
             ).split(",")
             if origin.strip()
         ]
-        return cls(web_cases_root=root, cors_origins=origins)
+        blob_storage_enabled = bool(os.getenv("BLOB_READ_WRITE_TOKEN"))
+        return cls(web_cases_root=root, cors_origins=origins, blob_storage_enabled=blob_storage_enabled)
 
 
 class UploadedCaseConfig(BaseModel):
