@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from starlette.datastructures import FormData, UploadFile
 
 from goa_eval.io_utils import write_json
@@ -27,10 +27,18 @@ from goa_eval.web.storage import (
     save_uploads,
     validate_case_id,
 )
+from goa_eval.web.vercel_blob import (
+    VercelBlobStore,
+    blob_asset_url,
+    load_case_bundle_from_blob,
+    load_case_json_from_blob,
+    persist_case_dir_to_blob,
+)
 
 
 def create_app(settings: WebApiSettings | None = None) -> FastAPI:
     settings = settings or WebApiSettings.from_env()
+    blob_store = VercelBlobStore.from_env() if settings.blob_storage_enabled else VercelBlobStore()
     app = FastAPI(title="CircuitPilot Upload API", version="0.1.0")
     app.add_middleware(
         CORSMiddleware,
@@ -74,6 +82,7 @@ def create_app(settings: WebApiSettings | None = None) -> FastAPI:
             "evidence_boundary": evidence_boundary(),
         }
         write_json(case_dir / "input_preview.json", payload)
+        persist_case_dir_to_blob(blob_store, case_dir, config.case_id)
         return payload
 
     @app.post("/api/demo/sample-case")
@@ -82,20 +91,26 @@ def create_app(settings: WebApiSettings | None = None) -> FastAPI:
         case_dir = prepare_case_dir(settings.web_cases_root, case_id)
         copy_sample_inputs(case_dir, Path("examples/sample_waveform.csv"), Path("examples/sample_params.yaml"))
         result = run_uploaded_case(case_dir, UploadedCaseConfig(case_id=case_id, generate_candidates=True))
+        persist_case_dir_to_blob(blob_store, case_dir, case_id)
         return result.model_dump()
 
     async def _run_case_from_uploads(settings: WebApiSettings, config: UploadedCaseConfig, uploads: list[UploadFile]):
         case_dir = prepare_case_dir(settings.web_cases_root, config.case_id)
         await save_uploads(case_dir, uploads)
         result = run_uploaded_case(case_dir, config)
+        persist_case_dir_to_blob(blob_store, case_dir, config.case_id)
         return result
 
     @app.get("/api/cases/{case_id}/status")
     def case_status(case_id: str) -> dict[str, Any]:
+        if blob_store.enabled:
+            return load_case_json_from_blob(blob_store, case_id, "case_status.json")
         return read_status(settings.web_cases_root, case_id)
 
     @app.get("/api/cases/{case_id}/input-preview")
     def case_input_preview(case_id: str) -> dict[str, Any]:
+        if blob_store.enabled:
+            return load_case_json_from_blob(blob_store, case_id, "input_preview.json")
         path = resolve_under(settings.web_cases_root, validate_case_id(case_id), "input_preview.json")
         if not path.exists():
             raise HTTPException(status_code=404, detail="input preview not found")
@@ -104,6 +119,8 @@ def create_app(settings: WebApiSettings | None = None) -> FastAPI:
     @app.get("/api/cases/{case_id}/bundle")
     def case_bundle(case_id: str) -> dict[str, Any]:
         case_id = validate_case_id(case_id)
+        if blob_store.enabled:
+            return load_case_bundle_from_blob(blob_store, case_id)
         product_demo_root = resolve_under(settings.web_cases_root, case_id, "product_demo")
         case_dir = resolve_under(settings.web_cases_root, case_id, "product_demo", case_id)
         if not case_dir.exists():
@@ -122,6 +139,8 @@ def create_app(settings: WebApiSettings | None = None) -> FastAPI:
 
     @app.get("/api/cases/{case_id}/assets/{asset_path:path}")
     def case_asset(case_id: str, asset_path: str) -> Response:
+        if blob_store.enabled:
+            return RedirectResponse(blob_asset_url(blob_store, case_id, asset_path))
         path = resolve_asset(settings.web_cases_root, case_id, asset_path)
         media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         if path.suffix.lower() == ".md":
