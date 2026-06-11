@@ -1,0 +1,1 @@
+﻿run_id,case_id,paper_id,figure_id,topology_id,parameters_json,overall_score,hard_constraint_passed,Overall_status,stage_count,VOH_min,VOL_max_all,Width_mean,Width_std,Delay_mean,Delay_std,Max_overlap_ratio,Max_ripple,Max_voltage_loss,first_failed_stage,worst_stage,weak_label,source_type,engineering_validity,notes

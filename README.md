@@ -153,6 +153,41 @@ Benchmark rules and schema details live in:
 - `docs/goa_hybrid_optimizer.md`
 - `docs/physics_guided_optimizer.md`
 
+## PIA-CA-LLSO Experimental Optimizer Module
+
+PIA-CA-LLSO is an experimental candidate-selection module under `src/goa_eval/pia_ca_llso/`. It improves the CA-LLSO raw Euclidean-distance selection idea with physics features and attention-metric diagnostics. The current implementation runs through CSV/offline benchmark inputs and emits next-run simulation suggestions.
+
+The boundary remains:
+
+```text
+data_source = real_simulation_csv
+engineering_validity = simulation_only
+```
+
+Minimal commands:
+
+```bash
+python -m goa_eval.cli pia-label \
+  --history-csv examples/pia_ca_llso/sample_history.csv \
+  --config config/pia_ca_llso_goa_profile.yaml \
+  --output-dir outputs/pia_label
+
+python -m goa_eval.cli pia-suggest \
+  --history-csv outputs/pia_label/labeled_history.csv \
+  --candidate-csv examples/pia_ca_llso/sample_candidates.csv \
+  --config config/pia_ca_llso_goa_profile.yaml \
+  --strategy pia_physics_distance \
+  --top-k 4 \
+  --output-dir outputs/pia_suggest
+
+python -m goa_eval.cli pia-benchmark \
+  --history-csv examples/pia_ca_llso/sample_history.csv \
+  --candidate-csv examples/pia_ca_llso/sample_candidates.csv \
+  --config config/pia_ca_llso_goa_profile.yaml \
+  --strategies random,ca_llso_raw_distance,pia_physics_distance \
+  --output-dir outputs/pia_benchmark
+```
+
 ## SKY130 / ngspice
 
 Run a transient smoke path:

@@ -1,0 +1,54 @@
+schema_version: '1.0'
+paper_id: you2024_10t2c_scan_driver
+targets:
+- target_id: topology_10t2c
+  source_location: topology description
+  source_type: text
+  expected_outputs:
+  - paper_params
+  - weak_label
+  manual_steps: Extract 10T-2C topology information.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.
+- target_id: table_supply_timing_size_load
+  source_location: Table TODO_NEEDS_MANUAL_EXTRACTION
+  source_type: table
+  expected_outputs:
+  - paper_params
+  - weak_label
+  manual_steps: Extract VGH, VGL, VGLL, clocks, TFT W/L, C1, C2, CLOAD, and RLOAD.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.
+- target_id: fig6_8t2c_vs_10t2c
+  source_location: Figure 6
+  source_type: figure
+  expected_outputs:
+  - waveform_csv
+  - weak_label
+  manual_steps: Digitize 8T-2C vs 10T-2C output waveforms with WPD/Engauge CSV.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.
+- target_id: fig7_q_qb_scan
+  source_location: Figure 7
+  source_type: figure
+  expected_outputs:
+  - waveform_csv
+  - internal_waveform_csv
+  - weak_label
+  manual_steps: Digitize Q/QB/Scan internal node waveforms.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.
+- target_id: fig9_stage18_19
+  source_location: Figure 9
+  source_type: figure
+  expected_outputs:
+  - waveform_csv
+  - weak_label
+  manual_steps: Digitize stage 18/19 measured outputs.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.

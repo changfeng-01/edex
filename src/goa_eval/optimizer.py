@@ -358,6 +358,9 @@ def _append_if_available(
                 "metric_penalty_severity": recommendation.get("metric_penalty_severity"),
                 "metric_penalty_deduction": recommendation.get("metric_penalty_deduction"),
                 "rationale": rationale or f"{parameter} {direction} from {recommendation.get('recommendation_id')}",
+                "requires_user_confirmation": True,
+                "must_resimulate": True,
+                "source_metric": recommendation.get("trigger_metric"),
             }
         )
 

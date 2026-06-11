@@ -1,0 +1,53 @@
+schema_version: '1.0'
+paper_id: zhou2025_31inch_goa
+targets:
+- target_id: table1_dimensions_bootstrap
+  source_location: Table 1
+  source_type: table
+  expected_outputs:
+  - paper_params
+  - weak_label
+  manual_steps: Extract GOA TFT W/L and bootstrap capacitance.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.
+- target_id: table2_input_signals
+  source_location: Table 2
+  source_type: table
+  expected_outputs:
+  - paper_params
+  - weak_label
+  manual_steps: Extract CKa/CKb/CKc, LSP, Reset, LC, STV, VGH, VGL1, and VGL2.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.
+- target_id: fig7_vth_shift
+  source_location: Figure 7
+  source_type: figure
+  expected_outputs:
+  - waveform_csv
+  - weak_label
+  manual_steps: Digitize Vth shift waveform and pass/fail weak labels.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.
+- target_id: fig9_stage1_stage2160
+  source_location: Figure 9
+  source_type: figure
+  expected_outputs:
+  - waveform_csv
+  - weak_label
+  manual_steps: Digitize stage 1 and stage 2160 measured waveforms.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.
+- target_id: text_rc_rt_ft
+  source_location: text/table TODO_NEEDS_MANUAL_EXTRACTION
+  source_type: text
+  expected_outputs:
+  - paper_params
+  - weak_label
+  manual_steps: Extract scan line R/C, CK line R/C, RT, and FT.
+  status: pending
+  notes: Use null or TODO_NEEDS_MANUAL_EXTRACTION when the value is not directly supported
+    by text/table/caption/WPD CSV.

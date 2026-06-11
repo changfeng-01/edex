@@ -135,7 +135,12 @@ def _read_csv(path: Path | None) -> pd.DataFrame:
     if path is None or not path.exists():
         return pd.DataFrame()
     try:
-        return pd.read_csv(path)
+        frame = pd.read_csv(path)
+        if len(frame.columns) == 1:
+            header = path.read_text(encoding="utf-8-sig", errors="replace").splitlines()[0]
+            if "," not in header and len(header.split()) > 1:
+                return pd.read_csv(path, sep=r"\s+", engine="python")
+        return frame
     except Exception:
         return pd.DataFrame()
 

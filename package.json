@@ -1,10 +1,4 @@
 {
-  "scripts": {
-    "codegraph": "powershell -ExecutionPolicy Bypass -File scripts/codegraph.ps1",
-    "codegraph:index": "npm run codegraph -- index",
-    "codegraph:status": "npm run codegraph -- status",
-    "codegraph:sync": "npm run codegraph -- sync"
-  },
   "devDependencies": {
     "@colbymchenry/codegraph-win32-x64": "^0.9.9"
   }

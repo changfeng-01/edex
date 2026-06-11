@@ -1,0 +1,16 @@
+parameters:
+  VGH_V:
+    unit: V
+    values: [TODO_NEEDS_MANUAL_EXTRACTION]
+  VGL1_V:
+    unit: V
+    values: [TODO_NEEDS_MANUAL_EXTRACTION]
+  VGL2_V:
+    unit: V
+    values: [TODO_NEEDS_MANUAL_EXTRACTION]
+  scan_line_C_F:
+    unit: F
+    values: [TODO_NEEDS_MANUAL_EXTRACTION]
+  scan_line_R_ohm:
+    unit: ohm
+    values: [TODO_NEEDS_MANUAL_EXTRACTION]

@@ -1,0 +1,43 @@
+problem_name: pia_ca_llso_default
+target_score: 80
+parameter_columns:
+  - x1
+  - x2
+metric_columns:
+  - overall_score
+status_columns:
+  status: status
+score_columns:
+  overall_score: overall_score
+hard_constraint_columns:
+  - hard_constraint_passed
+forbidden_leakage_columns:
+  - delay
+  - rise_time
+  - fall_time
+  - power
+  - waveform_score
+  - overall_score
+  - hard_constraint_passed
+physics_features:
+  profile: generic
+feature_weights: {}
+labeling:
+  score_col: overall_score
+  hard_pass_col: hard_constraint_passed
+acquisition_weights:
+  p_l1: 0.30
+  predicted_score: 0.20
+  p_hard_pass: 0.20
+  uncertainty: 0.10
+  attention_l1_mass: 0.10
+  distance: 0.05
+  diversity: 0.05
+benchmark:
+  strategies:
+    - random
+    - ca_llso_raw_distance
+    - pia_physics_distance
+metadata:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only

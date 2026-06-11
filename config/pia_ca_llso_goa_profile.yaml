@@ -1,0 +1,72 @@
+problem_name: pia_ca_llso_goa_profile
+target_score: 80
+parameter_columns:
+  - TFT_pullup_W
+  - TFT_pullup_L
+  - TFT_pulldown_W
+  - TFT_pulldown_L
+  - TFT_reset_W
+  - TFT_reset_L
+  - TFT_bootstrap_W
+  - TFT_bootstrap_L
+  - C_boot
+  - C_load
+  - CLK_amp
+  - CLK_rise_time
+  - CLK_fall_time
+  - VGH
+  - VGL
+  - Vth_shift
+metric_columns:
+  - overall_score
+  - delay
+  - power
+status_columns:
+  status: status
+score_columns:
+  overall_score: overall_score
+hard_constraint_columns:
+  - hard_constraint_passed
+forbidden_leakage_columns:
+  - delay
+  - rise_time
+  - fall_time
+  - power
+  - waveform_score
+  - output_high
+  - output_low
+  - overshoot
+  - undershoot
+  - holding_droop
+  - total_score
+  - overall_score
+  - hard_constraint_passed
+physics_features:
+  profile: goa
+feature_weights:
+  cboot_cload_ratio: 2.0
+  pullup_pulldown_ratio: 2.0
+  ron_pullup_cload_proxy: 1.5
+  ron_pulldown_cload_proxy: 1.5
+  vgh_vth_margin: 1.5
+  vgl_off_margin: 1.5
+  clk_slew_proxy: 1.2
+labeling:
+  score_col: overall_score
+  hard_pass_col: hard_constraint_passed
+acquisition_weights:
+  p_l1: 0.30
+  predicted_score: 0.20
+  p_hard_pass: 0.20
+  uncertainty: 0.10
+  attention_l1_mass: 0.10
+  distance: 0.05
+  diversity: 0.05
+benchmark:
+  strategies:
+    - random
+    - ca_llso_raw_distance
+    - pia_physics_distance
+metadata:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only

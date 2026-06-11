@@ -31,6 +31,11 @@ COMMAND_ARGV = {
     "hybrid-goa-optimize": ["hybrid-goa-optimize"],
     "goa-strategy-benchmark": ["goa-strategy-benchmark"],
     "eclipse-benchmark": ["eclipse-benchmark"],
+    "pia-label": ["pia-label", "--history-csv", "history.csv", "--output-dir", "out"],
+    "pia-suggest": ["pia-suggest", "--history-csv", "history.csv", "--candidate-csv", "candidates.csv", "--output-dir", "out"],
+    "pia-benchmark": ["pia-benchmark", "--history-csv", "history.csv", "--candidate-csv", "candidates.csv", "--output-dir", "out"],
+    "pia-export-contract": ["pia-export-contract", "--output-dir", "out"],
+    "pia-train-from-db": ["pia-train-from-db"],
 }
 
 

@@ -1,0 +1,31 @@
+thresholds:
+  high_threshold: 10.0
+  low_threshold: -5.0
+  target_pulse_width_us: 10.0
+  pulse_width_tolerance_us: 3.0
+  max_overlap_ratio: 0.15
+  max_ripple_v: 1.5
+  max_voltage_loss_v: 2.0
+  max_delay_std_us: 3.0
+  min_voh_margin_v: 1.0
+  target_refresh_hz: 120.0
+  min_pulse_width_us: 1.0
+  false_trigger_min_duration_us: 0.5
+  ripple_mode: hold
+
+cascade:
+  stage_count: 2
+  output_node_pattern: "o{index}"
+  stage_group_size: 1
+  sample_nodes: [1, 2]
+
+weights:
+  function_score: 0.35
+  quality_score: 0.25
+  stability_score: 0.15
+  consistency_score: 0.15
+  cost_score: 0.10
+
+notes:
+  - Used for Zhou2025 31-inch GOA paper-digitized waveform checks.
+  - Suitable for sparse extracted outputs, not a full 2160-stage CSV.
