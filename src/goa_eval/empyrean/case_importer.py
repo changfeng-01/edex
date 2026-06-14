@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 import yaml
 
+from goa_eval.empyrean.interface_manifest import write_empyrean_interface_manifest
 from goa_eval.empyrean.manifest import write_empyrean_case_manifest
 from goa_eval.empyrean.model_artifact import MODEL_EXTENSIONS, summarize_model_artifacts
 from goa_eval.empyrean.pve_report_parser import parse_physical_verification_reports
@@ -51,9 +52,22 @@ def run_empyrean_import(
     physical_summary_path = output_dir / "physical_verification_summary.json"
     parasitic_summary_path = output_dir / "parasitic_summary.json"
     model_summary_path = output_dir / "model_artifact_summary.json"
+    interface_manifest_path = output_dir / "empyrean_interface_manifest.json"
     physical_summary = parse_physical_verification_reports(discovered["verification_reports"], physical_summary_path)
     parasitic_summary = parse_rc_result(discovered["rc"], parasitic_summary_path)
     model_summary = summarize_model_artifacts(discovered["artifacts"].get("model", []), model_summary_path)
+    interface_manifest = write_empyrean_interface_manifest(
+        interface_manifest_path,
+        case_id=case_id,
+        input_dir=input_dir,
+        artifacts=discovered["artifacts"],
+        normalized_waveform_path=Path(conversion.normalized_waveform_path),
+        waveform_column_map_path=Path(conversion.column_map_path),
+        physical_summary=physical_summary,
+        parasitic_summary=parasitic_summary,
+        model_summary=model_summary,
+        data_source=data_source,
+    )
 
     metadata = {
         "adapter": "empyrean-import",
@@ -133,11 +147,13 @@ def run_empyrean_import(
         parasitic_summary_path=parasitic_summary_path,
         model_artifact_summary_path=model_summary_path,
         data_source=data_source,
+        interface_manifest_path=interface_manifest_path,
     )
     return {
         "case_id": case_id,
         "output_dir": str(output_dir),
         "manifest": manifest,
+        "interface_manifest": interface_manifest,
         "waveform_conversion": conversion.__dict__,
         "physical_verification": physical_summary,
         "parasitic": parasitic_summary,

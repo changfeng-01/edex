@@ -43,6 +43,12 @@ def test_empyrean_import_waveform_only_completes_basic_evaluation(tmp_path: Path
     manifest = json.loads((output / "empyrean_case_manifest.json").read_text(encoding="utf-8"))
     assert manifest["tool_invocation"] is False
     assert manifest["evidence_boundary"]["no_local_empyrean_tool_invocation"] is True
+    assert manifest["interface_manifest_path"] == str(output / "empyrean_interface_manifest.json")
+    interface_manifest = json.loads((output / "empyrean_interface_manifest.json").read_text(encoding="utf-8"))
+    assert interface_manifest["tool_invocation"] is False
+    assert interface_manifest["verification_gate_contract"]["status"] == "incomplete"
+    assert set(interface_manifest["verification_gate_contract"]["blocking_checks"]) == {"drc", "lvs", "erc"}
+    assert interface_manifest["next_step_policy"]["requires_real_eda_rerun"] is True
 
 
 def test_empyrean_import_cli_writes_candidates_for_example_case(tmp_path: Path):
@@ -79,6 +85,19 @@ def test_empyrean_import_cli_writes_candidates_for_example_case(tmp_path: Path):
     assert physical["drc"]["status"] == "passed"
     parasitic = json.loads((output / "parasitic_summary.json").read_text(encoding="utf-8"))
     assert parasitic["has_rc_data"] is True
+    interface_manifest = json.loads((output / "empyrean_interface_manifest.json").read_text(encoding="utf-8"))
+    assert interface_manifest["verification_gate_contract"]["status"] == "passed"
+    assert interface_manifest["model_contract"]["model_name_consistency"] == "passed"
+    ports = {port["name"]: port for port in interface_manifest["port_contract"]["ports"]}
+    assert ports["gate"]["role"] == "input_stimulus"
+    assert ports["data"]["present_in_schematic"] is True
+    assert ports["pixel"]["present_in_schematic"] is True
+    assert ports["o1"]["present_in_waveform"] is True
+    critical_nets = {
+        row["net_name"]: row
+        for row in interface_manifest["parasitic_contract"]["critical_nets"]
+    }
+    assert critical_nets["pixel"]["criticality"] == "high"
 
 
 def test_empyrean_runner_refuses_tool_execution():
