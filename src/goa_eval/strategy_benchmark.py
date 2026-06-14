@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from goa_eval.io_utils import write_json
+from goa_eval.io_utils import read_csv as _read_csv, read_json as _read_json, read_yaml as _read_yaml, as_float as _as_float, json_number as _json_number, write_json
 from goa_eval.sky130_mainline import run_sky130_mainline
 
 
@@ -316,41 +316,6 @@ def _write_report(path: Path, summary: dict[str, Any], leaderboard: pd.DataFrame
         ]
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def _read_csv(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        return pd.DataFrame()
-    return pd.read_csv(path)
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    import json
-
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _read_yaml(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists():
-        return {}
-    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _as_float(value: Any) -> float | None:
-    try:
-        if value is None or pd.isna(value):
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _json_number(value: Any) -> float | None:
-    number = _as_float(value)
-    return number if number is not None else None
 
 
 def _mean_column(frame: pd.DataFrame, column: str, *, fill: float | None = None) -> float | None:

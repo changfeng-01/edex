@@ -9,7 +9,7 @@ import pandas as pd
 import yaml
 
 from goa_eval.evidence import build_evidence_metadata, infer_evidence_level
-from goa_eval.io_utils import write_json
+from goa_eval.io_utils import read_yaml as _load_yaml, as_float as _as_float, write_json
 from goa_eval.multi_round_optimizer import enrich_history_row, run_multi_round_optimization
 from goa_eval.sky130_sweep import Sky130DependencyError, run_sky130_sweep
 
@@ -472,13 +472,6 @@ def _write_mainline_report(path: Path, payload: dict[str, Any]) -> None:
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def _load_yaml(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists():
-        return {}
-    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return payload if isinstance(payload, dict) else {}
-
-
 def _ensure_nominal_rerun(matrix: list[Any]) -> list[dict[str, Any]]:
     normalized = [item for item in matrix if isinstance(item, dict)]
     names = {str(item.get("name", "")).lower() for item in normalized}
@@ -582,12 +575,3 @@ def _validation_sweep_config(sweep_path: Path, base_parameters: dict[str, dict[s
 def _safe_name(value: str) -> str:
     safe = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in value).strip("_")
     return safe or "validation"
-
-
-def _as_float(value: Any) -> float | None:
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None

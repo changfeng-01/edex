@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from goa_eval.io_utils import write_json
+from goa_eval.io_utils import as_float as _as_float, write_json
 from goa_eval.metrics import RealEvalConfig, evaluate_waveform_metrics
 from goa_eval.paper_digitization.schemas import (
     ENGINEERING_VALIDITY,
@@ -130,13 +130,6 @@ def _mean_metric(rows: list[dict[str, Any]], key: str) -> float | None:
     if values.empty:
         return None
     return float(values.mean())
-
-
-def _as_float(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def build_parser() -> argparse.ArgumentParser:

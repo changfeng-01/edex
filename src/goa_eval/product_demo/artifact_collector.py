@@ -8,6 +8,7 @@ from typing import Any, Mapping
 import pandas as pd
 
 from goa_eval.evidence import default_external_csv_evidence
+from goa_eval.io_utils import read_json as _read_json
 from goa_eval.product_demo.schemas import (
     AWAITING_CANDIDATE_GENERATION,
     AWAITING_RERUN_RESULTS,
@@ -120,15 +121,6 @@ def _discover_files(input_dir: Path) -> dict[str, Path]:
     if figure_manifest.exists():
         files["figure_manifest.json"] = figure_manifest
     return files
-
-
-def _read_json(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
 
 
 def _read_csv(path: Path | None) -> pd.DataFrame:

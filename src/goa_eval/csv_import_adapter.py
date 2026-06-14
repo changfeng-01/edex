@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from goa_eval.io_utils import write_json
+from goa_eval.io_utils import read_json as _read_json, write_json
 from goa_eval.optimizer import constrained_random_candidates, load_param_space, write_candidate_outputs
 from goa_eval.parameter_semantics import load_parameter_semantics
 from goa_eval.real_waveform_eval import run_real_waveform_evaluation
@@ -208,12 +208,6 @@ def _write_sweep_outputs(output_root: Path, rows: list[dict[str, Any]]) -> None:
     ranked.sort_values(["_evaluated", "_score", "run_dir"], ascending=[False, False, True]).drop(
         columns=["_evaluated", "_score"]
     ).to_csv(output_root / "simulate_sweep_leaderboard.csv", index=False, encoding="utf-8-sig")
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _safe_name(value: str) -> str:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -57,12 +57,20 @@ def compute_acquisition_score(candidate_row: Mapping[str, Any], weights: Mapping
     return float(min(max(score, 0.0), 1.0)), components
 
 
-def compute_diversity(candidate: pd.Series, selected_candidates: pd.DataFrame, feature_cols: Sequence[str]) -> float:
+def compute_diversity(
+    candidate: pd.Series,
+    selected_candidates: pd.DataFrame,
+    feature_cols: Sequence[str],
+    distance_fn: Callable[[pd.Series, pd.Series], float] | None = None,
+) -> float:
     if selected_candidates.empty or not feature_cols:
         return 1.0
     distances = []
     for _, row in selected_candidates.iterrows():
-        distances.append(float(np.sqrt(sum((float(candidate.get(col, 0.0)) - float(row.get(col, 0.0))) ** 2 for col in feature_cols))))
+        if distance_fn is not None:
+            distances.append(distance_fn(candidate, row))
+        else:
+            distances.append(float(np.sqrt(sum((float(candidate.get(col, 0.0)) - float(row.get(col, 0.0))) ** 2 for col in feature_cols))))
     return float(min(np.mean(distances), 1.0))
 
 
@@ -83,6 +91,14 @@ def attach_acquisition_scores(candidates: pd.DataFrame) -> pd.DataFrame:
 
 
 def explain_acquisition(candidate_row: Mapping[str, Any]) -> str:
+    if "capm_distance_to_l1" in candidate_row:
+        return (
+            f"capm_distance_to_l1={candidate_row.get('capm_distance_to_l1', 0):.3g}; "
+            f"capm_barrier_score={candidate_row.get('capm_barrier_score', 0):.3g}; "
+            f"diversity_score={candidate_row.get('diversity_score', 0):.3g}; "
+            f"acquisition_score={candidate_row.get('acquisition_score', 0):.3g}. "
+            "This is a constraint-aware physics-manifold next-run simulation suggestion, not final validation evidence."
+        )
     return (
         f"p_l1={candidate_row.get('p_l1', 0):.3g}; "
         f"p_hard_pass={candidate_row.get('p_hard_pass', 0):.3g}; "

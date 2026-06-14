@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 
+from goa_eval.io_utils import finite_float as _finite, clamp_0_100 as _clamp, gt as _gt
 from goa_eval.schemas import RESULT_VERSION, SCHEMA_VERSION
 from goa_eval.evidence import evidence_from_payload
 from goa_eval.topology_profiles import load_eval_profiles, resolve_topology_profile
@@ -459,28 +460,6 @@ def _penalty(metric: str, current, threshold, limit_type: str, score: float, sev
         "reason": reason,
         **extra,
     }
-
-
-def _gt(value, limit) -> bool:
-    value = _finite(value)
-    limit = _finite(limit)
-    return value is not None and limit is not None and value > limit
-
-
-def _finite(value) -> float | None:
-    if value is None:
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    if math.isnan(number):
-        return None
-    return number
-
-
-def _clamp(value: float) -> float:
-    return float(max(0.0, min(100.0, value)))
 
 
 def _mean(values: list[float]) -> float:

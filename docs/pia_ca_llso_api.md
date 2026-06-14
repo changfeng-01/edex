@@ -37,6 +37,16 @@ Recommended columns:
 - `acquisition_components_json`
 - `diagnostic_status`
 
+When `--strategy pia_capm_distance` is used, the selected candidate CSV also includes:
+
+- `capm_distance_to_l1`
+- `capm_geodesic_distance_to_l1`
+- `capm_barrier_score`
+- `capm_missing_penalty`
+- `capm_hard_risk_passed`
+
+These fields are pre-simulation candidate-selection diagnostics. They are not final physical validation evidence, and every selected candidate keeps `must_resimulate = true`.
+
 ## Adapter Interface
 
 `HistoryAdapter` and `CandidateAdapter` are CSV-first adapters. Future integration can map existing optimize-rounds or strategy outputs into these DataFrames.

@@ -5,6 +5,7 @@ import json
 
 import pandas as pd
 
+from goa_eval.io_utils import safe_float as _number, gt as _gt
 from goa_eval.schemas import RESULT_VERSION, SCHEMA_VERSION
 
 
@@ -410,21 +411,6 @@ def _attach_metric_penalty_context(recommendations: list[dict], score: dict) -> 
         recommendation["metric_penalty_severity"] = penalty.get("severity")
         recommendation["metric_penalty_score"] = _number(penalty.get("score"))
         recommendation["metric_penalty_deduction"] = _number(penalty.get("deduction"))
-
-
-def _number(value) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _gt(value, limit) -> bool:
-    value = _number(value)
-    limit = _number(limit)
-    return value is not None and limit is not None and value > limit
 
 
 def _active_penalty(penalty: object) -> bool:

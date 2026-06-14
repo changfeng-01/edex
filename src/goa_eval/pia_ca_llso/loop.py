@@ -13,7 +13,7 @@ def suggest_next_run(history: pd.DataFrame, candidates: pd.DataFrame, config: di
     candidate_features, candidate_feature_report = extract_physics_features(candidates, config.get("physics_features", config))
     history_joined = pd.concat([labeled.reset_index(drop=True), history_features.reset_index(drop=True)], axis=1)
     candidate_joined = pd.concat([candidates.reset_index(drop=True), candidate_features.reset_index(drop=True)], axis=1)
-    result = select_candidates(candidate_joined, history_joined, strategy=strategy, top_k=top_k)
+    result = select_candidates(candidate_joined, history_joined, strategy=strategy, top_k=top_k, config=config)
     result.feature_report = {
         "history": feature_report,
         "candidates": candidate_feature_report,

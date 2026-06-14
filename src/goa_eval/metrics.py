@@ -6,6 +6,7 @@ import math
 import numpy as np
 import pandas as pd
 
+from goa_eval.io_utils import gt as _gt
 from goa_eval.windowing import boolean_intervals, non_selected_mask as hold_non_selected_mask, ripple_in_hold_window, total_pairwise_overlap
 
 
@@ -587,12 +588,6 @@ def _voltage_loss(voh_max: float | None, v_hold_end: float | None) -> float | No
     if voh_max is None or v_hold_end is None:
         return None
     return float(max(0.0, voh_max - v_hold_end))
-
-
-def _gt(value: float | None, limit: float | None) -> bool:
-    if value is None or limit is None:
-        return False
-    return float(value) > float(limit)
 
 
 def _sample_step(time: np.ndarray) -> float:

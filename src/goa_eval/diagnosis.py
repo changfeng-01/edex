@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from goa_eval.io_utils import gt as _greater
+
 
 def build_diagnosis(summary: dict, stage_rows: list[dict], score_summary: dict) -> list[str]:
     suggestions: list[str] = []
@@ -61,10 +63,6 @@ def _margin_low(summary: dict) -> bool:
 
 def _exceeds(summary: dict, metric: str, limit: str) -> bool:
     return _greater(summary.get(metric), summary.get(limit))
-
-
-def _greater(value, limit) -> bool:
-    return value is not None and limit is not None and float(value) > float(limit)
 
 
 def _abs_exceeds(value, target, tolerance) -> bool:

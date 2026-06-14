@@ -30,7 +30,7 @@ from goa_eval.goa_hybrid_optimizer import (
     score_goa_candidates,
     generate_repair_candidates,
 )
-from goa_eval.io_utils import write_json
+from goa_eval.io_utils import json_number as _json_number, write_json
 from goa_eval.optimizer import load_param_space
 from goa_eval.pareto import DEFAULT_OBJECTIVES, pareto_rank
 from goa_eval.schemas import RESULT_VERSION, SCHEMA_VERSION
@@ -682,15 +682,6 @@ def _safe_mean(group: pd.DataFrame, column: str) -> float:
     if group.empty or column not in group.columns:
         return 0.0
     return float(pd.to_numeric(group[column], errors="coerce").fillna(0).mean())
-
-
-def _json_number(value: Any) -> float | None:
-    try:
-        if value is None or (isinstance(value, float) and math.isnan(value)):
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _parse_json(value: Any) -> dict[str, Any]:

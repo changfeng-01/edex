@@ -9,6 +9,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from goa_eval.io_utils import as_float as _as_float
 from goa_eval.product_demo.artifact_collector import ProductDemoArtifacts
 from goa_eval.product_demo.schemas import FIGURE_FILES
 from goa_eval.product_demo.tables import (
@@ -200,12 +201,3 @@ def _first_existing(frame: pd.DataFrame, names: list[str]) -> str | None:
         if name in frame.columns:
             return name
     return None
-
-
-def _as_float(value: Any) -> float | None:
-    try:
-        if pd.isna(value):
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None

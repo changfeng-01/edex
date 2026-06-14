@@ -13,6 +13,7 @@ def render_candidate_report(selected: pd.DataFrame, report: dict[str, Any]) -> s
         "",
         "- data_source = real_simulation_csv",
         "- engineering_validity = simulation_only",
+        "- must_resimulate = true",
         f"- strategy = {report.get('strategy', 'unknown')}",
         "",
         "| rank | candidate_id | role | acquisition_score | reason |",

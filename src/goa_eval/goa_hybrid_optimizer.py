@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from goa_eval.io_utils import write_json
+from goa_eval.io_utils import as_float as _as_float, json_number as _json_number, write_json
 from goa_eval.optimizer import load_param_space
 from goa_eval.param_space import parse_engineering_value
 from goa_eval.pareto import DEFAULT_OBJECTIVES, pareto_rank, select_knee_points
@@ -905,20 +905,6 @@ def _numeric(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-
-
-def _as_float(value: Any) -> float | None:
-    try:
-        if value is None or pd.isna(value):
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _json_number(value: Any) -> float | None:
-    number = _as_float(value)
-    return number if number is not None else None
 
 
 best_goa_parameters = _best_parameters

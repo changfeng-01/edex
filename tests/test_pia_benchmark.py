@@ -30,3 +30,50 @@ def test_benchmark_metrics_and_outputs(tmp_path) -> None:
     assert (tmp_path / "pia_ablation_results.csv").exists()
     assert json.loads((tmp_path / "pia_ablation_summary.json").read_text(encoding="utf-8"))["data_source"] == "real_simulation_csv"
     assert "simulation_only" in (tmp_path / "pia_ablation_report.md").read_text(encoding="utf-8")
+
+
+def test_benchmark_passes_capm_config_to_selector(tmp_path) -> None:
+    history = pd.DataFrame(
+        [
+            {
+                "sample_id": "h1",
+                "level_label": "L1",
+                "cboot_cload_ratio": 1.2,
+                "pullup_pulldown_ratio": 1.0,
+                "ron_pullup_cload_proxy": 0.4,
+                "ron_pulldown_cload_proxy": 0.4,
+                "vgh_vth_margin": 2.5,
+                "vgl_off_margin": 2.0,
+                "clk_slew_proxy": 0.5,
+                "overall_score": 90,
+                "hard_constraint_passed": True,
+            }
+        ]
+    )
+    candidates = pd.DataFrame(
+        [
+            {
+                "candidate_id": "c1",
+                "cboot_cload_ratio": 1.2,
+                "pullup_pulldown_ratio": 1.0,
+                "ron_pullup_cload_proxy": 3.5,
+                "ron_pulldown_cload_proxy": 0.4,
+                "vgh_vth_margin": 0.05,
+                "vgl_off_margin": 2.0,
+                "clk_slew_proxy": 0.5,
+                "overall_score": 82,
+                "hard_constraint_passed": True,
+            }
+        ]
+    )
+
+    run_ablation_benchmark(
+        history,
+        candidates,
+        tmp_path,
+        strategies=["pia_capm_distance"],
+        config={"capm_distance": {"max_ron_pullup_cload_proxy": 4.0, "min_vgh_vth_margin": 0.01}},
+    )
+
+    selected = pd.read_csv(tmp_path / "pia_capm_distance_selected_candidates.csv")
+    assert bool(selected.loc[0, "capm_hard_risk_passed"]) is True
