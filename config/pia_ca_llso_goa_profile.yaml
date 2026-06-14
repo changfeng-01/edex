@@ -51,6 +51,50 @@ feature_weights:
   vgh_vth_margin: 1.5
   vgl_off_margin: 1.5
   clk_slew_proxy: 1.2
+capm_distance:
+  lambda_barrier: 1.0
+  lambda_graph: 1.0
+  lambda_missing: 1.0
+  k_neighbors: 4
+  min_vgh_vth_margin: 0.2
+  min_vgl_off_margin: 0.2
+  min_cboot_cload_ratio: 0.35
+  max_ron_pullup_cload_proxy: 2.0
+  max_ron_pulldown_cload_proxy: 2.0
+  min_pullup_pulldown_ratio: 0.5
+  max_pullup_pulldown_ratio: 2.0
+  max_clk_slew_proxy: 2.0
+  couplings:
+    - {left: ron_pullup_cload_proxy, right: clk_slew_proxy, weight: 0.25, enabled: true}
+    - {left: ron_pulldown_cload_proxy, right: clk_slew_proxy, weight: 0.25, enabled: true}
+    - {left: cboot_cload_ratio, right: vgh_vth_margin, weight: 0.25, enabled: true}
+    - {left: ron_pullup_cload_proxy, right: vgh_vth_margin, weight: 0.15, enabled: true}
+    - {left: ron_pulldown_cload_proxy, right: vgl_off_margin, weight: 0.15, enabled: true}
+    - {left: cboot_cload_ratio, right: holding_droop_proxy, weight: 0.15, enabled: true}
+    - {left: pullup_pulldown_ratio, right: clk_slew_proxy, weight: 0.10, enabled: true}
+    - {left: vgh_vth_margin, right: vgl_off_margin, weight: 0.10, enabled: true}
+  penalty_config:
+    vgh_vth_margin:
+      type: exponential
+      alpha: 2.0
+    vgl_off_margin:
+      type: exponential
+      alpha: 2.0
+    cboot_cload_ratio:
+      type: exponential
+      alpha: 2.0
+    ron_pullup_cload_proxy:
+      type: exponential
+      alpha: 2.0
+    ron_pulldown_cload_proxy:
+      type: exponential
+      alpha: 2.0
+    clk_slew_proxy:
+      type: exponential
+      alpha: 2.0
+    pullup_pulldown_ratio:
+      type: quadratic
+      alpha: 2.0
 labeling:
   score_col: overall_score
   hard_pass_col: hard_constraint_passed
@@ -67,6 +111,7 @@ benchmark:
     - random
     - ca_llso_raw_distance
     - pia_physics_distance
+    - pia_capm_distance
 metadata:
   data_source: real_simulation_csv
   engineering_validity: simulation_only

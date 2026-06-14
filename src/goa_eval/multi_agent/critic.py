@@ -5,6 +5,7 @@ import json
 
 import pandas as pd
 
+from goa_eval.io_utils import read_json as _read_json
 from goa_eval.multi_agent.agent_contracts import is_tool_allowed
 from goa_eval.multi_agent.schemas import CriticVerdict
 from goa_eval.multi_agent.tools import BAD_CELL_STRINGS, check_schema_and_boundary, inspect_candidates, inspect_netlist_integrity, normalize_artifact_inputs
@@ -188,18 +189,6 @@ def _check_boundary_payload(payload: dict, label: str, issues: list[str]) -> Non
         issues.append(f"data_source mismatch in {label}: {payload.get('data_source')}")
     if payload.get("engineering_validity") != "simulation_only":
         issues.append(f"engineering_validity mismatch in {label}: {payload.get('engineering_validity')}")
-
-
-def _read_json(path_text) -> dict:
-    if not path_text:
-        return {}
-    path = Path(str(path_text))
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
 
 
 def _forbidden_claim_issues(text: str, label: str) -> list[str]:

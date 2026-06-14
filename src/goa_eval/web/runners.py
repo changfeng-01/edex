@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from goa_eval.io_utils import read_json as _read_json
 from goa_eval.llm_analysis import run_llm_parameter_analysis
 from goa_eval.evidence import default_external_csv_evidence
 from goa_eval.optimizer import constrained_random_candidates, load_param_space, write_candidate_outputs
@@ -134,12 +135,6 @@ def _pipeline_paths(output_dir: Path) -> dict[str, Path]:
         "analysis_md": output_dir / "llm_parameter_analysis.md",
         "analysis_json": output_dir / "llm_parameter_analysis.json",
     }
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _display_path(path: Path) -> str:

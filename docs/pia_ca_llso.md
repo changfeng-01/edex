@@ -31,6 +31,22 @@ Physics distance computes weighted distance in feature space:
 
 `sqrt(sum_k w_k * (phi_i_k - phi_j_k)^2)`
 
+## 6.1 CAPM-Distance
+
+`pia_capm_distance` adds a no-training research distance for candidate selection:
+
+```text
+D_capm(x, y) =
+  D_tensor(x, y)
++ lambda_barrier * D_barrier(x, y)
++ lambda_graph * D_geodesic(x, y)
++ lambda_missing * D_missing(x, y)
+```
+
+The tensor term compares GOA physics features with anisotropic weights and small coupling terms such as `Ron*Cload` with clock slew. The barrier term raises the pre-simulation risk cost near low voltage margin, weak bootstrap/load margin, high drive-load proxy, or unbalanced pull-up/pull-down ratios. The geodesic term builds a small kNN graph over candidates and history, then measures the shortest path to the L1 basin. The missing term prevents absent physics inputs from being treated as a zero-distance match.
+
+CAPM-Distance is a selection proxy only. It does not train a model, does not use result columns such as `overall_score` or `hard_constraint_passed` as distance features, and does not replace the next simulation run.
+
 ## 7. Learned Latent Metric
 
 The first version exposes a PCA-based latent interface and keeps torch optional. If torch is absent, the optional encoder returns unavailable without affecting the basic flow.
@@ -54,3 +70,7 @@ The module lives under `src/goa_eval/pia_ca_llso/` and is reached through the ex
 ## 12. Current Boundaries And Limits
 
 The current implementation is CSV/offline first. It does not claim silicon validation, physical measurement validation, or completed chip optimization. Outputs are next-run simulation suggestions.
+
+- data_source = real_simulation_csv
+- engineering_validity = simulation_only
+- must_resimulate = true

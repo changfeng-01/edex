@@ -31,6 +31,9 @@ The first benchmark compares:
 - random
 - ca_llso_raw_distance
 - pia_physics_distance
+- pia_capm_distance
+
+`pia_capm_distance` is the constraint-aware physics-manifold ablation. It is compared as a candidate-selection proxy, not as validated physical improvement.
 
 ## Evidence Boundary
 
@@ -38,3 +41,4 @@ predicted_score cannot be final evidence because it is produced by the selector 
 
 - data_source = real_simulation_csv
 - engineering_validity = simulation_only
+- must_resimulate = true

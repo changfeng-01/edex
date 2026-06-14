@@ -36,7 +36,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     benchmark.add_argument("--candidate-csv", required=True)
     benchmark.add_argument("--config")
     benchmark.add_argument("--output-dir", required=True)
-    benchmark.add_argument("--strategies", default="random,ca_llso_raw_distance,pia_physics_distance")
+    benchmark.add_argument("--strategies", default="random,ca_llso_raw_distance,pia_physics_distance,pia_capm_distance")
     benchmark.add_argument("--target-score", type=float, default=80)
     benchmark.add_argument("--seed", type=int, default=42)
     benchmark.set_defaults(handler=handle_pia_benchmark)
@@ -90,11 +90,11 @@ def handle_pia_suggest(args: argparse.Namespace) -> int:
 
 def handle_pia_benchmark(args: argparse.Namespace) -> int:
     output_dir = ensure_output_dir(args.output_dir)
-    read_config(args.config)
+    config = read_config(args.config)
     history = HistoryAdapter().load(args.history_csv)
     candidates = CandidateAdapter().load(args.candidate_csv)
     strategies = [strategy.strip() for strategy in args.strategies.split(",") if strategy.strip()]
-    run_ablation_benchmark(history, candidates, output_dir, strategies=strategies, target_score=args.target_score)
+    run_ablation_benchmark(history, candidates, output_dir, strategies=strategies, target_score=args.target_score, config=config)
     return 0
 
 

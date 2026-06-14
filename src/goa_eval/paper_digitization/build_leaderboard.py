@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from goa_eval.io_utils import write_json
+from goa_eval.io_utils import read_yaml as _read_yaml, read_json as _read_json, write_json
 from goa_eval.paper_digitization.schemas import (
     ENGINEERING_VALIDITY,
     PAPER_LEADERBOARD_COLUMNS,
@@ -136,18 +136,6 @@ def _maybe_float(value: Any) -> Any:
         return float(value)
     except (TypeError, ValueError):
         return value
-
-
-def _read_yaml(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def build_parser() -> argparse.ArgumentParser:

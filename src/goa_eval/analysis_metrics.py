@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from goa_eval.io_utils import finite_float as _number
+
 
 def extract_analysis_metrics(run_dir: Path, *, topology_profile: str = "default") -> dict:
     provenance: dict[str, dict] = {}
@@ -421,18 +423,6 @@ def _startup_time(time: np.ndarray, signal: np.ndarray) -> float | None:
     if len(indices) == 0:
         return None
     return float(time[int(indices[0])])
-
-
-def _number(value) -> float | None:
-    if value is None:
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    if math.isnan(number):
-        return None
-    return number
 
 
 def _add_provenance(

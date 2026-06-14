@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from goa_eval.io_utils import as_float as _as_float
 from goa_eval.param_space import parse_engineering_value
 
 
@@ -308,12 +309,3 @@ def _bounded_log_reward(value: float, *, scale: float) -> float:
     if value <= 0:
         return 0.0
     return max(0.0, min(scale, math.log10(value + 1.0)))
-
-
-def _as_float(value: Any) -> float | None:
-    try:
-        if value is None or pd.isna(value):
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None

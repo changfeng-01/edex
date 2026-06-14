@@ -6,6 +6,7 @@ from typing import Any
 import pandas as pd
 
 from goa_eval.eclipse_benchmark.schema import ROLE_NAMES
+from goa_eval.io_utils import as_float as _as_float
 
 
 def compute_run_metrics(
@@ -311,15 +312,6 @@ def _safe_div(numerator: int | float, denominator: int | float) -> float | None:
     if not denominator:
         return None
     return float(numerator) / float(denominator)
-
-
-def _as_float(value: Any) -> float | None:
-    try:
-        if value is None or pd.isna(value):
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _as_bool(value: Any) -> bool | None:

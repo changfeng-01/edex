@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -65,6 +65,7 @@ def run_ablation_benchmark(
     strategies: Sequence[str] = ("random", "ca_llso_raw_distance", "pia_physics_distance"),
     target_score: float = 80,
     top_k: int = 4,
+    config: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -72,7 +73,8 @@ def run_ablation_benchmark(
     results = []
     curves = []
     for strategy in strategies:
-        selected = select_candidates(candidates, labeled_history, strategy=strategy, top_k=top_k).selected_candidates.copy()
+        selected = select_candidates(candidates, labeled_history, strategy=strategy, top_k=top_k, config=config).selected_candidates.copy()
+        selected.to_csv(out / f"{strategy}_selected_candidates.csv", index=False)
         selected["real_score"] = pd.to_numeric(selected.get("overall_score", selected.get("predicted_score", 0.0)), errors="coerce").fillna(0.0)
         selected["hard_pass"] = selected.get("hard_constraint_passed", selected.get("p_hard_pass", 0.0)).astype(float) >= 0.5
         selected["status"] = np.where(selected["hard_pass"], "evaluated_feasible", "evaluated_soft_fail")

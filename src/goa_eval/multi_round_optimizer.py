@@ -14,6 +14,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern, WhiteKernel
 
+from goa_eval.io_utils import read_json as _read_json, as_float as _as_float
 from goa_eval.multi_round_strategy import (
     uses_candidate_replay,
     uses_genetic_search,
@@ -596,16 +597,6 @@ def _training_history(history: pd.DataFrame, parameters: dict[str, Any]) -> pd.D
     return train.dropna(subset=list(parameters), how="any")
 
 
-def _read_json(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
 def _profile_metric_scores(value: object) -> list[float]:
     scores: list[float] = []
     if not isinstance(value, dict):
@@ -926,15 +917,6 @@ def _values(spec: Any) -> list[object]:
         values = spec.get("values", [])
         return list(values) if isinstance(values, list) else [values]
     return list(spec) if isinstance(spec, list) else [spec]
-
-
-def _as_float(value) -> float | None:
-    try:
-        if value is None or pd.isna(value):
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _as_int(value) -> int | None:

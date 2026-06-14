@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from goa_eval.io_utils import write_json
+from goa_eval.io_utils import read_csv as _read_csv, read_json as _read_json, as_float as _as_float, write_json
 from goa_eval.paper_digitization.schemas import (
     ENGINEERING_VALIDITY,
     PAPER_DIGITIZED_EVIDENCE_WEIGHT,
@@ -336,18 +336,6 @@ def _write_dataset_card(frame: pd.DataFrame, path: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _read_csv(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        return pd.DataFrame()
-    return pd.read_csv(path)
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def _parse_parameters_json(value: Any) -> dict[str, Any]:
     if value in (None, "") or pd.isna(value):
         return {}
@@ -363,13 +351,6 @@ def _maybe_float(value: Any) -> Any:
         return float(value)
     except (TypeError, ValueError):
         return value
-
-
-def _as_float(value: Any, *, default: float | None = None) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -11,6 +11,8 @@ from typing import Any, Callable
 import pandas as pd
 import yaml
 
+from goa_eval.io_utils import read_json as _read_json, read_yaml as _read_yaml
+
 
 Transport = Callable[[str, dict[str, str], str, float], dict[str, Any]]
 
@@ -285,18 +287,6 @@ def _items_markdown(value: Any, preferred_keys: list[str]) -> list[str]:
         else:
             lines.append(f"- {item}")
     return lines
-
-
-def _read_json(path: Path | None) -> dict[str, Any]:
-    if path is None:
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _read_yaml(path: Path | None) -> dict[str, Any]:
-    if path is None:
-        return {}
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
 def _read_csv_rows(path: Path | None, max_rows: int) -> list[dict[str, Any]]:

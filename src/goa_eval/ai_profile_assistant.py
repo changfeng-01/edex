@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from goa_eval.io_utils import write_json
+from goa_eval.io_utils import read_yaml as _read_yaml, write_json
 from goa_eval.llm_analysis import DeepSeekClient
 
 
@@ -183,12 +183,6 @@ def _assistant_markdown(result: dict[str, Any]) -> str:
             "",
         ]
     )
-
-
-def _read_yaml(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists():
-        return {}
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
 def _read_table_or_json(path: Path | None) -> Any:
