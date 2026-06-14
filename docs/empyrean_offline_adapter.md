@@ -18,6 +18,7 @@ examples/empyrean_case/
   model/model.sp
   schematic/netlist.sp
   layout/layer_summary.json
+  net_mapping.yaml
   params.yaml
 ```
 
@@ -30,6 +31,7 @@ The adapter recognizes:
 - RCExplorerFPD RC result CSV or simple text tables.
 - EsimFPD model files such as `.sp`, `.spi`, `.mod`, `.model`, and `.txt`.
 - Schematic and layout metadata files for manifest registration.
+- Optional `net_mapping.yaml` / `net_mapping.yml` files in the case root, `mapping/`, or `schematic/`.
 
 ## Command
 
@@ -76,6 +78,23 @@ Candidate files are only written when `--generate-candidates` is set.
 - `verification_gate_contract`: DRC, LVS, and ERC status as blocking gates for engineering claims.
 - `parasitic_contract`: RCExplorer-derived critical nets with resistance/capacitance summaries that can feed optimizer context.
 - `layout_contract`: layout metadata artifacts such as layer summaries, GDS, technology files, and layer maps when provided.
+- `node_mapping_contract`: optional user-provided schematic/layout/waveform/RC net mapping records for debug traceability.
+
+The optional node mapping file uses this shape:
+
+```yaml
+mappings:
+  - engineering_name: gate_input
+    role: input_stimulus
+    schematic_net: gate
+    layout_label: gate
+    waveform_signal: o1
+    rc_net: gate
+    instance: XPIX
+    description: Gate scan/control input
+```
+
+The mapping is a traceability aid, not verification evidence. Missing mapping files do not block import. References that do not match exported schematic, waveform, or RC names are reported under `node_mapping_contract.unmatched` without stopping the import.
 
 The interface manifest keeps the manual workflow explicit:
 
