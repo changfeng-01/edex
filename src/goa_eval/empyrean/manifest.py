@@ -19,6 +19,7 @@ def write_empyrean_case_manifest(
     parasitic_summary_path: Path,
     model_artifact_summary_path: Path,
     data_source: str,
+    interface_manifest_path: Path | None = None,
 ) -> dict[str, Any]:
     manifest = {
         **base_versions(),
@@ -38,6 +39,7 @@ def write_empyrean_case_manifest(
         "physical_verification_summary_path": str(physical_verification_summary_path),
         "parasitic_summary_path": str(parasitic_summary_path),
         "model_artifact_summary_path": str(model_artifact_summary_path),
+        "interface_manifest_path": str(interface_manifest_path) if interface_manifest_path else None,
         "evidence_boundary": evidence_boundary(data_source),
     }
     write_json(path, manifest)

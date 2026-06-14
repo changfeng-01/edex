@@ -54,6 +54,7 @@ empyrean_case_manifest.json
 physical_verification_summary.json
 parasitic_summary.json
 model_artifact_summary.json
+empyrean_interface_manifest.json
 real_summary.json
 score_summary.json
 real_metrics.csv
@@ -64,6 +65,29 @@ next_candidates.csv / next_candidates.md
 ```
 
 Candidate files are only written when `--generate-candidates` is set.
+
+## Interface manifest
+
+`empyrean_interface_manifest.json` is the stable interface contract for the exported Empyrean FPD case. It does not prove the design is correct and it does not invoke the EDA tools. It records the file-level contracts that must line up before CircuitPilot can make useful next-run simulation suggestions:
+
+- `port_contract`: schematic and waveform signal names, with roles such as input stimulus, output observation, common electrode, power, and ground. Final LVS should compare top ports; ignoring layout/source top ports is treated as debug-only.
+- `model_contract`: model card names found in EsimFPD-style model files and model or subcircuit names referenced by schematic netlists.
+- `stimulus_contract`: normalized waveform signals and the recommended ALPSFPD stimulus fields for `vpulse` / `vpwl` style reruns.
+- `verification_gate_contract`: DRC, LVS, and ERC status as blocking gates for engineering claims.
+- `parasitic_contract`: RCExplorer-derived critical nets with resistance/capacitance summaries that can feed optimizer context.
+- `layout_contract`: layout metadata artifacts such as layer summaries, GDS, technology files, and layer maps when provided.
+
+The interface manifest keeps the manual workflow explicit:
+
+```text
+EsimFPD Model export -> model_contract
+AetherFPD schematic/layout export -> port_contract and layout_contract
+ArgusFPD DRC/LVS/ERC reports -> verification_gate_contract
+RCExplorerFPD result export -> parasitic_contract
+ALPSFPD/iWaveFPD waveform export -> stimulus_contract
+```
+
+All optimizer outputs remain next-run simulation suggestions. After changing parameters, the user must rerun ALPSFPD simulation, ArgusFPD verification, and RCExplorerFPD extraction before reporting an engineering improvement.
 
 ## Evidence boundary
 
