@@ -36,7 +36,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     benchmark.add_argument("--candidate-csv", required=True)
     benchmark.add_argument("--config")
     benchmark.add_argument("--output-dir", required=True)
-    benchmark.add_argument("--strategies", default="random,ca_llso_raw_distance,pia_physics_distance,pia_capm_distance")
+    benchmark.add_argument("--strategies", default="random,ca_llso_raw_distance,pia_physics_distance,pia_capm_distance,adaptive_pia_capm")
     benchmark.add_argument("--target-score", type=float, default=80)
     benchmark.add_argument("--seed", type=int, default=42)
     benchmark.set_defaults(handler=handle_pia_benchmark)
