@@ -1,0 +1,23 @@
+mappings:
+  - engineering_name: gate_input
+    role: input_stimulus
+    schematic_net: gate
+    layout_label: gate
+    rc_net: gate
+    instance: XPIX
+    description: Gate scan/control input for the demo pixel cell.
+  - engineering_name: data_input
+    role: input_stimulus
+    schematic_net: data
+    layout_label: data
+    rc_net: data
+    instance: XPIX
+    description: Pixel data input net.
+  - engineering_name: pixel_output
+    role: output_observation
+    schematic_net: pixel
+    layout_label: pixel
+    waveform_signal: o1
+    rc_net: pixel
+    instance: XPIX
+    description: Observable pixel output represented by o1 in the demo waveform.

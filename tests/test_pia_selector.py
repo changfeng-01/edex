@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 
 from goa_eval.pia_ca_llso.selector import select_candidates
@@ -155,3 +157,87 @@ def test_physics_distance_diversity_backward_compatible() -> None:
 
     result = select_candidates(candidates, history, strategy="pia_physics_distance", top_k=4)
     assert "diversity_score" in result.all_candidates.columns
+
+
+def test_adaptive_capm_strategy_is_registered_and_preserves_baseline() -> None:
+    history = pd.DataFrame([
+        {
+            "sample_id": "h1", "level_label": "L1", "overall_score": 92, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.4, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.5, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+        {
+            "sample_id": "h2", "level_label": "L4", "overall_score": 20, "hard_constraint_passed": False,
+            "cboot_cload_ratio": 0.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 3.0, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 0.05, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+    ])
+    candidates = pd.DataFrame([
+        {
+            "candidate_id": "safe",
+            "cboot_cload_ratio": 1.15, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.45, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.4, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+        {
+            "candidate_id": "risky",
+            "cboot_cload_ratio": 0.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 3.0, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 0.05, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+    ])
+
+    baseline = select_candidates(candidates, history, strategy="pia_capm_distance", top_k=2)
+    adaptive = select_candidates(candidates, history, strategy="adaptive_pia_capm", top_k=2)
+
+    assert baseline.model_report["strategy"] == "pia_capm_distance"
+    assert adaptive.model_report["strategy"] == "adaptive_pia_capm"
+    assert adaptive.selected_candidates.iloc[0]["candidate_id"] == "safe"
+    assert adaptive.selected_candidates["diagnostic_status"].eq("adaptive_capm_from_history").all()
+    assert "adaptive_capm_weights_json" in adaptive.all_candidates.columns
+    assert "adaptive_acquisition_weights_json" in adaptive.all_candidates.columns
+
+
+def test_adaptive_capm_learns_feature_weights_from_history() -> None:
+    history = pd.DataFrame([
+        {
+            "sample_id": "h1", "level_label": "L1", "overall_score": 95, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.4, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.5, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+        {
+            "sample_id": "h2", "level_label": "L1", "overall_score": 90, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.1, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.45, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.2, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+        {
+            "sample_id": "h3", "level_label": "L4", "overall_score": 25, "hard_constraint_passed": False,
+            "cboot_cload_ratio": 1.1, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 3.2, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.1, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+        {
+            "sample_id": "h4", "level_label": "L4", "overall_score": 30, "hard_constraint_passed": False,
+            "cboot_cload_ratio": 1.0, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 3.5, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.0, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+    ])
+    candidates = pd.DataFrame([
+        {
+            "candidate_id": "c1",
+            "cboot_cload_ratio": 1.1, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.6, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.0, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        }
+    ])
+
+    result = select_candidates(candidates, history, strategy="adaptive_pia_capm", top_k=1)
+    weights = json.loads(result.all_candidates.loc[0, "adaptive_capm_weights_json"])
+
+    assert weights["ron_pullup_cload_proxy"] > weights["vgl_off_margin"]
+    assert json.loads(result.all_candidates.loc[0, "adaptive_acquisition_weights_json"])["distance"] > 0

@@ -63,6 +63,7 @@ def run_empyrean_import(
         artifacts=discovered["artifacts"],
         normalized_waveform_path=Path(conversion.normalized_waveform_path),
         waveform_column_map_path=Path(conversion.column_map_path),
+        node_mapping_path=discovered["node_mapping"],
         physical_summary=physical_summary,
         parasitic_summary=parasitic_summary,
         model_summary=model_summary,
@@ -184,6 +185,16 @@ def discover_empyrean_case_files(input_dir: Path) -> dict[str, Any]:
         ]
     )
     params = _first_existing([input_dir / "params.yaml", input_dir / "params.yml"])
+    node_mapping = _first_existing(
+        [
+            input_dir / "net_mapping.yaml",
+            input_dir / "net_mapping.yml",
+            input_dir / "mapping" / "net_mapping.yaml",
+            input_dir / "mapping" / "net_mapping.yml",
+            input_dir / "schematic" / "net_mapping.yaml",
+            input_dir / "schematic" / "net_mapping.yml",
+        ]
+    )
     artifacts = {
         "simulation": [waveform] if waveform else [],
         "verification": [path for path in verification_reports.values() if path],
@@ -197,6 +208,7 @@ def discover_empyrean_case_files(input_dir: Path) -> dict[str, Any]:
         "verification_reports": verification_reports,
         "rc": rc,
         "params": params,
+        "node_mapping": node_mapping,
         "artifacts": artifacts,
     }
 

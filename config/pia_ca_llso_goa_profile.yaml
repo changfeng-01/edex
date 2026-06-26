@@ -106,12 +106,20 @@ acquisition_weights:
   attention_l1_mass: 0.10
   distance: 0.05
   diversity: 0.05
+adaptive_capm:
+  enabled: true
+  min_history_rows: 4
+repair_candidates:
+  enabled: true
+  max_repair_candidates: 4
+  step_fraction: 0.10
 benchmark:
   strategies:
     - random
     - ca_llso_raw_distance
     - pia_physics_distance
     - pia_capm_distance
+    - adaptive_pia_capm
 metadata:
   data_source: real_simulation_csv
   engineering_validity: simulation_only
