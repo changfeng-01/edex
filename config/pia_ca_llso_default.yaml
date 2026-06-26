@@ -69,12 +69,19 @@ acquisition_weights:
   attention_l1_mass: 0.10
   distance: 0.05
   diversity: 0.05
+classifier_level_hybrid:
+  enabled: true
+  min_history_rows: 4
+evaluation_scheduler:
+  enabled: true
+  full_frame_top_k: 1
 benchmark:
   strategies:
     - random
     - ca_llso_raw_distance
     - pia_physics_distance
     - pia_capm_distance
+    - classifier_level_hybrid
 metadata:
   data_source: real_simulation_csv
   engineering_validity: simulation_only

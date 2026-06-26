@@ -77,3 +77,33 @@ def test_benchmark_passes_capm_config_to_selector(tmp_path) -> None:
 
     selected = pd.read_csv(tmp_path / "pia_capm_distance_selected_candidates.csv")
     assert bool(selected.loc[0, "capm_hard_risk_passed"]) is True
+
+
+def test_pia_benchmark_accepts_classifier_level_hybrid_strategy(tmp_path) -> None:
+    history = pd.DataFrame(
+        [
+            {"sample_id": "h1", "x": 0.0, "level_label": "L1", "overall_score": 95, "hard_constraint_passed": True},
+            {"sample_id": "h2", "x": 0.1, "level_label": "L1", "overall_score": 90, "hard_constraint_passed": True},
+            {"sample_id": "h3", "x": 0.9, "level_label": "L4", "overall_score": 20, "hard_constraint_passed": False},
+            {"sample_id": "h4", "x": 1.0, "level_label": "L4", "overall_score": 25, "hard_constraint_passed": False},
+        ]
+    )
+    candidates = pd.DataFrame(
+        [
+            {"candidate_id": "good", "x": 0.05, "overall_score": 88, "hard_constraint_passed": True},
+            {"candidate_id": "bad", "x": 0.95, "overall_score": 20, "hard_constraint_passed": False},
+        ]
+    )
+
+    run_ablation_benchmark(
+        history,
+        candidates,
+        tmp_path,
+        strategies=["classifier_level_hybrid"],
+        target_score=80,
+        config={"classifier_level_hybrid": {"min_history_rows": 4}},
+    )
+
+    selected = pd.read_csv(tmp_path / "classifier_level_hybrid_selected_candidates.csv")
+    assert "classifier_hybrid_score" in selected.columns
+    assert selected.iloc[0]["candidate_id"] == "good"
