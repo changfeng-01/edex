@@ -241,3 +241,69 @@ def test_adaptive_capm_learns_feature_weights_from_history() -> None:
 
     assert weights["ron_pullup_cload_proxy"] > weights["vgl_off_margin"]
     assert json.loads(result.all_candidates.loc[0, "adaptive_acquisition_weights_json"])["distance"] > 0
+
+
+def test_classifier_level_hybrid_uses_level_classifier_predictions() -> None:
+    history = pd.DataFrame([
+        {
+            "sample_id": "h1", "level_label": "L1", "overall_score": 95, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.4, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.5, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+        {
+            "sample_id": "h2", "level_label": "L4", "overall_score": 20, "hard_constraint_passed": False,
+            "cboot_cload_ratio": 0.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 3.5, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 0.05, "vgl_off_margin": 2.0, "clk_slew_proxy": 1.5,
+        },
+    ])
+    candidates = pd.DataFrame([
+        {
+            "candidate_id": "predicted_l4",
+            "p_l1": 0.05, "p_hard_pass": 0.10, "predicted_score": 20.0, "predicted_level": "L4",
+            "cboot_cload_ratio": 0.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 3.5, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 0.05, "vgl_off_margin": 2.0, "clk_slew_proxy": 1.5,
+        },
+        {
+            "candidate_id": "predicted_l1",
+            "p_l1": 0.95, "p_hard_pass": 0.90, "predicted_score": 90.0, "predicted_level": "L1",
+            "cboot_cload_ratio": 1.15, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.45, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.4, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+    ])
+
+    result = select_candidates(candidates, history, strategy="classifier_level_hybrid", top_k=2)
+
+    assert result.selected_candidates.iloc[0]["candidate_id"] == "predicted_l1"
+    assert result.selected_candidates["diagnostic_status"].eq("classifier_level_hybrid").all()
+    assert "classifier_hybrid_score" in result.all_candidates.columns
+    assert "classifier_components_json" in result.all_candidates.columns
+    assert json.loads(result.all_candidates.iloc[0]["classifier_components_json"])["p_l1"] >= 0.0
+
+
+def test_classifier_level_hybrid_falls_back_when_training_data_is_insufficient() -> None:
+    history = pd.DataFrame([
+        {
+            "sample_id": "h1", "level_label": "L1", "overall_score": 90, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.4, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.5, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        }
+    ])
+    candidates = pd.DataFrame([
+        {
+            "candidate_id": "fallback",
+            "cboot_cload_ratio": 1.1, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.5, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.3, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        }
+    ])
+
+    result = select_candidates(candidates, history, strategy="classifier_level_hybrid", top_k=1)
+
+    assert result.selected_candidates.loc[0, "model_status"] == "insufficient_data"
+    assert result.selected_candidates.loc[0, "predicted_level"] == "L2"
+    assert result.selected_candidates.loc[0, "diagnostic_status"] == "classifier_level_hybrid"

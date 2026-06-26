@@ -16,6 +16,7 @@ from goa_eval.pia_ca_llso.physics_distance import (
 )
 from goa_eval.pia_ca_llso.raw_distance import select_by_raw_distance
 from goa_eval.pia_ca_llso.schema import SelectionResult
+from goa_eval.pia_ca_llso.sklearn_baseline import predict_candidates, train_baseline_models
 
 
 ROLES = ["exploitation_best", "l1_center", "boundary_learning", "diversity_exploration"]
@@ -25,6 +26,15 @@ CAPM_ACQUISITION_WEIGHTS = {
     "diversity": 0.25,
     "hard_mask": 0.25,
     "missing_feature_confidence": 0.05,
+}
+
+CLASSIFIER_HYBRID_WEIGHTS = {
+    "p_l1": 0.30,
+    "p_hard_pass": 0.20,
+    "predicted_score": 0.20,
+    "capm_distance": 0.15,
+    "capm_hard_risk_passed": 0.10,
+    "diversity_score": 0.05,
 }
 
 
@@ -50,14 +60,20 @@ def select_candidates(
     elif strategy == "adaptive_pia_capm":
         scored = select_adaptive_capm_distance(candidates, history, top_k, config=config)
         selected = scored.head(top_k)
+    elif strategy == "classifier_level_hybrid":
+        scored = select_classifier_level_hybrid(candidates, history, top_k, config=config)
+        selected = scored.head(top_k)
     else:
         raise ValueError(f"Unknown PIA selection strategy: {strategy}")
     selected = assign_candidate_roles(selected.reset_index(drop=True))
     selected["selection_reason"] = [explain_acquisition(row) for row in selected.to_dict("records")]
+    model_report: dict[str, object] = {"strategy": strategy, "selected_count": int(len(selected))}
+    if strategy == "classifier_level_hybrid":
+        model_report["classifier_model_status"] = _model_status(scored)
     return SelectionResult(
         selected_candidates=selected,
         all_candidates=scored,
-        model_report={"strategy": strategy, "selected_count": int(len(selected))},
+        model_report=model_report,
         explanation_report=build_selection_report(selected, strategy),
     )
 
@@ -178,6 +194,58 @@ def select_adaptive_capm_distance(
     )
 
 
+def select_classifier_level_hybrid(
+    candidates: pd.DataFrame,
+    history: pd.DataFrame,
+    top_k: int = 4,
+    config: Mapping[str, Any] | None = None,
+) -> pd.DataFrame:
+    feature_cols = _shared_numeric_columns(candidates, history)
+    output = _ensure_classifier_predictions(candidates, history, feature_cols)
+    capm = select_capm_distance(
+        output,
+        history,
+        top_k=max(len(output), top_k),
+        config=config,
+        diagnostic_status="classifier_level_hybrid",
+    ).copy()
+    distance_component = 1.0 - capm["capm_distance_to_l1_normalized"].astype(float).clip(0.0, 1.0)
+    p_l1 = capm["p_l1"].map(_bounded)
+    p_hard = capm["p_hard_pass"].map(_bounded)
+    predicted_score = capm["predicted_score"].map(_bounded)
+    hard_mask = capm["capm_hard_risk_passed"].astype(float)
+    diversity = capm["diversity_score"].map(_bounded)
+    capm["classifier_hybrid_score"] = (
+        CLASSIFIER_HYBRID_WEIGHTS["p_l1"] * p_l1
+        + CLASSIFIER_HYBRID_WEIGHTS["p_hard_pass"] * p_hard
+        + CLASSIFIER_HYBRID_WEIGHTS["predicted_score"] * predicted_score
+        + CLASSIFIER_HYBRID_WEIGHTS["capm_distance"] * distance_component
+        + CLASSIFIER_HYBRID_WEIGHTS["capm_hard_risk_passed"] * hard_mask
+        + CLASSIFIER_HYBRID_WEIGHTS["diversity_score"] * diversity
+    ).clip(0.0, 1.0)
+    capm["acquisition_score"] = capm["classifier_hybrid_score"]
+    capm["classifier_components_json"] = [
+        json.dumps(
+            {
+                "p_l1": float(row["p_l1"]),
+                "p_hard_pass": float(row["p_hard_pass"]),
+                "predicted_score": float(_bounded(row["predicted_score"])),
+                "capm_distance": float(1.0 - row["capm_distance_to_l1_normalized"]),
+                "capm_hard_risk_passed": bool(row["capm_hard_risk_passed"]),
+                "diversity_score": float(row["diversity_score"]),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        for _, row in capm.iterrows()
+    ]
+    capm["diagnostic_status"] = "classifier_level_hybrid"
+    return capm.sort_values(
+        ["classifier_hybrid_score", "capm_hard_risk_passed", "p_l1", "candidate_id"],
+        ascending=[False, False, False, True],
+    ).head(top_k)
+
+
 def assign_candidate_roles(selected: pd.DataFrame) -> pd.DataFrame:
     output = selected.copy()
     output["selected_rank"] = range(1, len(output) + 1)
@@ -195,6 +263,33 @@ def build_selection_report(selected: pd.DataFrame, strategy: str = "pia_physics_
         "must_resimulate": True,
         "claim_boundary": "next-run simulation suggestions",
     }
+
+
+def _ensure_classifier_predictions(candidates: pd.DataFrame, history: pd.DataFrame, feature_cols: Sequence[str]) -> pd.DataFrame:
+    required = {"p_l1", "predicted_level", "predicted_score", "p_hard_pass", "uncertainty", "model_status"}
+    if required.issubset(candidates.columns):
+        return candidates.copy()
+    models = train_baseline_models(history, feature_cols)
+    return predict_candidates(models, candidates, feature_cols)
+
+
+def _model_status(frame: pd.DataFrame) -> str:
+    statuses = {str(value) for value in frame.get("model_status", pd.Series(dtype="object")).dropna().unique()}
+    if "ok" in statuses:
+        return "ok"
+    if statuses:
+        return sorted(statuses)[0]
+    return "insufficient_data"
+
+
+def _bounded(value: Any, default: float = 0.0) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = default
+    if numeric > 1.0:
+        numeric = numeric / 100.0
+    return float(min(max(numeric, 0.0), 1.0))
 
 
 def _shared_numeric_columns(left: pd.DataFrame, right: pd.DataFrame) -> list[str]:

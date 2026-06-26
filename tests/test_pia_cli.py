@@ -49,3 +49,28 @@ def test_pia_label_suggest_and_benchmark_cli_run_on_sample_data(tmp_path) -> Non
         str(bench_dir),
     ]) == 0
     assert (bench_dir / "pia_ablation_report.md").exists()
+
+
+def test_classifier_level_hybrid_cli_smoke_runs_on_sample_data(tmp_path) -> None:
+    output_dir = tmp_path / "classifier_suggest"
+
+    assert main([
+        "pia-suggest",
+        "--history-csv",
+        "examples/pia_ca_llso/sample_history.csv",
+        "--candidate-csv",
+        "examples/pia_ca_llso/sample_candidates.csv",
+        "--config",
+        "config/pia_ca_llso_goa_profile.yaml",
+        "--strategy",
+        "classifier_level_hybrid",
+        "--top-k",
+        "4",
+        "--output-dir",
+        str(output_dir),
+    ]) == 0
+
+    selected = (output_dir / "pia_selected_candidates.csv").read_text(encoding="utf-8")
+    assert "classifier_hybrid_score" in selected
+    assert "simulation_window" in selected
+    assert "constraint_eval_plan_json" in selected
