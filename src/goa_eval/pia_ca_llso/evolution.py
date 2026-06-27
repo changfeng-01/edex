@@ -162,21 +162,30 @@ def run_evolution_loop(
         if simulations_used >= budget:
             stop_reason = "simulation_budget_exhausted"
             break
+        remaining_budget = max(int(budget) - int(simulations_used), 0)
+        generation_top_k = min(k, remaining_budget)
+        if generation_top_k <= 0:
+            stop_reason = "simulation_budget_exhausted"
+            break
 
         # Label current history
         labeled_history = assign_level_labels(current_history)
 
         # Generate LLSO offspring
-        offspring = generate_llso_offspring(
-            history=labeled_history,
-            seed_candidates=candidates,
-            config=config,
-            generation=gen,
-            offspring_count=offspring_count,
-            random_seed=random_seed,
-        )
+        llso_enabled = config.get("llso_offspring", {}).get("enabled", True)
+        if llso_enabled and offspring_count > 0:
+            offspring = generate_llso_offspring(
+                history=labeled_history,
+                seed_candidates=candidates,
+                config=config,
+                generation=gen,
+                offspring_count=offspring_count,
+                random_seed=random_seed,
+            )
+        else:
+            offspring = pd.DataFrame(columns=list(candidates.columns))
 
-        if len(offspring) == 0:
+        if len(offspring) == 0 and llso_enabled:
             stop_reason = "no_offspring_generated"
             break
         offspring_path = gen_dir / "offspring_candidates.csv"
@@ -198,7 +207,7 @@ def run_evolution_loop(
             candidates=combined_candidates,
             config=dict(config),
             strategy=strategy,
-            top_k=k,
+            top_k=generation_top_k,
         )
 
         selected = result.selected_candidates
