@@ -123,3 +123,28 @@ def render_benchmark_report(results: pd.DataFrame, summary: dict[str, object]) -
         )
     lines.extend(["", f"Best method in this offline run: {summary.get('best_method')}", ""])
     return "\n".join(lines)
+
+
+def compute_evolution_metrics(
+    evolution_summary: dict[str, Any],
+    target_score: float = 80,
+) -> dict[str, Any]:
+    """Compute closed-loop evolution benchmark metrics from an evolution summary.
+
+    Returns metrics that are separate from single-step strategy metrics,
+    with clear labels to avoid unfair comparison.
+    """
+    return {
+        "evolution_generations_run": evolution_summary.get("generations_run", 0),
+        "evolution_simulations_used": evolution_summary.get("simulations_used", 0),
+        "evolution_best_score": evolution_summary.get("best_score"),
+        "evolution_target_reached": evolution_summary.get("target_reached", False),
+        "evolution_stop_reason": evolution_summary.get("stop_reason", "unknown"),
+        "evolution_budget_to_target": (
+            evolution_summary.get("simulations_used")
+            if evolution_summary.get("target_reached")
+            else None
+        ),
+        "closed_loop_mode": "evolution",
+        "single_step_mode": "not_applicable",
+    }

@@ -4,7 +4,7 @@ import json
 
 import pandas as pd
 
-from goa_eval.pia_ca_llso.benchmark import compute_run_metrics, run_ablation_benchmark
+from goa_eval.pia_ca_llso.benchmark import compute_run_metrics, run_ablation_benchmark, compute_evolution_metrics
 
 
 def test_benchmark_metrics_and_outputs(tmp_path) -> None:
@@ -107,3 +107,21 @@ def test_pia_benchmark_accepts_classifier_level_hybrid_strategy(tmp_path) -> Non
     selected = pd.read_csv(tmp_path / "classifier_level_hybrid_selected_candidates.csv")
     assert "classifier_hybrid_score" in selected.columns
     assert selected.iloc[0]["candidate_id"] == "good"
+
+
+def test_pia_benchmark_accepts_evolution_summary() -> None:
+    """compute_evolution_metrics extracts closed-loop fields from evolution summary."""
+    summary = {
+        "stop_reason": "target_score_reached",
+        "best_score": 95.0,
+        "generations_run": 3,
+        "simulations_used": 12,
+        "target_reached": True,
+    }
+    metrics = compute_evolution_metrics(summary, target_score=80)
+    assert metrics["evolution_generations_run"] == 3
+    assert metrics["evolution_simulations_used"] == 12
+    assert metrics["evolution_target_reached"] is True
+    assert metrics["evolution_stop_reason"] == "target_score_reached"
+    assert metrics["closed_loop_mode"] == "evolution"
+    assert metrics["single_step_mode"] == "not_applicable"
