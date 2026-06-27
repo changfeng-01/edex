@@ -17,7 +17,8 @@ from goa_eval.pia_ca_llso.loop import suggest_next_run
 from goa_eval.pia_ca_llso.offspring import generate_llso_offspring
 from goa_eval.pia_ca_llso.simulation_contract import build_simulation_batch
 from goa_eval.pia_ca_llso.simulation_executor import run_simulation_step
-from goa_eval.pia_ca_llso.io import ensure_output_dir, write_json, write_csv
+from goa_eval.pia_ca_llso.io import ensure_output_dir, write_csv, write_json, write_jsonl, write_markdown
+from goa_eval.pia_ca_llso.report import render_evolution_report
 
 
 def run_evolution_loop(
@@ -52,6 +53,7 @@ def run_evolution_loop(
 
     current_history = history.copy()
     generation_states: list[dict[str, Any]] = []
+    generation_artifacts: list[str] = []
     best_score: float | None = None
     best_score_overall: float | None = None
     generations_without_improvement = 0
@@ -104,6 +106,9 @@ def run_evolution_loop(
         if len(offspring) == 0:
             stop_reason = "no_offspring_generated"
             break
+        offspring_path = gen_dir / "offspring_candidates.csv"
+        write_csv(str(offspring_path), offspring)
+        generation_artifacts.append(str(offspring_path.relative_to(output_dir)))
 
         # Combine seed candidates with offspring
         combined_candidates = pd.concat(
@@ -124,6 +129,9 @@ def run_evolution_loop(
         )
 
         selected = result.selected_candidates
+        selected_path = gen_dir / "pia_selected_candidates.csv"
+        write_csv(str(selected_path), selected)
+        generation_artifacts.append(str(selected_path.relative_to(output_dir)))
 
         if len(selected) == 0:
             stop_reason = "no_offspring_generated"
@@ -137,8 +145,14 @@ def run_evolution_loop(
         )
 
         # Write batch to disk
-        write_csv(str(gen_dir / "simulation_batch.csv"), batch)
-        write_json(str(gen_dir / "simulation_manifest.json"), manifest)
+        batch_path = gen_dir / "simulation_batch.csv"
+        manifest_path = gen_dir / "simulation_manifest.json"
+        write_csv(str(batch_path), batch)
+        write_json(str(manifest_path), manifest)
+        generation_artifacts.extend([
+            str(batch_path.relative_to(output_dir)),
+            str(manifest_path.relative_to(output_dir)),
+        ])
 
         # Run simulation step
         imported, status = run_simulation_step(
@@ -147,6 +161,17 @@ def run_evolution_loop(
             config=config,
             generation=gen,
         )
+        imported_path = gen_dir / "imported_results.csv"
+        if len(imported) > 0:
+            write_csv(str(imported_path), imported)
+        else:
+            result_cols = config.get("simulation_executor", {}).get(
+                "result_required_columns",
+                ["candidate_id", "overall_score", "hard_constraint_passed"],
+            )
+            empty_cols = list(dict.fromkeys([*result_cols, *batch.columns]))
+            write_csv(str(imported_path), pd.DataFrame(columns=empty_cols))
+        generation_artifacts.append(str(imported_path.relative_to(output_dir)))
 
         # Record generation state
         state = GenerationState(
@@ -159,6 +184,22 @@ def run_evolution_loop(
             stop_reason=None,
         )
         generation_states.append(state.to_dict())
+        generation_summary = {
+            **state.to_dict(),
+            "status": status,
+            "artifacts": [
+                str((gen_dir / "offspring_candidates.csv").relative_to(output_dir)),
+                str((gen_dir / "pia_selected_candidates.csv").relative_to(output_dir)),
+                str((gen_dir / "simulation_batch.csv").relative_to(output_dir)),
+                str((gen_dir / "simulation_manifest.json").relative_to(output_dir)),
+                str(imported_path.relative_to(output_dir)),
+            ],
+            "data_source": DATA_SOURCE,
+            "engineering_validity": ENGINEERING_VALIDITY,
+        }
+        summary_path = gen_dir / "generation_summary.json"
+        write_json(str(summary_path), generation_summary)
+        generation_artifacts.append(str(summary_path.relative_to(output_dir)))
 
         # If pending, stop
         if status["status"] == "pending_simulation":
@@ -174,10 +215,14 @@ def run_evolution_loop(
 
     # Write generation state log
     if generation_states:
-        write_json(str(output_dir / "generation_state.jsonl"), generation_states)
+        write_jsonl(str(output_dir / "generation_state.jsonl"), generation_states)
 
     # Write accumulated history
     write_csv(str(output_dir / "evolution_history.csv"), current_history)
+    if "overall_score" in current_history.columns:
+        score_series = pd.to_numeric(current_history["overall_score"], errors="coerce").dropna()
+        if not score_series.empty:
+            best_score_overall = float(score_series.max())
 
     summary: dict[str, Any] = {
         "stop_reason": stop_reason,
@@ -194,7 +239,12 @@ def run_evolution_loop(
             "pre-simulation suggestions require simulation before claims; "
             "imported results are simulation-only, not physical validation"
         ),
+        "latest_simulation_batch": (
+            next((artifact for artifact in reversed(generation_artifacts) if artifact.endswith("simulation_batch.csv")), None)
+        ),
+        "generation_artifacts": generation_artifacts,
     }
 
     write_json(str(output_dir / "evolution_summary.json"), summary)
+    write_markdown(str(output_dir / "evolution_report.md"), render_evolution_report(summary))
     return summary

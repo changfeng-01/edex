@@ -73,7 +73,7 @@ def _make_config() -> dict:
 
 
 def test_evolution_offline_writes_first_generation_batch() -> None:
-    """Offline evolution writes generation 0 batch and stops pending."""
+    """Offline evolution writes complete generation artifacts and stops pending."""
     history = _make_history()
     candidates = _make_candidates()
     config = _make_config()
@@ -95,7 +95,14 @@ def test_evolution_offline_writes_first_generation_batch() -> None:
         assert summary["stop_reason"] == "pending_simulation_results"
         gen0_dir = output_dir / "generation_000"
         assert gen0_dir.exists()
+        assert (gen0_dir / "offspring_candidates.csv").exists()
+        assert (gen0_dir / "pia_selected_candidates.csv").exists()
         assert (gen0_dir / "simulation_batch.csv").exists()
+        assert (gen0_dir / "simulation_manifest.json").exists()
+        assert (gen0_dir / "imported_results.csv").exists()
+        assert (gen0_dir / "generation_summary.json").exists()
+        assert (output_dir / "evolution_report.md").exists()
+        assert (output_dir / "generation_state.jsonl").exists()
 
 
 def test_evolution_stops_when_target_score_reached() -> None:

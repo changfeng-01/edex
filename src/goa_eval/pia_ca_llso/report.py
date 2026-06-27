@@ -39,11 +39,13 @@ def render_evolution_report(summary: dict[str, Any]) -> str:
         f"- **Generations run:** {summary.get('generations_run', 0)}",
         f"- **Simulation budget used:** {summary.get('simulations_used', 0)}",
         f"- **Target reached:** {summary.get('target_reached', False)}",
+        f"- **Latest simulation batch:** {summary.get('latest_simulation_batch', 'N/A')}",
         "",
         "## Evidence Boundary",
         "",
         f"- `data_source = {summary.get('data_source', 'N/A')}`",
         f"- `engineering_validity = {summary.get('engineering_validity', 'N/A')}`",
+        "- `must_resimulate = true` for pre-simulation suggestions",
         f"- {summary.get('claim_boundary', '')}",
         "",
         "**Important:** All results in this report are simulation-only evidence.",
@@ -51,4 +53,10 @@ def render_evolution_report(summary: dict[str, Any]) -> str:
         "lab validation, or tapeout validation.",
         "",
     ]
+    artifacts = summary.get("generation_artifacts", [])
+    if artifacts:
+        lines.extend(["## Generation Artifacts", ""])
+        for artifact in artifacts:
+            lines.append(f"- `{artifact}`")
+        lines.append("")
     return "\n".join(lines)
