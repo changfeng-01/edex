@@ -228,3 +228,4 @@ def test_pia_validate_cli_writes_aggregate_csv_and_report(tmp_path) -> None:
     assert (output_dir / "validation_summary.csv").exists()
     assert (output_dir / "pairwise_win_rates.csv").exists()
     assert (output_dir / "validation_summary.json").exists()
+    assert (output_dir / "experimental_validation_report.md").exists()

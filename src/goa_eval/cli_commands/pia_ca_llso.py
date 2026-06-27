@@ -222,6 +222,7 @@ def handle_pia_evolve(args: argparse.Namespace) -> int:
 def handle_pia_validate(args: argparse.Namespace) -> int:
     from goa_eval.pia_ca_llso.scenario_registry import load_scenario
     from goa_eval.pia_ca_llso.validation_protocol import expand_validation_grid, load_validation_protocol
+    from goa_eval.pia_ca_llso.validation_report import render_validation_report
     from goa_eval.pia_ca_llso.validation_runner import run_validation_spec
     from goa_eval.pia_ca_llso.validation_statistics import compute_pairwise_win_rates, summarize_validation_runs
 
@@ -263,6 +264,10 @@ def handle_pia_validate(args: argparse.Namespace) -> int:
             "must_resimulate": True,
             "summary": summary_frame.to_dict(orient="records"),
         },
+    )
+    write_markdown(
+        output_dir / "experimental_validation_report.md",
+        render_validation_report(protocol, run_frame, summary_frame, win_rate_frame),
     )
     print(str(output_dir.resolve()))
     return 0
