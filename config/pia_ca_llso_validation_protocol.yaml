@@ -1,0 +1,31 @@
+name: pia_ca_llso_phase3_validation
+primary_outcome: simulations_to_target
+target_score: 80
+budgets: [20, 50, 100]
+seeds: [11, 23, 37, 41, 53]
+methods:
+  - random
+  - ca_llso_raw_distance
+  - pia_capm_distance
+  - adaptive_pia_capm
+  - classifier_level_hybrid
+  - pia_evolve_full
+ablations:
+  - full
+  - no_classifier
+  - no_adaptive_capm
+  - no_constraint_repair
+  - no_llso_offspring
+  - no_evaluation_scheduler
+  - capm_only
+scenarios:
+  - scenario_id: sample_goa
+    history_csv: examples/pia_ca_llso/sample_history.csv
+    candidate_csv: examples/pia_ca_llso/sample_candidates.csv
+    config: config/pia_ca_llso_goa_profile.yaml
+    source_type: local_fixture
+    claim_boundary: CI fixture for closed-loop behavior only
+boundary:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only
+  must_resimulate: true
