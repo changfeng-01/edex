@@ -198,3 +198,33 @@ def test_pia_evolve_cli_writes_boundary_audit(tmp_path) -> None:
 
     audit = json.loads((output_dir / "boundary_audit.json").read_text(encoding="utf-8"))
     assert audit["passed"] is True
+
+
+def test_pia_validate_cli_smoke_runs_protocol(tmp_path) -> None:
+    output_dir = tmp_path / "validate_smoke"
+
+    assert main([
+        "pia-validate",
+        "--protocol", "config/pia_ca_llso_validation_protocol.yaml",
+        "--output-dir", str(output_dir),
+        "--smoke",
+        "--max-runs", "2",
+    ]) == 0
+
+    assert (output_dir / "validation_runs.csv").exists()
+
+
+def test_pia_validate_cli_writes_aggregate_csv_and_report(tmp_path) -> None:
+    output_dir = tmp_path / "validate_report"
+
+    assert main([
+        "pia-validate",
+        "--protocol", "config/pia_ca_llso_validation_protocol.yaml",
+        "--output-dir", str(output_dir),
+        "--smoke",
+        "--max-runs", "2",
+    ]) == 0
+
+    assert (output_dir / "validation_summary.csv").exists()
+    assert (output_dir / "pairwise_win_rates.csv").exists()
+    assert (output_dir / "validation_summary.json").exists()

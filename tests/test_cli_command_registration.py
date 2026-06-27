@@ -37,6 +37,7 @@ COMMAND_ARGV = {
     "pia-export-contract": ["pia-export-contract", "--output-dir", "out"],
     "pia-train-from-db": ["pia-train-from-db"],
     "pia-evolve": ["pia-evolve", "--history-csv", "history.csv", "--candidate-csv", "candidates.csv", "--config", "config.yaml", "--output-dir", "out"],
+    "pia-validate": ["pia-validate", "--protocol", "protocol.yaml", "--output-dir", "out"],
 }
 
 

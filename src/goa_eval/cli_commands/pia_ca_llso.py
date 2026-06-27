@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import pandas as pd
+
 from goa_eval.pia_ca_llso.benchmark import run_ablation_benchmark, run_closed_loop_benchmark
 from goa_eval.pia_ca_llso.boundary_audit import audit_evolution_outputs
 from goa_eval.pia_ca_llso.integration import CandidateAdapter, HistoryAdapter
@@ -11,6 +13,7 @@ from goa_eval.pia_ca_llso.labeling import assign_level_labels, summarize_label_d
 from goa_eval.pia_ca_llso.loop import suggest_next_run
 from goa_eval.pia_ca_llso.report import render_candidate_report
 from goa_eval.pia_ca_llso.training_data import build_training_data_from_db
+from goa_eval.pia_ca_llso.validation_protocol import ValidationRunSpec
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -76,6 +79,13 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     evolve.add_argument("--audit-boundary", action="store_true")
     evolve.add_argument("--seed", type=int, default=42)
     evolve.set_defaults(handler=handle_pia_evolve)
+
+    validate = subparsers.add_parser("pia-validate", help="Run PIA-CA-LLSO Phase 3 validation experiments")
+    validate.add_argument("--protocol", default="config/pia_ca_llso_validation_protocol.yaml")
+    validate.add_argument("--output-dir", default="outputs/pia_phase3_validation")
+    validate.add_argument("--smoke", action="store_true")
+    validate.add_argument("--max-runs", type=int, default=None)
+    validate.set_defaults(handler=handle_pia_validate)
 
 
 def handle_pia_label(args: argparse.Namespace) -> int:
@@ -207,3 +217,79 @@ def handle_pia_evolve(args: argparse.Namespace) -> int:
 
     print(str(output_dir.resolve()))
     return 0
+
+
+def handle_pia_validate(args: argparse.Namespace) -> int:
+    from goa_eval.pia_ca_llso.scenario_registry import load_scenario
+    from goa_eval.pia_ca_llso.validation_protocol import expand_validation_grid, load_validation_protocol
+    from goa_eval.pia_ca_llso.validation_runner import run_validation_spec
+    from goa_eval.pia_ca_llso.validation_statistics import compute_pairwise_win_rates, summarize_validation_runs
+
+    protocol = load_validation_protocol(args.protocol)
+    output_dir = ensure_output_dir(args.output_dir)
+    specs = expand_validation_grid(protocol)
+    specs = _select_validation_specs(specs, protocol, smoke=args.smoke, max_runs=args.max_runs)
+    scenario_entries = {
+        entry["scenario_id"]: entry for entry in protocol["scenarios"]
+        if isinstance(entry, dict) and "scenario_id" in entry
+    }
+    scenario_cache: dict[str, dict] = {}
+    run_summaries = []
+    for spec in specs:
+        if spec.scenario_id not in scenario_cache:
+            scenario_cache[spec.scenario_id] = load_scenario(scenario_entries[spec.scenario_id])
+        run_summaries.append(
+            run_validation_spec(
+                spec,
+                scenario_cache[spec.scenario_id],
+                output_dir,
+                smoke=args.smoke,
+            )
+        )
+
+    run_frame = pd.DataFrame(run_summaries)
+    summary_frame = summarize_validation_runs(run_summaries)
+    win_rate_frame = compute_pairwise_win_rates(run_frame, baseline="random")
+    run_frame.to_csv(output_dir / "validation_runs.csv", index=False)
+    summary_frame.to_csv(output_dir / "validation_summary.csv", index=False)
+    win_rate_frame.to_csv(output_dir / "pairwise_win_rates.csv", index=False)
+    write_json(
+        output_dir / "validation_summary.json",
+        {
+            "protocol": protocol.get("name", "pia_ca_llso_phase3_validation"),
+            "run_count": len(run_summaries),
+            "data_source": "real_simulation_csv",
+            "engineering_validity": "simulation_only",
+            "must_resimulate": True,
+            "summary": summary_frame.to_dict(orient="records"),
+        },
+    )
+    print(str(output_dir.resolve()))
+    return 0
+
+
+def _select_validation_specs(
+    specs: list[ValidationRunSpec],
+    protocol: dict,
+    smoke: bool,
+    max_runs: int | None,
+) -> list[ValidationRunSpec]:
+    selected = specs
+    if smoke:
+        first_scenario = str(protocol["scenarios"][0]["scenario_id"])
+        first_two_seeds = {int(seed) for seed in protocol["seeds"][:2]}
+        selected = [
+            ValidationRunSpec(
+                scenario_id=spec.scenario_id,
+                method=spec.method,
+                ablation=spec.ablation,
+                seed=spec.seed,
+                budget=8,
+                target_score=spec.target_score,
+            )
+            for spec in specs
+            if spec.scenario_id == first_scenario and spec.seed in first_two_seeds and spec.budget == protocol["budgets"][0]
+        ]
+    if max_runs is not None:
+        selected = selected[: int(max_runs)]
+    return selected
