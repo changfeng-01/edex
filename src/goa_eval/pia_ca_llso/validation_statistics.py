@@ -32,6 +32,9 @@ def summarize_validation_runs(run_summaries: list[dict]) -> pd.DataFrame:
                 "convergence_auc_mean": _mean(pd.to_numeric(group["convergence_auc"], errors="coerce")),
                 "hard_pass_rate_mean": _mean(pd.to_numeric(group["hard_pass_rate"], errors="coerce")),
                 "boundary_audit_pass_rate": float(group["boundary_audit_passed"].astype(bool).mean()),
+                "data_source": "real_simulation_csv",
+                "engineering_validity": "simulation_only",
+                "must_resimulate": True,
             }
         )
     return pd.DataFrame(rows)
@@ -54,6 +57,9 @@ def compute_pairwise_win_rates(summary_frame: pd.DataFrame, baseline: str) -> pd
                     "baseline": baseline,
                     "method": row["method"],
                     "win": _wins(row, baseline_row),
+                    "data_source": "real_simulation_csv",
+                    "engineering_validity": "simulation_only",
+                    "must_resimulate": True,
                 }
             )
     if not rows:
@@ -61,7 +67,13 @@ def compute_pairwise_win_rates(summary_frame: pd.DataFrame, baseline: str) -> pd
     comparisons = pd.DataFrame(rows)
     output = (
         comparisons.groupby(["method", "baseline", "budget", "ablation"], dropna=False)
-        .agg(win=( "win", "mean"), comparison_count=("win", "count"))
+        .agg(
+            win=("win", "mean"),
+            comparison_count=("win", "count"),
+            data_source=("data_source", "first"),
+            engineering_validity=("engineering_validity", "first"),
+            must_resimulate=("must_resimulate", "first"),
+        )
         .reset_index()
         .rename(columns={"win": f"win_rate_vs_{baseline}"})
     )
@@ -81,14 +93,25 @@ def _wins(row: pd.Series, baseline_row: pd.Series) -> bool:
     row_hit = bool(row.get("target_hit", False))
     base_hit = bool(baseline_row.get("target_hit", False))
     if row_hit and base_hit:
-        return float(row.get("simulations_to_target", float("inf"))) < float(
-            baseline_row.get("simulations_to_target", float("inf"))
+        return _numeric(row.get("simulations_to_target"), float("inf")) < _numeric(
+            baseline_row.get("simulations_to_target"),
+            float("inf"),
         )
     if row_hit != base_hit:
         return row_hit
-    return float(row.get("best_score_final", float("-inf"))) > float(
-        baseline_row.get("best_score_final", float("-inf"))
+    return _numeric(row.get("best_score_final"), float("-inf")) > _numeric(
+        baseline_row.get("best_score_final"),
+        float("-inf"),
     )
+
+
+def _numeric(value: object, default: float) -> float:
+    if pd.isna(value):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _mean(series: pd.Series) -> float:

@@ -47,6 +47,7 @@ def test_statistics_compute_mean_std_and_hit_rate() -> None:
     assert row["target_hit_rate"] == 1.0
     assert row["best_score_mean"] == 88.0
     assert row["boundary_audit_pass_rate"] == 1.0
+    assert row["engineering_validity"] == "simulation_only"
 
 
 def test_statistics_compute_convergence_auc_from_curve() -> None:
@@ -61,6 +62,7 @@ def test_statistics_compute_nonparametric_win_rate() -> None:
 
     row = rates[rates["method"] == "pia_evolve_full"].iloc[0]
     assert row["win_rate_vs_random"] == 1.0
+    assert row["engineering_validity"] == "simulation_only"
 
 
 def test_statistics_handles_missing_target_hits() -> None:
