@@ -6,8 +6,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from goa_eval.pia_ca_llso.evolution import run_evolution_loop
+from goa_eval.pia_ca_llso.evolution import load_resume_state, run_evolution_loop
 
 
 def _make_history() -> pd.DataFrame:
@@ -73,7 +74,7 @@ def _make_config() -> dict:
 
 
 def test_evolution_offline_writes_first_generation_batch() -> None:
-    """Offline evolution writes generation 0 batch and stops pending."""
+    """Offline evolution writes complete generation artifacts and stops pending."""
     history = _make_history()
     candidates = _make_candidates()
     config = _make_config()
@@ -95,7 +96,14 @@ def test_evolution_offline_writes_first_generation_batch() -> None:
         assert summary["stop_reason"] == "pending_simulation_results"
         gen0_dir = output_dir / "generation_000"
         assert gen0_dir.exists()
+        assert (gen0_dir / "offspring_candidates.csv").exists()
+        assert (gen0_dir / "pia_selected_candidates.csv").exists()
         assert (gen0_dir / "simulation_batch.csv").exists()
+        assert (gen0_dir / "simulation_manifest.json").exists()
+        assert (gen0_dir / "imported_results.csv").exists()
+        assert (gen0_dir / "generation_summary.json").exists()
+        assert (output_dir / "evolution_report.md").exists()
+        assert (output_dir / "generation_state.jsonl").exists()
 
 
 def test_evolution_stops_when_target_score_reached() -> None:
@@ -146,3 +154,150 @@ def test_evolution_preserves_simulation_only_boundary() -> None:
 
         assert summary["data_source"] == "real_simulation_csv"
         assert summary["engineering_validity"] == "simulation_only"
+
+
+def test_evolution_resume_from_existing_history_and_state() -> None:
+    """Resume loads accumulated history and pending generation batch."""
+    history = _make_history()
+    candidates = _make_candidates()
+    config = _make_config()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_dir = Path(tmpdir)
+        run_evolution_loop(
+            history=history,
+            candidates=candidates,
+            config=config,
+            output_dir=output_dir,
+            strategy="ca_llso_raw_distance",
+            generations=2,
+            offspring_per_generation=8,
+            top_k=4,
+            random_seed=42,
+        )
+
+        resume = load_resume_state(output_dir, 0)
+
+        assert len(resume["history"]) == len(history)
+        assert len(resume["simulation_batch"]) == 4
+        assert resume["next_generation"] == 1
+
+
+def test_pia_evolve_resume_imports_pending_generation_results() -> None:
+    """Resume imports pending generation results and continues from next generation."""
+    history = _make_history()
+    candidates = _make_candidates()
+    config = _make_config()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_dir = Path(tmpdir)
+        run_evolution_loop(
+            history=history,
+            candidates=candidates,
+            config=config,
+            output_dir=output_dir,
+            strategy="ca_llso_raw_distance",
+            generations=2,
+            offspring_per_generation=8,
+            top_k=4,
+            random_seed=42,
+        )
+        batch = pd.read_csv(output_dir / "generation_000" / "simulation_batch.csv")
+        pd.DataFrame({
+            "candidate_id": batch["candidate_id"].head(2),
+            "overall_score": [88.0, 91.0],
+            "hard_constraint_passed": [True, True],
+        }).to_csv(output_dir / "generation_000" / "simulation_results.csv", index=False)
+
+        resume_config = _make_config()
+        resume_config["simulation_executor"]["mode"] = "import_results"
+        summary = run_evolution_loop(
+            history=history,
+            candidates=candidates,
+            config=resume_config,
+            output_dir=output_dir,
+            strategy="ca_llso_raw_distance",
+            generations=2,
+            offspring_per_generation=8,
+            top_k=4,
+            random_seed=42,
+            resume_from=output_dir,
+            resume_generation=0,
+        )
+
+        resumed_history = pd.read_csv(output_dir / "evolution_history.csv")
+        assert len(resumed_history) == len(history) + 2
+        assert summary["simulations_used"] == 2
+        assert (output_dir / "generation_001" / "simulation_batch.csv").exists()
+
+
+def test_evolution_runs_two_generations_with_local_fixture_simulator() -> None:
+    """local_fixture mode proves multi-generation closed-loop behavior."""
+    history = _make_history()
+    candidates = _make_candidates()
+    config = _make_config()
+    config["simulation_executor"]["mode"] = "local_fixture"
+    config["target_score"] = 100.0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_dir = Path(tmpdir)
+        summary = run_evolution_loop(
+            history=history,
+            candidates=candidates,
+            config=config,
+            output_dir=output_dir,
+            strategy="ca_llso_raw_distance",
+            generations=2,
+            offspring_per_generation=8,
+            top_k=4,
+            random_seed=42,
+        )
+
+        assert summary["stop_reason"] == "max_generations"
+        assert summary["generations_run"] == 2
+        assert summary["simulations_used"] == 8
+        assert (output_dir / "generation_000" / "simulation_results.csv").exists()
+        assert (output_dir / "generation_001" / "simulation_results.csv").exists()
+
+
+def test_resume_rejects_mismatched_candidate_ids() -> None:
+    """Resume fails closed when result candidate ids do not match pending batch."""
+    history = _make_history()
+    candidates = _make_candidates()
+    config = _make_config()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_dir = Path(tmpdir)
+        run_evolution_loop(
+            history=history,
+            candidates=candidates,
+            config=config,
+            output_dir=output_dir,
+            strategy="ca_llso_raw_distance",
+            generations=2,
+            offspring_per_generation=8,
+            top_k=4,
+            random_seed=42,
+        )
+        pd.DataFrame({
+            "candidate_id": ["not_in_batch"],
+            "overall_score": [91.0],
+            "hard_constraint_passed": [True],
+        }).to_csv(output_dir / "generation_000" / "simulation_results.csv", index=False)
+
+        resume_config = _make_config()
+        resume_config["simulation_executor"]["mode"] = "import_results"
+        with pytest.raises(ValueError, match="candidate_id"):
+            run_evolution_loop(
+                history=history,
+                candidates=candidates,
+                config=resume_config,
+                output_dir=output_dir,
+                strategy="ca_llso_raw_distance",
+                generations=2,
+                offspring_per_generation=8,
+                top_k=4,
+                random_seed=42,
+                resume_from=output_dir,
+                resume_generation=0,
+            )

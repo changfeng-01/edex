@@ -4,7 +4,12 @@ import json
 
 import pandas as pd
 
-from goa_eval.pia_ca_llso.benchmark import compute_run_metrics, run_ablation_benchmark, compute_evolution_metrics
+from goa_eval.pia_ca_llso.benchmark import (
+    compute_run_metrics,
+    run_ablation_benchmark,
+    compute_evolution_metrics,
+    run_closed_loop_benchmark,
+)
 
 
 def test_benchmark_metrics_and_outputs(tmp_path) -> None:
@@ -125,3 +130,60 @@ def test_pia_benchmark_accepts_evolution_summary() -> None:
     assert metrics["evolution_stop_reason"] == "target_score_reached"
     assert metrics["closed_loop_mode"] == "evolution"
     assert metrics["single_step_mode"] == "not_applicable"
+
+
+def test_closed_loop_benchmark_reports_budget_to_best(tmp_path) -> None:
+    evolution_dir = tmp_path / "evolve"
+    generation_dir = evolution_dir / "generation_000"
+    generation_dir.mkdir(parents=True)
+    (evolution_dir / "evolution_summary.json").write_text(json.dumps({
+        "stop_reason": "target_score_reached",
+        "best_score": 91.0,
+        "generations_run": 1,
+        "simulations_used": 2,
+        "target_reached": True,
+    }), encoding="utf-8")
+    pd.DataFrame([
+        {"candidate_id": "h0", "overall_score": 80.0, "hard_constraint_passed": True, "engineering_validity": "simulation_only"},
+        {"candidate_id": "c0", "overall_score": 91.0, "hard_constraint_passed": True, "source": "simulation_result", "engineering_validity": "simulation_only"},
+    ]).to_csv(evolution_dir / "evolution_history.csv", index=False)
+    (generation_dir / "generation_summary.json").write_text(json.dumps({
+        "selected_rows": 4,
+        "imported_result_rows": 2,
+    }), encoding="utf-8")
+
+    metrics = run_closed_loop_benchmark(evolution_dir, tmp_path / "bench", target_score=90)
+
+    assert metrics["best_score_initial"] == 80.0
+    assert metrics["best_score_final"] == 91.0
+    assert metrics["best_score_delta"] == 11.0
+    assert metrics["budget_to_target"] == 2
+    assert metrics["imported_result_count"] == 2
+    assert metrics["suggestion_count"] == 4
+    assert (tmp_path / "bench" / "pia_closed_loop_benchmark.json").exists()
+
+
+def test_closed_loop_benchmark_separates_imported_results_from_suggestions(tmp_path) -> None:
+    evolution_dir = tmp_path / "evolve"
+    generation_dir = evolution_dir / "generation_000"
+    generation_dir.mkdir(parents=True)
+    (evolution_dir / "evolution_summary.json").write_text(json.dumps({
+        "stop_reason": "pending_simulation_results",
+        "best_score": 80.0,
+        "generations_run": 1,
+        "simulations_used": 0,
+        "target_reached": False,
+    }), encoding="utf-8")
+    pd.DataFrame([
+        {"candidate_id": "h0", "overall_score": 80.0, "hard_constraint_passed": True, "engineering_validity": "simulation_only"},
+    ]).to_csv(evolution_dir / "evolution_history.csv", index=False)
+    pd.DataFrame([
+        {"candidate_id": "s0", "must_resimulate": True},
+        {"candidate_id": "s1", "must_resimulate": True},
+    ]).to_csv(generation_dir / "pia_selected_candidates.csv", index=False)
+
+    metrics = run_closed_loop_benchmark(evolution_dir, tmp_path / "bench", target_score=90)
+
+    assert metrics["imported_result_count"] == 0
+    assert metrics["suggestion_count"] == 2
+    assert metrics["target_reached"] is False

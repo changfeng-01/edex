@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pandas as pd
+
 from goa_eval.cli import main
 
 
@@ -97,3 +99,102 @@ def test_pia_evolve_cli_offline_smoke(tmp_path) -> None:
 
     assert (output_dir / "generation_000" / "simulation_batch.csv").exists()
     assert (output_dir / "evolution_summary.json").exists()
+
+
+def test_pia_evolve_cli_resume_imports_pending_generation_results(tmp_path) -> None:
+    """pia-evolve can resume a pending generation after result CSV arrives."""
+    output_dir = tmp_path / "evolve_resume"
+
+    assert main([
+        "pia-evolve",
+        "--history-csv", "examples/pia_ca_llso/sample_history.csv",
+        "--candidate-csv", "examples/pia_ca_llso/sample_candidates.csv",
+        "--config", "config/pia_ca_llso_goa_profile.yaml",
+        "--output-dir", str(output_dir),
+        "--strategy", "classifier_level_hybrid",
+        "--generations", "2",
+        "--offspring-per-generation", "8",
+        "--top-k", "4",
+        "--mode", "offline",
+        "--target-score", "100",
+        "--seed", "42",
+    ]) == 0
+
+    batch = pd.read_csv(output_dir / "generation_000" / "simulation_batch.csv")
+    pd.DataFrame({
+        "candidate_id": batch["candidate_id"].head(1),
+        "overall_score": [92.0],
+        "hard_constraint_passed": [True],
+    }).to_csv(output_dir / "generation_000" / "simulation_results.csv", index=False)
+
+    assert main([
+        "pia-evolve",
+        "--history-csv", "examples/pia_ca_llso/sample_history.csv",
+        "--candidate-csv", "examples/pia_ca_llso/sample_candidates.csv",
+        "--config", "config/pia_ca_llso_goa_profile.yaml",
+        "--output-dir", str(output_dir),
+        "--strategy", "classifier_level_hybrid",
+        "--generations", "2",
+        "--offspring-per-generation", "8",
+        "--top-k", "4",
+        "--mode", "import_results",
+        "--target-score", "100",
+        "--resume-from", str(output_dir),
+        "--resume-generation", "0",
+        "--seed", "42",
+    ]) == 0
+
+    history = pd.read_csv(output_dir / "evolution_history.csv")
+    assert "92.0" in history.to_csv(index=False)
+    assert (output_dir / "generation_001" / "simulation_batch.csv").exists()
+
+
+def test_pia_benchmark_cli_closed_loop(tmp_path) -> None:
+    evolve_dir = tmp_path / "evolve_local"
+    bench_dir = tmp_path / "bench_closed_loop"
+
+    assert main([
+        "pia-evolve",
+        "--history-csv", "examples/pia_ca_llso/sample_history.csv",
+        "--candidate-csv", "examples/pia_ca_llso/sample_candidates.csv",
+        "--config", "config/pia_ca_llso_goa_profile.yaml",
+        "--output-dir", str(evolve_dir),
+        "--strategy", "classifier_level_hybrid",
+        "--generations", "1",
+        "--offspring-per-generation", "8",
+        "--top-k", "4",
+        "--mode", "local_fixture",
+        "--target-score", "100",
+    ]) == 0
+
+    assert main([
+        "pia-benchmark",
+        "--closed-loop",
+        "--evolution-dir", str(evolve_dir),
+        "--output-dir", str(bench_dir),
+        "--target-score", "90",
+    ]) == 0
+
+    assert (bench_dir / "pia_closed_loop_benchmark.json").exists()
+
+
+def test_pia_evolve_cli_writes_boundary_audit(tmp_path) -> None:
+    output_dir = tmp_path / "evolve_audit"
+
+    assert main([
+        "pia-evolve",
+        "--history-csv", "examples/pia_ca_llso/sample_history.csv",
+        "--candidate-csv", "examples/pia_ca_llso/sample_candidates.csv",
+        "--config", "config/pia_ca_llso_goa_profile.yaml",
+        "--output-dir", str(output_dir),
+        "--strategy", "classifier_level_hybrid",
+        "--generations", "1",
+        "--offspring-per-generation", "8",
+        "--top-k", "4",
+        "--mode", "offline",
+        "--target-score", "100",
+        "--audit-boundary",
+    ]) == 0
+
+    audit = json.loads((output_dir / "boundary_audit.json").read_text(encoding="utf-8"))
+    assert audit["passed"] is True

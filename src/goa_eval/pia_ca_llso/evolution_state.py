@@ -18,6 +18,7 @@ class GenerationState:
     stop_reason: str | None = None
     data_source: str = "real_simulation_csv"
     engineering_validity: str = "simulation_only"
+    must_resimulate: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize generation state to a JSONL-safe dictionary."""

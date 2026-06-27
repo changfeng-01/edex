@@ -39,3 +39,31 @@ def test_evolution_report_includes_stop_reason_and_boundary() -> None:
     assert "target_score_reached" in report
     assert "real_simulation_csv" in report
     assert "simulation_only" in report
+
+
+def test_evolution_report_lists_generation_artifacts() -> None:
+    """Evolution report lists replayable generation artifacts."""
+    summary = {
+        "stop_reason": "pending_simulation_results",
+        "best_score": 81.0,
+        "generations_run": 1,
+        "simulations_used": 0,
+        "target_reached": False,
+        "data_source": "real_simulation_csv",
+        "engineering_validity": "simulation_only",
+        "claim_boundary": "candidate suggestions require simulation before claims",
+        "latest_simulation_batch": "generation_000/simulation_batch.csv",
+        "generation_artifacts": [
+            "generation_000/offspring_candidates.csv",
+            "generation_000/pia_selected_candidates.csv",
+            "generation_000/imported_results.csv",
+        ],
+    }
+
+    report = render_evolution_report(summary)
+
+    assert "generation_000/simulation_batch.csv" in report
+    assert "offspring_candidates.csv" in report
+    assert "pia_selected_candidates.csv" in report
+    assert "imported_results.csv" in report
+    assert "must_resimulate = true" in report

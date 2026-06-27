@@ -31,6 +31,13 @@ def write_json(path: str | Path, data: dict[str, Any] | list[Any]) -> None:
     Path(path).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def write_jsonl(path: str | Path, rows: list[dict[str, Any]]) -> None:
+    text = "\n".join(json.dumps(row, ensure_ascii=False) for row in rows)
+    if text:
+        text += "\n"
+    Path(path).write_text(text, encoding="utf-8")
+
+
 def write_markdown(path: str | Path, text: str) -> None:
     Path(path).write_text(text, encoding="utf-8")
 

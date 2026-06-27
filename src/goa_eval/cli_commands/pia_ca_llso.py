@@ -3,7 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from goa_eval.pia_ca_llso.benchmark import run_ablation_benchmark
+from goa_eval.pia_ca_llso.benchmark import run_ablation_benchmark, run_closed_loop_benchmark
+from goa_eval.pia_ca_llso.boundary_audit import audit_evolution_outputs
 from goa_eval.pia_ca_llso.integration import CandidateAdapter, HistoryAdapter
 from goa_eval.pia_ca_llso.io import ensure_output_dir, read_config, write_json, write_markdown
 from goa_eval.pia_ca_llso.labeling import assign_level_labels, summarize_label_distribution
@@ -32,13 +33,15 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     suggest.set_defaults(handler=handle_pia_suggest)
 
     benchmark = subparsers.add_parser("pia-benchmark")
-    benchmark.add_argument("--history-csv", required=True)
-    benchmark.add_argument("--candidate-csv", required=True)
+    benchmark.add_argument("--history-csv")
+    benchmark.add_argument("--candidate-csv")
     benchmark.add_argument("--config")
     benchmark.add_argument("--output-dir", required=True)
     benchmark.add_argument("--strategies", default="random,ca_llso_raw_distance,pia_physics_distance,pia_capm_distance,adaptive_pia_capm,classifier_level_hybrid")
     benchmark.add_argument("--target-score", type=float, default=80)
     benchmark.add_argument("--seed", type=int, default=42)
+    benchmark.add_argument("--closed-loop", action="store_true")
+    benchmark.add_argument("--evolution-dir")
     benchmark.set_defaults(handler=handle_pia_benchmark)
 
     contract = subparsers.add_parser("pia-export-contract")
@@ -68,6 +71,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     evolve.add_argument("--simulation-results-dir", type=str, default=None)
     evolve.add_argument("--external-command", type=str, default=None)
     evolve.add_argument("--target-score", type=float, default=None)
+    evolve.add_argument("--resume-from", type=str, default=None)
+    evolve.add_argument("--resume-generation", type=int, default=None)
+    evolve.add_argument("--audit-boundary", action="store_true")
     evolve.add_argument("--seed", type=int, default=42)
     evolve.set_defaults(handler=handle_pia_evolve)
 
@@ -107,6 +113,13 @@ def handle_pia_suggest(args: argparse.Namespace) -> int:
 
 def handle_pia_benchmark(args: argparse.Namespace) -> int:
     output_dir = ensure_output_dir(args.output_dir)
+    if args.closed_loop:
+        if not args.evolution_dir:
+            raise ValueError("--evolution-dir is required with --closed-loop")
+        run_closed_loop_benchmark(args.evolution_dir, output_dir, target_score=args.target_score)
+        return 0
+    if not args.history_csv or not args.candidate_csv:
+        raise ValueError("--history-csv and --candidate-csv are required unless --closed-loop is set")
     config = read_config(args.config)
     history = HistoryAdapter().load(args.history_csv)
     candidates = CandidateAdapter().load(args.candidate_csv)
@@ -183,7 +196,14 @@ def handle_pia_evolve(args: argparse.Namespace) -> int:
         offspring_per_generation=args.offspring_per_generation,
         top_k=args.top_k,
         random_seed=args.seed,
+        resume_from=args.resume_from,
+        resume_generation=args.resume_generation,
     )
+    if args.audit_boundary:
+        audit = audit_evolution_outputs(output_dir)
+        write_json(output_dir / "boundary_audit.json", audit)
+        if not audit.get("passed", False):
+            return 1
 
     print(str(output_dir.resolve()))
     return 0
