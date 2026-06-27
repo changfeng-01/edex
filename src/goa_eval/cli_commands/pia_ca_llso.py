@@ -68,6 +68,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     evolve.add_argument("--simulation-results-dir", type=str, default=None)
     evolve.add_argument("--external-command", type=str, default=None)
     evolve.add_argument("--target-score", type=float, default=None)
+    evolve.add_argument("--resume-from", type=str, default=None)
+    evolve.add_argument("--resume-generation", type=int, default=None)
     evolve.add_argument("--seed", type=int, default=42)
     evolve.set_defaults(handler=handle_pia_evolve)
 
@@ -183,6 +185,8 @@ def handle_pia_evolve(args: argparse.Namespace) -> int:
         offspring_per_generation=args.offspring_per_generation,
         top_k=args.top_k,
         random_seed=args.seed,
+        resume_from=args.resume_from,
+        resume_generation=args.resume_generation,
     )
 
     print(str(output_dir.resolve()))

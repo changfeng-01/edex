@@ -21,6 +21,23 @@ from goa_eval.pia_ca_llso.io import ensure_output_dir, write_csv, write_json, wr
 from goa_eval.pia_ca_llso.report import render_evolution_report
 
 
+def load_resume_state(output_dir: str | Path, generation: int) -> dict[str, Any]:
+    """Load accumulated history and pending simulation batch for resume."""
+    root = Path(output_dir)
+    history_path = root / "evolution_history.csv"
+    batch_path = root / f"generation_{generation:03d}" / "simulation_batch.csv"
+    if not history_path.exists():
+        raise FileNotFoundError(f"missing evolution_history.csv in {root}")
+    if not batch_path.exists():
+        raise FileNotFoundError(f"missing pending simulation_batch.csv: {batch_path}")
+    return {
+        "history": pd.read_csv(history_path),
+        "simulation_batch": pd.read_csv(batch_path),
+        "generation": generation,
+        "next_generation": generation + 1,
+    }
+
+
 def run_evolution_loop(
     history: pd.DataFrame,
     candidates: pd.DataFrame,
@@ -31,6 +48,8 @@ def run_evolution_loop(
     offspring_per_generation: int | None = None,
     top_k: int | None = None,
     random_seed: int = 42,
+    resume_from: str | Path | None = None,
+    resume_generation: int | None = None,
 ) -> dict[str, Any]:
     """Run the PIA-CA-LLSO closed-loop evolution.
 
@@ -59,8 +78,54 @@ def run_evolution_loop(
     generations_without_improvement = 0
     simulations_used = 0
     stop_reason = "max_generations"
+    start_generation = 0
 
-    for gen in range(gen_count):
+    if resume_from is not None:
+        if resume_generation is None:
+            raise ValueError("resume_generation is required when resume_from is set")
+        resume_state = load_resume_state(resume_from, resume_generation)
+        current_history = resume_state["history"]
+        resume_batch = resume_state["simulation_batch"]
+        resume_dir = Path(resume_from) / f"generation_{resume_generation:03d}"
+        imported, status = run_simulation_step(
+            simulation_batch=resume_batch,
+            output_dir=resume_dir,
+            config=config,
+            generation=resume_generation,
+        )
+        if len(imported) == 0:
+            raise ValueError(
+                "resume result import produced no rows; check candidate_id values "
+                "and required result columns"
+            )
+        imported_path = resume_dir / "imported_results.csv"
+        write_csv(str(imported_path), imported)
+        current_history = pd.concat([current_history, imported], ignore_index=True)
+        simulations_used += len(imported)
+        start_generation = int(resume_state["next_generation"])
+        generation_states.append(
+            GenerationState(
+                generation=resume_generation,
+                history_rows=len(current_history),
+                offspring_rows=0,
+                selected_rows=len(resume_batch),
+                imported_result_rows=len(imported),
+                best_score=None,
+                stop_reason="resumed_results_imported",
+                must_resimulate=False,
+            ).to_dict()
+        )
+        summary_path = resume_dir / "generation_summary.json"
+        write_json(str(summary_path), {
+            "generation": resume_generation,
+            "status": status,
+            "imported_result_rows": len(imported),
+            "resume_from": str(Path(resume_from)),
+            "data_source": DATA_SOURCE,
+            "engineering_validity": ENGINEERING_VALIDITY,
+        })
+
+    for gen in range(start_generation, gen_count):
         gen_dir = output_dir / f"generation_{gen:03d}"
         ensure_output_dir(gen_dir)
 
