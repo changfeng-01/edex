@@ -231,6 +231,35 @@ def test_pia_evolve_resume_imports_pending_generation_results() -> None:
         assert (output_dir / "generation_001" / "simulation_batch.csv").exists()
 
 
+def test_evolution_runs_two_generations_with_local_fixture_simulator() -> None:
+    """local_fixture mode proves multi-generation closed-loop behavior."""
+    history = _make_history()
+    candidates = _make_candidates()
+    config = _make_config()
+    config["simulation_executor"]["mode"] = "local_fixture"
+    config["target_score"] = 100.0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_dir = Path(tmpdir)
+        summary = run_evolution_loop(
+            history=history,
+            candidates=candidates,
+            config=config,
+            output_dir=output_dir,
+            strategy="ca_llso_raw_distance",
+            generations=2,
+            offspring_per_generation=8,
+            top_k=4,
+            random_seed=42,
+        )
+
+        assert summary["stop_reason"] == "max_generations"
+        assert summary["generations_run"] == 2
+        assert summary["simulations_used"] == 8
+        assert (output_dir / "generation_000" / "simulation_results.csv").exists()
+        assert (output_dir / "generation_001" / "simulation_results.csv").exists()
+
+
 def test_resume_rejects_mismatched_candidate_ids() -> None:
     """Resume fails closed when result candidate ids do not match pending batch."""
     history = _make_history()

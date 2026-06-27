@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import glob
-import subprocess
 from pathlib import Path
 from typing import Any, Mapping
 
 import pandas as pd
 
+from goa_eval.pia_ca_llso.local_simulator import run_local_fixture_simulator
 from goa_eval.pia_ca_llso.simulation_contract import import_simulation_results
+from goa_eval.pia_ca_llso.simulator_adapter import run_external_simulator_command
 
 
 NON_RESULT_CSV_ARTIFACTS = {
@@ -56,6 +57,28 @@ def run_simulation_step(
             "mode": "offline",
             "generation": generation,
             "batch_path": str(batch_path),
+        }
+
+    elif mode == "local_fixture":
+        result_path = output_dir / "simulation_results.csv"
+        fixture_results = run_local_fixture_simulator(
+            simulation_batch=simulation_batch,
+            config=config,
+            generation=generation,
+        )
+        fixture_results.to_csv(result_path, index=False)
+        imported = import_simulation_results(
+            result_csv=result_path,
+            simulation_batch=simulation_batch,
+            config=config,
+            generation=generation,
+        )
+        return imported, {
+            "status": "results_imported",
+            "mode": "local_fixture",
+            "generation": generation,
+            "imported_count": len(imported),
+            "result_path": str(result_path),
         }
 
     elif mode == "import_results":
@@ -116,33 +139,15 @@ def run_simulation_step(
             }
 
         result_glob = exec_cfg.get("result_glob", "*.csv")
-        command = (
-            command_template
-            .replace("{candidate_csv}", str(batch_path))
-            .replace("{result_csv}", str(output_dir / "simulation_results.csv"))
-            .replace("{candidate_id}", "")
-            .replace("{generation}", str(generation))
-            .replace("{output_dir}", str(output_dir))
+        result_path = output_dir / "simulation_results.csv"
+        invocation = run_external_simulator_command(
+            command_template,
+            candidate_csv=batch_path,
+            result_csv=result_path,
+            generation=generation,
+            output_dir=output_dir,
+            timeout_seconds=int(exec_cfg.get("timeout_seconds", 300)),
         )
-
-        try:
-            proc = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(
-                f"external_command timed out: {command}"
-            )
-
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"external_command failed with exit code {proc.returncode}: "
-                f"stderr={proc.stderr[:500]}"
-            )
 
         result_files = sorted(glob.glob(str(output_dir / result_glob)))
         result_files = _filter_result_files(result_files)
@@ -176,6 +181,7 @@ def run_simulation_step(
             "mode": "external_command",
             "generation": generation,
             "imported_count": len(combined),
+            "invocation": invocation,
         }
 
     else:
