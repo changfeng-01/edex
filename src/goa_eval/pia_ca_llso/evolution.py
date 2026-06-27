@@ -71,6 +71,10 @@ def run_evolution_loop(
     ensure_output_dir(output_dir)
 
     current_history = history.copy()
+    if "data_source" not in current_history.columns:
+        current_history["data_source"] = DATA_SOURCE
+    if "engineering_validity" not in current_history.columns:
+        current_history["engineering_validity"] = ENGINEERING_VALIDITY
     generation_states: list[dict[str, Any]] = []
     generation_artifacts: list[str] = []
     best_score: float | None = None
@@ -85,6 +89,10 @@ def run_evolution_loop(
             raise ValueError("resume_generation is required when resume_from is set")
         resume_state = load_resume_state(resume_from, resume_generation)
         current_history = resume_state["history"]
+        if "data_source" not in current_history.columns:
+            current_history["data_source"] = DATA_SOURCE
+        if "engineering_validity" not in current_history.columns:
+            current_history["engineering_validity"] = ENGINEERING_VALIDITY
         resume_batch = resume_state["simulation_batch"]
         resume_dir = Path(resume_from) / f"generation_{resume_generation:03d}"
         imported, status = run_simulation_step(
@@ -194,6 +202,9 @@ def run_evolution_loop(
         )
 
         selected = result.selected_candidates
+        selected["must_resimulate"] = True
+        selected["data_source"] = DATA_SOURCE
+        selected["engineering_validity"] = ENGINEERING_VALIDITY
         selected_path = gen_dir / "pia_selected_candidates.csv"
         write_csv(str(selected_path), selected)
         generation_artifacts.append(str(selected_path.relative_to(output_dir)))

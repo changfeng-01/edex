@@ -148,3 +148,92 @@ def compute_evolution_metrics(
         "closed_loop_mode": "evolution",
         "single_step_mode": "not_applicable",
     }
+
+
+def run_closed_loop_benchmark(
+    evolution_dir: str | Path,
+    output_dir: str | Path,
+    target_score: float = 80,
+) -> dict[str, Any]:
+    """Compute budget-aware metrics for a completed pia-evolve run."""
+    root = Path(evolution_dir)
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    summary_path = root / "evolution_summary.json"
+    history_path = root / "evolution_history.csv"
+    if not summary_path.exists():
+        raise FileNotFoundError(f"missing evolution_summary.json: {summary_path}")
+    if not history_path.exists():
+        raise FileNotFoundError(f"missing evolution_history.csv: {history_path}")
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    history = pd.read_csv(history_path)
+    scores = pd.to_numeric(history.get("overall_score", pd.Series(dtype=float)), errors="coerce")
+    source = history.get("source", pd.Series("", index=history.index)).fillna("")
+    initial_scores = scores[source != "simulation_result"].dropna()
+    final_scores = scores.dropna()
+    best_initial = float(initial_scores.max()) if not initial_scores.empty else None
+    best_final = float(final_scores.max()) if not final_scores.empty else summary.get("best_score")
+    imported_from_history = int((source == "simulation_result").sum())
+    imported_from_summaries = 0
+
+    suggestion_count = 0
+    generation_summaries = sorted(root.glob("generation_*/generation_summary.json"))
+    if generation_summaries:
+        for path in generation_summaries:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            suggestion_count += int(payload.get("selected_rows", 0) or 0)
+            imported_from_summaries += int(payload.get("imported_result_rows", 0) or 0)
+        imported_result_count = max(imported_from_history, imported_from_summaries)
+    else:
+        imported_result_count = imported_from_history
+        for path in sorted(root.glob("generation_*/pia_selected_candidates.csv")):
+            suggestion_count += len(pd.read_csv(path))
+
+    target_reached = bool(summary.get("target_reached", False))
+    simulations_used = int(summary.get("simulations_used", imported_result_count) or 0)
+    best_delta = (
+        None
+        if best_initial is None or best_final is None
+        else float(best_final - best_initial)
+    )
+    metrics: dict[str, Any] = {
+        "best_score_initial": best_initial,
+        "best_score_final": best_final,
+        "best_score_delta": best_delta,
+        "target_reached": target_reached,
+        "generations_run": int(summary.get("generations_run", 0) or 0),
+        "simulations_used": simulations_used,
+        "budget_to_target": simulations_used if target_reached and best_final is not None and best_final >= target_score else None,
+        "budget_to_best": simulations_used if best_delta is not None and best_delta > 0 else None,
+        "stop_reason": summary.get("stop_reason", "unknown"),
+        "imported_result_count": imported_result_count,
+        "suggestion_count": suggestion_count,
+        "data_source": "real_simulation_csv",
+        "engineering_validity": "simulation_only",
+        "closed_loop_mode": "evolution",
+    }
+
+    (out / "pia_closed_loop_benchmark.json").write_text(
+        json.dumps(metrics, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    pd.DataFrame([metrics]).to_csv(out / "pia_closed_loop_benchmark.csv", index=False)
+    report = [
+        "# PIA-CA-LLSO Closed-Loop Benchmark",
+        "",
+        "- data_source = real_simulation_csv",
+        "- engineering_validity = simulation_only",
+        "- closed-loop metrics count imported simulation results separately from suggestions",
+        "",
+        f"- best_score_initial: {best_initial}",
+        f"- best_score_final: {best_final}",
+        f"- best_score_delta: {best_delta}",
+        f"- simulations_used: {simulations_used}",
+        f"- imported_result_count: {imported_result_count}",
+        f"- suggestion_count: {suggestion_count}",
+        f"- stop_reason: {metrics['stop_reason']}",
+        "",
+    ]
+    (out / "pia_closed_loop_benchmark.md").write_text("\n".join(report), encoding="utf-8")
+    return metrics

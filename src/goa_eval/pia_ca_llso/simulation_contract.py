@@ -31,12 +31,17 @@ def build_simulation_batch(
     """
     batch = selected.copy()
     batch["generation"] = generation
+    batch["evidence_state"] = batch.get("evidence_state", "pending_simulation")
+    batch["must_resimulate"] = True
+    batch["data_source"] = "real_simulation_csv"
+    batch["engineering_validity"] = "simulation_only"
 
     manifest: dict[str, Any] = {
         "generation": generation,
         "candidate_count": len(batch),
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
+        "must_resimulate": True,
         "claim_boundary": (
             "candidate suggestions require simulation before claims"
         ),

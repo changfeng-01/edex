@@ -147,3 +147,54 @@ def test_pia_evolve_cli_resume_imports_pending_generation_results(tmp_path) -> N
     history = pd.read_csv(output_dir / "evolution_history.csv")
     assert "92.0" in history.to_csv(index=False)
     assert (output_dir / "generation_001" / "simulation_batch.csv").exists()
+
+
+def test_pia_benchmark_cli_closed_loop(tmp_path) -> None:
+    evolve_dir = tmp_path / "evolve_local"
+    bench_dir = tmp_path / "bench_closed_loop"
+
+    assert main([
+        "pia-evolve",
+        "--history-csv", "examples/pia_ca_llso/sample_history.csv",
+        "--candidate-csv", "examples/pia_ca_llso/sample_candidates.csv",
+        "--config", "config/pia_ca_llso_goa_profile.yaml",
+        "--output-dir", str(evolve_dir),
+        "--strategy", "classifier_level_hybrid",
+        "--generations", "1",
+        "--offspring-per-generation", "8",
+        "--top-k", "4",
+        "--mode", "local_fixture",
+        "--target-score", "100",
+    ]) == 0
+
+    assert main([
+        "pia-benchmark",
+        "--closed-loop",
+        "--evolution-dir", str(evolve_dir),
+        "--output-dir", str(bench_dir),
+        "--target-score", "90",
+    ]) == 0
+
+    assert (bench_dir / "pia_closed_loop_benchmark.json").exists()
+
+
+def test_pia_evolve_cli_writes_boundary_audit(tmp_path) -> None:
+    output_dir = tmp_path / "evolve_audit"
+
+    assert main([
+        "pia-evolve",
+        "--history-csv", "examples/pia_ca_llso/sample_history.csv",
+        "--candidate-csv", "examples/pia_ca_llso/sample_candidates.csv",
+        "--config", "config/pia_ca_llso_goa_profile.yaml",
+        "--output-dir", str(output_dir),
+        "--strategy", "classifier_level_hybrid",
+        "--generations", "1",
+        "--offspring-per-generation", "8",
+        "--top-k", "4",
+        "--mode", "offline",
+        "--target-score", "100",
+        "--audit-boundary",
+    ]) == 0
+
+    audit = json.loads((output_dir / "boundary_audit.json").read_text(encoding="utf-8"))
+    assert audit["passed"] is True

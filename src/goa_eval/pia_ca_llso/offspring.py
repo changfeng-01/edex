@@ -101,6 +101,9 @@ def generate_llso_offspring(
             sampled["candidate_id"] = [
                 f"gen{generation}_offspring_{i}" for i in range(len(sampled))
             ]
+            sampled["must_resimulate"] = True
+            sampled["data_source"] = "real_simulation_csv"
+            sampled["engineering_validity"] = "simulation_only"
             return sampled.reset_index(drop=True)
         return pd.DataFrame()
 
@@ -170,6 +173,9 @@ def generate_llso_offspring(
         row["candidate_id"] = f"gen{generation}_offspring_{len(offspring_rows)}"
         row["generation"] = generation
         row["source"] = "llso_offspring"
+        row["must_resimulate"] = True
+        row["data_source"] = "real_simulation_csv"
+        row["engineering_validity"] = "simulation_only"
         offspring_rows.append(row)
 
     result = pd.DataFrame(offspring_rows)
