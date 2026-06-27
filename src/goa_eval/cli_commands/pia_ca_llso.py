@@ -54,6 +54,23 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     train.add_argument("--candidate-csv", type=Path)
     train.set_defaults(handler=handle_pia_train_from_db)
 
+    # ---- pia-evolve ----
+    evolve = subparsers.add_parser("pia-evolve", help="Run PIA-CA-LLSO closed-loop evolution")
+    evolve.add_argument("--history-csv", required=True, type=str)
+    evolve.add_argument("--candidate-csv", required=True, type=str)
+    evolve.add_argument("--config", required=True, type=str)
+    evolve.add_argument("--output-dir", required=True, type=str)
+    evolve.add_argument("--strategy", default="classifier_level_hybrid", type=str)
+    evolve.add_argument("--generations", type=int, default=None)
+    evolve.add_argument("--offspring-per-generation", type=int, default=None)
+    evolve.add_argument("--top-k", type=int, default=None)
+    evolve.add_argument("--mode", type=str, default=None)
+    evolve.add_argument("--simulation-results-dir", type=str, default=None)
+    evolve.add_argument("--external-command", type=str, default=None)
+    evolve.add_argument("--target-score", type=float, default=None)
+    evolve.add_argument("--seed", type=int, default=42)
+    evolve.set_defaults(handler=handle_pia_evolve)
+
 
 def handle_pia_label(args: argparse.Namespace) -> int:
     output_dir = ensure_output_dir(args.output_dir)
@@ -124,4 +141,47 @@ def handle_pia_train_from_db(args: argparse.Namespace) -> int:
     )
     print(artifacts.train_report.get("status"))
     print(args.output_dir / "pia_training_history.csv")
+    return 0
+
+
+def handle_pia_evolve(args: argparse.Namespace) -> int:
+    """Handle pia-evolve CLI command."""
+    from goa_eval.pia_ca_llso.evolution import run_evolution_loop
+    from goa_eval.pia_ca_llso.io import read_csv
+
+    config = read_config(args.config)
+    output_dir = ensure_output_dir(args.output_dir)
+
+    if args.mode is not None:
+        config.setdefault("simulation_executor", {})["mode"] = args.mode
+    if args.external_command is not None:
+        config.setdefault("simulation_executor", {})["external_command"] = args.external_command
+    if args.target_score is not None:
+        config["target_score"] = args.target_score
+
+    history = read_csv(args.history_csv)
+    candidates = read_csv(args.candidate_csv)
+
+    try:
+        history = HistoryAdapter(history).adapt()
+    except Exception:
+        pass
+    try:
+        candidates = CandidateAdapter(candidates).adapt()
+    except Exception:
+        pass
+
+    summary = run_evolution_loop(
+        history=history,
+        candidates=candidates,
+        config=config,
+        output_dir=output_dir,
+        strategy=args.strategy,
+        generations=args.generations,
+        offspring_per_generation=args.offspring_per_generation,
+        top_k=args.top_k,
+        random_seed=args.seed,
+    )
+
+    print(str(output_dir.resolve()))
     return 0

@@ -74,3 +74,26 @@ def test_classifier_level_hybrid_cli_smoke_runs_on_sample_data(tmp_path) -> None
     assert "classifier_hybrid_score" in selected
     assert "simulation_window" in selected
     assert "constraint_eval_plan_json" in selected
+
+
+def test_pia_evolve_cli_offline_smoke(tmp_path) -> None:
+    """pia-evolve --mode offline writes a generation batch."""
+    output_dir = tmp_path / "evolve_out"
+
+    assert main([
+        "pia-evolve",
+        "--history-csv", "examples/pia_ca_llso/sample_history.csv",
+        "--candidate-csv", "examples/pia_ca_llso/sample_candidates.csv",
+        "--config", "config/pia_ca_llso_goa_profile.yaml",
+        "--output-dir", str(output_dir),
+        "--strategy", "classifier_level_hybrid",
+        "--generations", "2",
+        "--offspring-per-generation", "8",
+        "--top-k", "4",
+        "--mode", "offline",
+        "--target-score", "100",
+        "--seed", "42",
+    ]) == 0
+
+    assert (output_dir / "generation_000" / "simulation_batch.csv").exists()
+    assert (output_dir / "evolution_summary.json").exists()
