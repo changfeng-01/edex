@@ -98,7 +98,10 @@ def generate_constraint_repair_candidates(
     if max_repairs <= 0:
         return pd.DataFrame()
     step_fraction = float(repair_config.get("step_fraction", 0.10))
-    bounds = pd.concat([history, candidates], ignore_index=True, sort=False)
+    # Ensure unique column names before concat (axis=1 joins in loop.py may create duplicates)
+    history_clean = history.loc[:, ~history.columns.duplicated()].reset_index(drop=True)
+    candidates_clean = candidates.loc[:, ~candidates.columns.duplicated()].reset_index(drop=True)
+    bounds = pd.concat([history_clean, candidates_clean], ignore_index=True, sort=False)
     rows: list[dict[str, Any]] = []
     for _, candidate in candidates.iterrows():
         for feature_name in _violated_repair_features(candidate, config):

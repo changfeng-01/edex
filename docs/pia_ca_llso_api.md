@@ -57,3 +57,16 @@ These fields are pre-simulation candidate-selection diagnostics. They are not fi
 - `pia-suggest`
 - `pia-benchmark`
 - `pia-export-contract`
+- `pia-train-from-db`
+- `pia-evolve` — Run multi-generation closed-loop evolution
+
+## pia-evolve Output
+
+| Artifact | Description |
+|----------|-------------|
+| `evolution_history.csv` | Accumulated evaluated rows across generations |
+| `generation_state.jsonl` | One JSON object per generation |
+| `evolution_summary.json` | Final stop reason, best score, generation count |
+| `evolution_report.md` | Markdown summary report |
+| `generation_XXX/simulation_batch.csv` | Candidates for simulation this generation |
+| `generation_XXX/simulation_manifest.json` | Boundary labels and candidate count |

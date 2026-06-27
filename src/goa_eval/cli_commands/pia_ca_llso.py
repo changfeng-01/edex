@@ -156,6 +156,8 @@ def handle_pia_evolve(args: argparse.Namespace) -> int:
         config.setdefault("simulation_executor", {})["mode"] = args.mode
     if args.external_command is not None:
         config.setdefault("simulation_executor", {})["external_command"] = args.external_command
+    if args.simulation_results_dir is not None:
+        config.setdefault("simulation_executor", {})["simulation_results_dir"] = args.simulation_results_dir
     if args.target_score is not None:
         config["target_score"] = args.target_score
 

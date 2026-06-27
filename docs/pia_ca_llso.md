@@ -59,9 +59,11 @@ The first version uses numpy dot-product attention over historical samples, with
 
 Candidate acquisition combines P(L1), predicted score, P(hard_pass), uncertainty, attention mass, distance, and diversity.
 
-## 10. Closed-Loop Expensive Optimization
+## 10. Closed-Loop Evolution
 
-PIA selects candidates for the next simulation run. The EDA pipeline remains responsible for netlist generation, simulator execution, waveform parsing, and metric extraction.
+The `pia-evolve` command implements a full closed-loop evolutionary optimizer. It runs multiple generations: each generation labels current history, generates LLSO offspring from L1 teachers and L2/L3 learners, calls the existing `pia-suggest` pipeline for selection, builds a simulation batch, and either stops (offline mode), imports results from CSV (import_results mode), or calls an external simulator (external_command mode).
+
+For detailed usage, see `docs/pia_ca_llso_closed_loop.md`.
 
 ## 11. Relation To Existing EDA Project
 

@@ -17,6 +17,9 @@ def suggest_next_run(history: pd.DataFrame, candidates: pd.DataFrame, config: di
     candidate_features, candidate_feature_report = extract_physics_features(candidates, config.get("physics_features", config))
     history_joined = pd.concat([labeled.reset_index(drop=True), history_features.reset_index(drop=True)], axis=1)
     candidate_joined = pd.concat([candidates.reset_index(drop=True), candidate_features.reset_index(drop=True)], axis=1)
+    # Drop duplicate columns that may arise from overlapping feature names
+    history_joined = history_joined.loc[:, ~history_joined.columns.duplicated()]
+    candidate_joined = candidate_joined.loc[:, ~candidate_joined.columns.duplicated()]
     repairs = generate_constraint_repair_candidates(history_joined, candidate_joined, config)
     repair_report = {"enabled": config.get("repair_candidates", {}).get("enabled", True), "generated_count": int(len(repairs))}
     if not repairs.empty:

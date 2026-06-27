@@ -107,8 +107,11 @@ def run_evolution_loop(
 
         # Combine seed candidates with offspring
         combined_candidates = pd.concat(
-            [candidates, offspring], ignore_index=True
+            [candidates.reset_index(drop=True), offspring.reset_index(drop=True)],
+            ignore_index=True,
         )
+        # Deduplicate columns if any overlap
+        combined_candidates = combined_candidates.loc[:, ~combined_candidates.columns.duplicated()].copy()
 
         # Use existing suggest_next_run for selection
         # (repair candidates are auto-generated inside suggest_next_run)
