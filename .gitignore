@@ -67,3 +67,6 @@ sitecustomize.py
 
 # CodeGraph index (local cache, regenerate with: codegraph index)
 .codegraph/
+
+# Project-local Codex worktrees.
+.worktrees/
