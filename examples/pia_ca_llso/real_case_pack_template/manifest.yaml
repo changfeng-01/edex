@@ -1,0 +1,15 @@
+scenario_id: real_goa_case_001
+source_type: real_simulation_csv
+history_csv: history.csv
+candidate_csv: candidates.csv
+result_dirs:
+  - generation_000
+config: config.yaml
+boundary:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only
+  must_resimulate: true
+notes:
+  visible_nodes: []
+  simulator: TODO
+  limitations: []
