@@ -1,0 +1,10 @@
+scenario_id: sample_goa
+source_type: local_fixture
+claim_boundary: CI fixture for closed-loop behavior only
+history_csv: ../sample_history.csv
+candidate_csv: ../sample_candidates.csv
+config: ../../../config/pia_ca_llso_goa_profile.yaml
+boundary:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only
+  must_resimulate: true
