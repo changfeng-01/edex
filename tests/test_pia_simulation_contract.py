@@ -7,7 +7,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
+from goa_eval.pia_ca_llso.result_schema import validate_simulation_results
 from goa_eval.pia_ca_llso.simulation_contract import (
     build_simulation_batch,
     import_simulation_results,
@@ -116,7 +118,7 @@ def test_simulation_manifest_records_boundary() -> None:
 
 
 def test_import_simulation_results_requires_required_columns() -> None:
-    """Result CSV without all required columns returns empty DataFrame."""
+    """Result CSV without all required columns fails closed."""
     batch = _make_simulation_batch()
     config = _make_config()
 
@@ -127,17 +129,17 @@ def test_import_simulation_results_requires_required_columns() -> None:
             "hard_constraint_passed": [True],
         }).to_csv(result_path, index=False)
 
-        imported = import_simulation_results(
-            result_csv=str(result_path),
-            simulation_batch=batch,
-            config=config,
-            generation=1,
-        )
-        assert len(imported) == 0
+        with pytest.raises(ValueError, match="missing required"):
+            import_simulation_results(
+                result_csv=str(result_path),
+                simulation_batch=batch,
+                config=config,
+                generation=1,
+            )
 
 
-def test_import_simulation_results_keeps_only_selected_candidate_ids() -> None:
-    """Only candidates present in the simulation batch are kept."""
+def test_import_simulation_results_rejects_mismatched_candidate_ids() -> None:
+    """Result rows outside the simulation batch are rejected."""
     batch = _make_simulation_batch()
     config = _make_config()
 
@@ -149,14 +151,13 @@ def test_import_simulation_results_keeps_only_selected_candidate_ids() -> None:
             "hard_constraint_passed": [True, True],
         }).to_csv(result_path, index=False)
 
-        imported = import_simulation_results(
-            result_csv=str(result_path),
-            simulation_batch=batch,
-            config=config,
-            generation=1,
-        )
-        assert len(imported) == 1
-        assert imported.iloc[0]["candidate_id"] == "c0"
+        with pytest.raises(ValueError, match="candidate_id"):
+            import_simulation_results(
+                result_csv=str(result_path),
+                simulation_batch=batch,
+                config=config,
+                generation=1,
+            )
 
 
 def test_import_simulation_results_appends_generation_metadata() -> None:
@@ -183,3 +184,63 @@ def test_import_simulation_results_appends_generation_metadata() -> None:
         assert all(imported["source"] == "simulation_result")
         assert all(imported["data_source"] == "real_simulation_csv")
         assert all(imported["engineering_validity"] == "simulation_only")
+        assert all(imported["must_resimulate"] == False)
+
+
+def test_validate_simulation_results_rejects_duplicate_candidate_ids() -> None:
+    batch = _make_simulation_batch()
+    config = _make_config()
+    results = pd.DataFrame({
+        "candidate_id": ["c0", "c0"],
+        "overall_score": [85.0, 86.0],
+        "hard_constraint_passed": [True, True],
+    })
+
+    with pytest.raises(ValueError, match="duplicate candidate_id"):
+        validate_simulation_results(results, batch, config)
+
+
+def test_validate_simulation_results_rejects_non_numeric_score() -> None:
+    batch = _make_simulation_batch()
+    config = _make_config()
+    results = pd.DataFrame({
+        "candidate_id": ["c0"],
+        "overall_score": ["not_numeric"],
+        "hard_constraint_passed": [True],
+    })
+
+    with pytest.raises(ValueError, match="overall_score"):
+        validate_simulation_results(results, batch, config)
+
+
+def test_validate_simulation_results_rejects_modified_parameters() -> None:
+    batch = _make_simulation_batch()
+    config = _make_config()
+    results = pd.DataFrame({
+        "candidate_id": ["c0"],
+        "overall_score": [85.0],
+        "hard_constraint_passed": [True],
+        "x1": [99.0],
+    })
+
+    with pytest.raises(ValueError, match="modified parameter"):
+        validate_simulation_results(results, batch, config)
+
+
+def test_validate_simulation_results_warns_for_extra_columns() -> None:
+    batch = _make_simulation_batch()
+    config = _make_config()
+    results = pd.DataFrame({
+        "candidate_id": ["c0"],
+        "overall_score": [85.0],
+        "hard_constraint_passed": [True],
+        "x1": [1.0],
+        "x2": [5.0],
+        "delay": [1.2],
+        "custom_metric": [0.4],
+    })
+
+    cleaned, report = validate_simulation_results(results, batch, config)
+
+    assert "custom_metric" in cleaned.columns
+    assert report["warnings"]

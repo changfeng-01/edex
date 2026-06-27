@@ -11,6 +11,21 @@ import pandas as pd
 from goa_eval.pia_ca_llso.simulation_contract import import_simulation_results
 
 
+NON_RESULT_CSV_ARTIFACTS = {
+    "simulation_batch.csv",
+    "offspring_candidates.csv",
+    "pia_selected_candidates.csv",
+    "imported_results.csv",
+}
+
+
+def _filter_result_files(files: list[str]) -> list[str]:
+    return [
+        f for f in files
+        if Path(f).name not in NON_RESULT_CSV_ARTIFACTS
+    ]
+
+
 def run_simulation_step(
     simulation_batch: pd.DataFrame,
     output_dir: Path,
@@ -46,20 +61,14 @@ def run_simulation_step(
     elif mode == "import_results":
         result_glob = exec_cfg.get("result_glob", "*.csv")
         result_files = sorted(glob.glob(str(output_dir / result_glob)))
-        result_files = [
-            f for f in result_files
-            if Path(f).name != "simulation_batch.csv"
-        ]
+        result_files = _filter_result_files(result_files)
 
         # Fallback: also look in configured simulation_results_dir
         results_dir = exec_cfg.get("simulation_results_dir")
         if not result_files and results_dir:
             fallback_pattern = str(Path(results_dir) / result_glob)
             result_files = sorted(glob.glob(fallback_pattern))
-            result_files = [
-                f for f in result_files
-                if Path(f).name != "simulation_batch.csv"
-            ]
+            result_files = _filter_result_files(result_files)
 
         if not result_files:
             return pd.DataFrame(), {
@@ -136,10 +145,7 @@ def run_simulation_step(
             )
 
         result_files = sorted(glob.glob(str(output_dir / result_glob)))
-        result_files = [
-            f for f in result_files
-            if Path(f).name != "simulation_batch.csv"
-        ]
+        result_files = _filter_result_files(result_files)
 
         if not result_files:
             raise RuntimeError(

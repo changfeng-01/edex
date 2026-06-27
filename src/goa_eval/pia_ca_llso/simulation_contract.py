@@ -14,6 +14,8 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+from goa_eval.pia_ca_llso.result_schema import validate_simulation_results
+
 
 def build_simulation_batch(
     selected: pd.DataFrame,
@@ -62,37 +64,25 @@ def import_simulation_results(
         return pd.DataFrame()
 
     try:
-        results = pd.read_csv(result_path)
-    except Exception:
-        return pd.DataFrame()
+        raw_results = pd.read_csv(result_path)
+    except Exception as exc:
+        raise ValueError(f"could not read simulation result CSV: {result_path}") from exc
 
-    required_cols = config.get("simulation_executor", {}).get(
-        "result_required_columns",
-        ["candidate_id", "overall_score", "hard_constraint_passed"],
+    results, validation_report = validate_simulation_results(
+        raw_results,
+        simulation_batch,
+        config,
     )
-
-    # Check required columns
-    missing = [c for c in required_cols if c not in results.columns]
-    if missing:
-        return pd.DataFrame()
-
-    # Keep only candidates in the simulation batch
-    batch_ids = set(simulation_batch["candidate_id"])
-    results = results[results["candidate_id"].isin(batch_ids)].copy()
 
     if len(results) == 0:
         return results
-
-    # Merge missing parameter columns from batch
-    for col in simulation_batch.columns:
-        if col not in results.columns and col != "candidate_id":
-            mapping = dict(zip(simulation_batch["candidate_id"], simulation_batch[col]))
-            results[col] = results["candidate_id"].map(mapping)
 
     # Set metadata
     results["generation"] = generation
     results["source"] = "simulation_result"
     results["data_source"] = "real_simulation_csv"
     results["engineering_validity"] = "simulation_only"
+    results["must_resimulate"] = False
+    results.attrs["validation_report"] = validation_report
 
     return results.reset_index(drop=True)
