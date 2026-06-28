@@ -1,0 +1,9 @@
+{
+  "source": "repository_sample_imported_simulation_csv",
+  "claim_boundary": "simulation-only fixture for case-pack validation smoke checks",
+  "physical_validation": false,
+  "notes": [
+    "This sample is for schema and reporting verification only.",
+    "Replace with externally generated simulator CSV rows for publication claims."
+  ]
+}

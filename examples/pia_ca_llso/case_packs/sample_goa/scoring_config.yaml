@@ -1,0 +1,5 @@
+target_score: 80
+primary_outcome: simulations_to_target
+secondary_outcomes:
+  - target_hit_rate
+  - convergence_auc
