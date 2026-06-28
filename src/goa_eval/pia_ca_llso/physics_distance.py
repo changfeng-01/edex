@@ -228,6 +228,8 @@ def normalize_distance(values: Sequence[float]) -> np.ndarray:
     if array.size == 0:
         return array
     finite = np.where(np.isfinite(array), array, np.nan)
+    if np.isnan(finite).all():
+        return np.zeros_like(array, dtype=float)
     min_value = np.nanmin(finite)
     max_value = np.nanmax(finite)
     if not np.isfinite(min_value) or not np.isfinite(max_value) or max_value == min_value:

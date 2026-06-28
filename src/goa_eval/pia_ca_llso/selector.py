@@ -14,6 +14,7 @@ from goa_eval.pia_ca_llso.physics_distance import (
     normalize_distance,
     physics_geodesic_distance_to_l1,
 )
+from goa_eval.pia_ca_llso.paper_baselines import PAPER_BASELINE_STRATEGIES, select_paper_baseline
 from goa_eval.pia_ca_llso.raw_distance import select_by_raw_distance
 from goa_eval.pia_ca_llso.schema import SelectionResult
 from goa_eval.pia_ca_llso.sklearn_baseline import predict_candidates, train_baseline_models
@@ -62,6 +63,9 @@ def select_candidates(
         selected = scored.head(top_k)
     elif strategy == "classifier_level_hybrid":
         scored = select_classifier_level_hybrid(candidates, history, top_k, config=config)
+        selected = scored.head(top_k)
+    elif strategy in PAPER_BASELINE_STRATEGIES:
+        scored = select_paper_baseline(candidates, history, strategy=strategy, top_k=top_k, config=config)
         selected = scored.head(top_k)
     else:
         raise ValueError(f"Unknown PIA selection strategy: {strategy}")
