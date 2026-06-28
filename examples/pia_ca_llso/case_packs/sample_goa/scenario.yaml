@@ -1,0 +1,18 @@
+scenario_id: sample_goa_case_pack
+history_csv: history.csv
+candidate_csv: candidate_pool.csv
+result_csv: simulation_results.csv
+scoring_config: scoring_config.yaml
+provenance: provenance.json
+methods:
+  - pia_full
+  - pia_no_repair
+  - paper_adaptive_constraint_eval
+seeds:
+  - 1
+top_k: 2
+target_score: 80
+evidence_boundary:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only
+  must_resimulate: true

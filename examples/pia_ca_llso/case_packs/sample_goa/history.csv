@@ -1,0 +1,4 @@
+sample_id,candidate_id,overall_score,hard_constraint_passed,C_boot,C_load,VGH,VGL,Vth_shift
+h1,hist_1,72.0,True,1.8,1.2,15.0,-5.0,1.4
+h2,hist_2,45.0,False,1.0,1.8,13.5,-4.5,2.6
+h3,hist_3,84.0,True,2.1,1.0,15.0,-5.0,1.1

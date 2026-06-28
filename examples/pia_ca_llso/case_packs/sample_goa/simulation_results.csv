@@ -1,0 +1,7 @@
+candidate_id,method,seed,budget_index,overall_score,hard_constraint_passed
+c1,pia_full,1,1,91.0,True
+c2,pia_full,1,2,78.0,True
+c2,pia_no_repair,1,1,78.0,True
+c3,pia_no_repair,1,2,35.0,False
+c2,paper_adaptive_constraint_eval,1,1,78.0,True
+c1,paper_adaptive_constraint_eval,1,2,91.0,True

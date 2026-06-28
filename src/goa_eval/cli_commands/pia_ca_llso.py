@@ -85,6 +85,10 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     validate.add_argument("--output-dir", default="outputs/pia_phase3_validation")
     validate.add_argument("--smoke", action="store_true")
     validate.add_argument("--max-runs", type=int, default=None)
+    validate.add_argument("--case-pack")
+    validate.add_argument("--case-pack-root")
+    validate.add_argument("--strict-evidence", action="store_true")
+    validate.add_argument("--export-case-pack-template", action="store_true")
     validate.set_defaults(handler=handle_pia_validate)
 
 
@@ -220,6 +224,26 @@ def handle_pia_evolve(args: argparse.Namespace) -> int:
 
 
 def handle_pia_validate(args: argparse.Namespace) -> int:
+    if args.export_case_pack_template:
+        from goa_eval.pia_ca_llso.case_pack import export_case_pack_template
+
+        output_dir = export_case_pack_template(args.output_dir)
+        print(str(output_dir.resolve()))
+        return 0
+    if args.case_pack or args.case_pack_root:
+        from goa_eval.pia_ca_llso.case_pack_validation import run_case_pack_validation
+
+        output_dir = ensure_output_dir(args.output_dir)
+        run_case_pack_validation(
+            args.case_pack,
+            args.case_pack_root,
+            output_dir,
+            strict_evidence=args.strict_evidence,
+            command_args=["pia-validate", *(_validation_command_args(args))],
+        )
+        print(str(output_dir.resolve()))
+        return 0
+
     from goa_eval.pia_ca_llso.scenario_registry import load_scenario
     from goa_eval.pia_ca_llso.validation_protocol import expand_validation_grid, load_validation_protocol
     from goa_eval.pia_ca_llso.validation_report import render_validation_report
@@ -298,3 +322,22 @@ def _select_validation_specs(
     if max_runs is not None:
         selected = selected[: int(max_runs)]
     return selected
+
+
+def _validation_command_args(args: argparse.Namespace) -> list[str]:
+    values = []
+    for name in [
+        "protocol",
+        "output_dir",
+        "case_pack",
+        "case_pack_root",
+    ]:
+        value = getattr(args, name, None)
+        if value:
+            values.extend([f"--{name.replace('_', '-')}", str(value)])
+    for name in ["smoke", "strict_evidence", "export_case_pack_template"]:
+        if getattr(args, name, False):
+            values.append(f"--{name.replace('_', '-')}")
+    if args.max_runs is not None:
+        values.extend(["--max-runs", str(args.max_runs)])
+    return values
