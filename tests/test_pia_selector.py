@@ -307,3 +307,63 @@ def test_classifier_level_hybrid_falls_back_when_training_data_is_insufficient()
     assert result.selected_candidates.loc[0, "model_status"] == "insufficient_data"
     assert result.selected_candidates.loc[0, "predicted_level"] == "L2"
     assert result.selected_candidates.loc[0, "diagnostic_status"] == "classifier_level_hybrid"
+
+
+def test_literature_ensemble_hybrid_exposes_paper_component_scores() -> None:
+    history = pd.DataFrame([
+        {
+            "sample_id": "h1", "level_label": "L1", "overall_score": 95, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.4, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.5, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+        {
+            "sample_id": "h2", "level_label": "L2", "overall_score": 78, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.1, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.7, "ron_pulldown_cload_proxy": 0.5,
+            "vgh_vth_margin": 2.1, "vgl_off_margin": 1.8, "clk_slew_proxy": 0.7,
+        },
+        {
+            "sample_id": "h3", "level_label": "L4", "overall_score": 25, "hard_constraint_passed": False,
+            "cboot_cload_ratio": 0.2, "pullup_pulldown_ratio": 2.5,
+            "ron_pullup_cload_proxy": 3.4, "ron_pulldown_cload_proxy": 3.2,
+            "vgh_vth_margin": 0.05, "vgl_off_margin": 0.1, "clk_slew_proxy": 1.8,
+        },
+    ])
+    candidates = pd.DataFrame([
+        {
+            "candidate_id": "paper_safe",
+            "p_l1": 0.92, "p_hard_pass": 0.88, "predicted_score": 93.0, "predicted_level": "L1",
+            "uncertainty": 0.12, "model_status": "ok",
+            "cboot_cload_ratio": 1.18, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.45, "ron_pulldown_cload_proxy": 0.45,
+            "vgh_vth_margin": 2.4, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.55,
+        },
+        {
+            "candidate_id": "paper_boundary",
+            "p_l1": 0.55, "p_hard_pass": 0.58, "predicted_score": 82.0, "predicted_level": "L2",
+            "uncertainty": 0.45, "model_status": "ok",
+            "cboot_cload_ratio": 1.0, "pullup_pulldown_ratio": 1.2,
+            "ron_pullup_cload_proxy": 0.9, "ron_pulldown_cload_proxy": 0.8,
+            "vgh_vth_margin": 1.8, "vgl_off_margin": 1.6, "clk_slew_proxy": 0.8,
+        },
+    ])
+
+    result = select_candidates(candidates, history, strategy="literature_ensemble_hybrid", top_k=2)
+
+    assert result.selected_candidates.iloc[0]["candidate_id"] == "paper_safe"
+    assert result.explanation_report["data_source"] == "real_simulation_csv"
+    assert result.explanation_report["engineering_validity"] == "simulation_only"
+    assert result.explanation_report["must_resimulate"] is True
+    for column in [
+        "deaoe_on_demand_priority",
+        "hrcea_rectification_score",
+        "aiea_influence_score",
+        "cesaea_relaxed_vote_score",
+        "eccoea_asaa_weighted_score",
+        "literature_ensemble_score",
+    ]:
+        assert column in result.all_candidates.columns
+    components = json.loads(result.all_candidates.iloc[0]["literature_components_json"])
+    assert set(components["weights"]) == {"deaoe", "hrcea", "aiea", "cesaea", "eccoea_asaa"}
+    assert result.model_report["paper_lineage"][0].startswith("DEAOE")

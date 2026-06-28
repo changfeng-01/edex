@@ -7,7 +7,7 @@ from goa_eval.pia_ca_llso.evaluation_scheduler import attach_evaluation_schedule
 from goa_eval.pia_ca_llso.features import extract_physics_features
 from goa_eval.pia_ca_llso.labeling import assign_level_labels
 from goa_eval.pia_ca_llso.physics_distance import FORBIDDEN_DISTANCE_COLUMNS
-from goa_eval.pia_ca_llso.selector import select_candidates
+from goa_eval.pia_ca_llso.selector import CLASSIFIER_REQUIRED_STRATEGIES, select_candidates
 from goa_eval.pia_ca_llso.sklearn_baseline import predict_candidates, train_baseline_models
 
 
@@ -29,8 +29,8 @@ def suggest_next_run(history: pd.DataFrame, candidates: pd.DataFrame, config: di
             repair_joined[column] = repair_features[column].values
         candidate_joined = pd.concat([candidate_joined, repair_joined], ignore_index=True, sort=False)
         repair_report["feature_report"] = repair_feature_report
-    classifier_report = {"enabled": strategy == "classifier_level_hybrid", "model_status": "not_used"}
-    if strategy == "classifier_level_hybrid":
+    classifier_report = {"enabled": strategy in CLASSIFIER_REQUIRED_STRATEGIES, "model_status": "not_used"}
+    if strategy in CLASSIFIER_REQUIRED_STRATEGIES:
         feature_cols = _shared_model_features(candidate_joined, history_joined)
         models = train_baseline_models(history_joined, feature_cols)
         candidate_joined = predict_candidates(models, candidate_joined, feature_cols)

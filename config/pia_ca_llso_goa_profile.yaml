@@ -112,6 +112,16 @@ adaptive_capm:
 classifier_level_hybrid:
   enabled: true
   min_history_rows: 4
+literature_ensemble_hybrid:
+  enabled: true
+  hrcea_alpha_cut: 0.65
+  cesaea_relaxation_margin: 0.10
+  weights:
+    deaoe: 0.22
+    hrcea: 0.22
+    aiea: 0.18
+    cesaea: 0.20
+    eccoea_asaa: 0.18
 evaluation_scheduler:
   enabled: true
   full_frame_top_k: 1
@@ -127,6 +137,7 @@ benchmark:
     - pia_capm_distance
     - adaptive_pia_capm
     - classifier_level_hybrid
+    - literature_ensemble_hybrid
 metadata:
   data_source: real_simulation_csv
   engineering_validity: simulation_only
