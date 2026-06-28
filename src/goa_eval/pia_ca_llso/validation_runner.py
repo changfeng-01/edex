@@ -101,17 +101,21 @@ def _compute_run_metrics(
     imported = history[history.get("source", pd.Series(dtype="object")).fillna("") == "simulation_result"].copy()
     imported_scores = pd.to_numeric(imported.get("overall_score", pd.Series(dtype="float64")), errors="coerce")
     initial_scores = pd.to_numeric(initial_history.get("overall_score", pd.Series(dtype="float64")), errors="coerce")
+    curve = _write_best_so_far_curve(run_dir, imported, spec)
+    curve_hits = curve["target_hit_so_far"].astype(bool) if "target_hit_so_far" in curve.columns else pd.Series(dtype=bool)
     best_score_final = evolution_summary.get("best_score")
-    if best_score_final is None and not imported_scores.dropna().empty:
+    curve_best = pd.to_numeric(curve.get("best_feasible_score", pd.Series(dtype="float64")), errors="coerce")
+    if best_score_final is None and not curve_best.dropna().empty:
+        best_score_final = float(curve_best.dropna().iloc[-1])
+    elif best_score_final is None and not imported_scores.dropna().empty:
         best_score_final = float(imported_scores.max())
     initial_best = float(initial_scores.max()) if not initial_scores.dropna().empty else 0.0
-    target_hits = imported_scores >= float(spec.target_score)
-    simulations_to_target = int(target_hits[target_hits].index[0] - imported.index[0] + 1) if target_hits.any() else None
-    cumulative_best = imported_scores.cummax().dropna()
+    simulations_to_target = int(curve.loc[curve_hits, "budget_index"].iloc[0]) if curve_hits.any() else None
+    cumulative_best = curve_best.dropna()
     hard_pass_rate = _mean_bool(imported.get("hard_constraint_passed", pd.Series(dtype="object")))
     return {
         "simulations_used": int(evolution_summary.get("simulations_used", len(imported))),
-        "target_hit": bool(evolution_summary.get("target_reached", False) or target_hits.any()),
+        "target_hit": bool(curve_hits.any()),
         "simulations_to_target": simulations_to_target,
         "best_score_final": best_score_final,
         "best_score_delta": (float(best_score_final) - initial_best) if best_score_final is not None else None,
@@ -119,6 +123,7 @@ def _compute_run_metrics(
         "hard_pass_rate": hard_pass_rate,
         "mean_constraint_violation": None if hard_pass_rate is None else 1.0 - hard_pass_rate,
         "invalid_result_rejection_count": 0,
+        "best_so_far_curve_path": str((run_dir / "best_so_far_curve.csv").relative_to(run_dir.parents[4])),
         "data_source": DATA_SOURCE,
         "engineering_validity": ENGINEERING_VALIDITY,
         "must_resimulate": True,
@@ -130,6 +135,32 @@ def _mean_bool(series: pd.Series) -> float | None:
         return None
     values = series.map(lambda value: str(value).strip().lower() in {"true", "1", "yes"})
     return float(values.mean())
+
+
+def _write_best_so_far_curve(run_dir: Path, imported: pd.DataFrame, spec: ValidationRunSpec) -> pd.DataFrame:
+    scores = pd.to_numeric(imported.get("overall_score", pd.Series(dtype="float64")), errors="coerce").reset_index(drop=True)
+    hard = _bool_series(imported.get("hard_constraint_passed", pd.Series(dtype="object"))).reset_index(drop=True)
+    feasible_scores = scores.where(hard)
+    best = feasible_scores.cummax()
+    curve = pd.DataFrame(
+        {
+            "budget_index": range(1, len(scores) + 1),
+            "best_feasible_score": best,
+            "target_hit_so_far": best.ge(float(spec.target_score)).fillna(False).astype(bool),
+            "hard_constraint_passed": hard,
+            "data_source": DATA_SOURCE,
+            "engineering_validity": ENGINEERING_VALIDITY,
+            "must_resimulate": True,
+        }
+    )
+    curve.to_csv(run_dir / "best_so_far_curve.csv", index=False)
+    return curve
+
+
+def _bool_series(series: pd.Series) -> pd.Series:
+    if series.empty:
+        return pd.Series(dtype=bool)
+    return series.map(lambda value: str(value).strip().lower() in {"true", "1", "yes"}).astype(bool)
 
 
 def _run_dir(output_root: Path, spec: ValidationRunSpec) -> Path:

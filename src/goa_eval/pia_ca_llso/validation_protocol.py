@@ -12,9 +12,12 @@ import yaml
 REQUIRED_METHODS = {
     "random",
     "ca_llso_raw_distance",
+    "pia_physics_distance",
     "pia_capm_distance",
     "adaptive_pia_capm",
     "classifier_level_hybrid",
+    "literature_ensemble_hybrid",
+    "sklearn_surrogate_baseline",
     "pia_evolve_full",
 }
 REQUIRED_ABLATIONS = {

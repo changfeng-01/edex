@@ -196,6 +196,24 @@ def test_same_budget_is_enforced_for_all_methods(tmp_path) -> None:
     assert summary["budget"].iloc[0] == 2
 
 
+def test_multi_scenario_runs_each_configured_budget(tmp_path) -> None:
+    direct_history, direct_candidates = _write_direct_scenario(tmp_path)
+    action_history, action_candidates = _write_720_action_scenario(tmp_path)
+    protocol = _protocol(tmp_path, direct_history, direct_candidates, action_history, action_candidates)
+    protocol.pop("top_k")
+    protocol["budgets"] = [1, 2]
+
+    result = run_multi_scenario_validation(protocol, tmp_path / "out")
+    runs = pd.read_csv(tmp_path / "out" / "multi_scenario_runs.csv")
+    summary = pd.read_csv(tmp_path / "out" / "multi_scenario_summary.csv")
+    win_rates = pd.read_csv(tmp_path / "out" / "multi_scenario_win_rates.csv")
+
+    assert result["budgets"] == [1, 2]
+    assert set(runs["budget"]) == {1, 2}
+    assert set(summary["budget"]) == {1, 2}
+    assert set(win_rates["budget"]) == {1, 2}
+
+
 def test_evidence_missing_scenarios_are_excluded_from_statistical_claims(tmp_path) -> None:
     direct_history, direct_candidates = _write_direct_scenario(tmp_path)
     action_history, action_candidates = _write_720_action_scenario(tmp_path)
@@ -253,9 +271,9 @@ def test_cli_pia_validate_multiscenario_smoke(tmp_path) -> None:
 def test_multi_scenario_win_rates_do_not_award_exact_ties() -> None:
     per_seed = pd.DataFrame(
         [
-            {"scenario_id": "s1", "seed": 1, "method": "pia_full", "target_hit_rate": 0.0, "convergence_auc": 0.0, "included_in_statistical_claim": True},
-            {"scenario_id": "s1", "seed": 1, "method": "pia_no_repair", "target_hit_rate": 0.0, "convergence_auc": 0.0, "included_in_statistical_claim": True},
-            {"scenario_id": "s1", "seed": 1, "method": "paper_adaptive_constraint_eval", "target_hit_rate": 0.0, "convergence_auc": 0.0, "included_in_statistical_claim": True},
+            {"scenario_id": "s1", "seed": 1, "budget": 2, "method": "pia_full", "target_hit_rate": 0.0, "convergence_auc": 0.0, "included_in_statistical_claim": True},
+            {"scenario_id": "s1", "seed": 1, "budget": 2, "method": "pia_no_repair", "target_hit_rate": 0.0, "convergence_auc": 0.0, "included_in_statistical_claim": True},
+            {"scenario_id": "s1", "seed": 1, "budget": 2, "method": "paper_adaptive_constraint_eval", "target_hit_rate": 0.0, "convergence_auc": 0.0, "included_in_statistical_claim": True},
         ]
     )
 
