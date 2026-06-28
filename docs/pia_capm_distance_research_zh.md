@@ -6,6 +6,8 @@
 
 **Constraint-Aware Physics-Manifold Distance，约束感知物理流形距离**。
 
+PIA-CA-LLSO 的统一问题定义、目标层区分、完整公式和闭环伪代码见 `docs/pia_ca_llso_formal_method_zh.md`。本文档只保留 CAPM-Distance 的研究解释和消融建议；若二者表述有差异，以正式方法定义文档为准。
+
 它面向“无训练数据或极少训练数据”的 GOA 显示驱动电路候选筛选场景。它不是一个训练模型，也不是 SPICE 替代品，而是一个仿真前候选排序 proxy，用来把下一轮仿真预算优先分配给物理上更合理、约束风险更低、离已知 L1 区域更近的候选。
 
 证据边界必须保持：
