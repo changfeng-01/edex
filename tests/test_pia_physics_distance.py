@@ -26,6 +26,10 @@ def test_physics_distance_computes_weighted_distance_and_matrix() -> None:
     assert normalize_distance([2, 4]).tolist() == [0.0, 1.0]
 
 
+def test_normalize_distance_handles_all_infinite_values_without_warning() -> None:
+    assert normalize_distance([float("inf"), float("inf")]).tolist() == [0.0, 0.0]
+
+
 def test_capm_distance_adds_constraint_barrier_and_missing_feature_penalty() -> None:
     safe = {
         "cboot_cload_ratio": 1.2,

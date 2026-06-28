@@ -11,6 +11,8 @@ from goa_eval.pia_ca_llso.integration import CandidateAdapter, HistoryAdapter
 from goa_eval.pia_ca_llso.io import ensure_output_dir, read_config, write_json, write_markdown
 from goa_eval.pia_ca_llso.labeling import assign_level_labels, summarize_label_distribution
 from goa_eval.pia_ca_llso.loop import suggest_next_run
+from goa_eval.pia_ca_llso.multi_scenario_validation import run_multi_scenario_validation
+from goa_eval.pia_ca_llso.paper_reproduction import DEFAULT_REPRODUCTION_METHODS, run_paper_reproduction_benchmark
 from goa_eval.pia_ca_llso.report import render_candidate_report
 from goa_eval.pia_ca_llso.training_data import build_training_data_from_db
 from goa_eval.pia_ca_llso.validation_protocol import ValidationRunSpec
@@ -83,7 +85,15 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     validate = subparsers.add_parser("pia-validate", help="Run PIA-CA-LLSO Phase 3 validation experiments")
     validate.add_argument("--protocol", default="config/pia_ca_llso_validation_protocol.yaml")
     validate.add_argument("--output-dir", default="outputs/pia_phase3_validation")
+    validate.add_argument("--history-csv")
+    validate.add_argument("--candidate-csv")
+    validate.add_argument("--config")
+    validate.add_argument("--methods")
+    validate.add_argument("--seeds")
+    validate.add_argument("--target-score", type=float)
+    validate.add_argument("--top-k", type=int)
     validate.add_argument("--smoke", action="store_true")
+    validate.add_argument("--multi-scenario", action="store_true")
     validate.add_argument("--max-runs", type=int, default=None)
     validate.add_argument("--case-pack")
     validate.add_argument("--case-pack-root")
@@ -224,6 +234,23 @@ def handle_pia_evolve(args: argparse.Namespace) -> int:
 
 
 def handle_pia_validate(args: argparse.Namespace) -> int:
+    output_dir = ensure_output_dir(args.output_dir)
+    if args.multi_scenario:
+        protocol = read_config(args.protocol)
+        config_path = args.config or protocol.get("config") or "config/pia_ca_llso_goa_profile.yaml"
+        summary = run_multi_scenario_validation(
+            protocol,
+            output_dir,
+            seeds=_parse_seed_list(args.seeds) if args.seeds else None,
+            methods=_resolve_validation_methods(args.methods, protocol) if args.methods else None,
+            top_k=args.top_k,
+            target_score=args.target_score,
+            config=read_config(config_path),
+        )
+        write_json(output_dir / "pia_validation_summary.json", summary)
+        print(str(output_dir.resolve()))
+        return 0
+
     if args.export_case_pack_template:
         from goa_eval.pia_ca_llso.case_pack import export_case_pack_template
 
@@ -251,7 +278,6 @@ def handle_pia_validate(args: argparse.Namespace) -> int:
     from goa_eval.pia_ca_llso.validation_statistics import compute_pairwise_win_rates, summarize_validation_runs
 
     protocol = load_validation_protocol(args.protocol)
-    output_dir = ensure_output_dir(args.output_dir)
     specs = expand_validation_grid(protocol)
     specs = _select_validation_specs(specs, protocol, smoke=args.smoke, max_runs=args.max_runs)
     scenario_entries = {
@@ -293,8 +319,33 @@ def handle_pia_validate(args: argparse.Namespace) -> int:
         output_dir / "experimental_validation_report.md",
         render_validation_report(protocol, run_frame, summary_frame, win_rate_frame),
     )
+    if args.smoke:
+        _run_paper_reproduction_sidecar(args, protocol, output_dir)
     print(str(output_dir.resolve()))
     return 0
+
+
+def _run_paper_reproduction_sidecar(args: argparse.Namespace, protocol: dict, output_dir: Path) -> None:
+    scenario = _resolve_validation_scenario(protocol, smoke=args.smoke)
+    history_csv = args.history_csv or scenario.get("history_csv") or protocol.get("history_csv")
+    candidate_csv = args.candidate_csv or scenario.get("candidate_csv") or protocol.get("candidate_csv")
+    if not history_csv or not candidate_csv:
+        return
+    config_path = args.config or scenario.get("config") or protocol.get("config") or "config/pia_ca_llso_goa_profile.yaml"
+    history = HistoryAdapter().load(history_csv)
+    candidates = CandidateAdapter().load(candidate_csv)
+    target_score = float(args.target_score if args.target_score is not None else protocol.get("target_score", 80.0))
+    top_k = int(args.top_k if args.top_k is not None else protocol.get("top_k", 4))
+    methods = _resolve_validation_methods(args.methods, protocol, smoke=args.smoke)
+    run_paper_reproduction_benchmark(
+        history,
+        candidates,
+        output_dir,
+        methods=methods,
+        target_score=target_score,
+        top_k=top_k,
+        config=read_config(config_path),
+    )
 
 
 def _select_validation_specs(
@@ -341,3 +392,33 @@ def _validation_command_args(args: argparse.Namespace) -> list[str]:
     if args.max_runs is not None:
         values.extend(["--max-runs", str(args.max_runs)])
     return values
+
+
+def _resolve_validation_scenario(protocol: dict, smoke: bool) -> dict:
+    scenarios = protocol.get("smoke_scenarios" if smoke else "scenarios", [])
+    if isinstance(scenarios, list) and scenarios:
+        first = scenarios[0]
+        return first if isinstance(first, dict) else {}
+    scenarios = protocol.get("scenarios", [])
+    if isinstance(scenarios, list) and scenarios:
+        first = scenarios[0]
+        return first if isinstance(first, dict) else {}
+    return {}
+
+
+def _resolve_validation_methods(methods_arg: str | None, protocol: dict, smoke: bool = False) -> list[str]:
+    if methods_arg:
+        return [method.strip() for method in methods_arg.split(",") if method.strip()]
+    if smoke:
+        smoke_methods = protocol.get("smoke_methods")
+        if isinstance(smoke_methods, list) and smoke_methods:
+            return [str(method) for method in smoke_methods]
+    configured = protocol.get("methods")
+    if isinstance(configured, list) and configured and not smoke:
+        return [str(method) for method in configured]
+    return list(DEFAULT_REPRODUCTION_METHODS)
+
+
+def _parse_seed_list(value: str) -> list[int]:
+    seeds = [int(item.strip()) for item in value.split(",") if item.strip()]
+    return seeds or [42]
