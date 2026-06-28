@@ -38,6 +38,21 @@ CLASSIFIER_HYBRID_WEIGHTS = {
     "diversity_score": 0.05,
 }
 
+LITERATURE_ENSEMBLE_STRATEGIES = {
+    "literature_ensemble_hybrid",
+    "deaoe_hrcea_aiea_cesaea_eccoea_asaa",
+}
+
+CLASSIFIER_REQUIRED_STRATEGIES = {"classifier_level_hybrid", *LITERATURE_ENSEMBLE_STRATEGIES}
+
+LITERATURE_ENSEMBLE_WEIGHTS = {
+    "deaoe": 0.22,
+    "hrcea": 0.22,
+    "aiea": 0.18,
+    "cesaea": 0.20,
+    "eccoea_asaa": 0.18,
+}
+
 
 def select_candidates(
     candidates: pd.DataFrame,
@@ -64,6 +79,9 @@ def select_candidates(
     elif strategy == "classifier_level_hybrid":
         scored = select_classifier_level_hybrid(candidates, history, top_k, config=config)
         selected = scored.head(top_k)
+    elif strategy in LITERATURE_ENSEMBLE_STRATEGIES:
+        scored = select_literature_ensemble_hybrid(candidates, history, top_k, config=config)
+        selected = scored.head(top_k)
     elif strategy in PAPER_BASELINE_STRATEGIES:
         scored = select_paper_baseline(candidates, history, strategy=strategy, top_k=top_k, config=config)
         selected = scored.head(top_k)
@@ -74,6 +92,15 @@ def select_candidates(
     model_report: dict[str, object] = {"strategy": strategy, "selected_count": int(len(selected))}
     if strategy == "classifier_level_hybrid":
         model_report["classifier_model_status"] = _model_status(scored)
+    if strategy in LITERATURE_ENSEMBLE_STRATEGIES:
+        model_report["classifier_model_status"] = _model_status(scored)
+        model_report["paper_lineage"] = [
+            "DEAOE:on-demand constraint evaluation",
+            "HRCEA:hybrid regressor/classifier feasibility gate",
+            "AIEA:influence degree and uncertainty-first scheduling",
+            "CESAEA:relaxed classifier ensemble",
+            "ECCoEA-ASAA:adaptive surrogate weighting and aggregation",
+        ]
     return SelectionResult(
         selected_candidates=selected,
         all_candidates=scored,
@@ -250,6 +277,134 @@ def select_classifier_level_hybrid(
     ).head(top_k)
 
 
+def select_literature_ensemble_hybrid(
+    candidates: pd.DataFrame,
+    history: pd.DataFrame,
+    top_k: int = 4,
+    config: Mapping[str, Any] | None = None,
+) -> pd.DataFrame:
+    """Paper-inspired ensemble gate for the PIA outer-loop skeleton.
+
+    The columns deliberately expose each paper influence so reports can audit
+    why a candidate was scheduled for simulation.
+    """
+    feature_cols = _shared_numeric_columns(candidates, history)
+    predicted = _ensure_classifier_predictions(candidates, history, feature_cols)
+    capm = select_capm_distance(
+        predicted,
+        history,
+        top_k=max(len(predicted), top_k),
+        config=config,
+        diagnostic_status="literature_ensemble_hybrid",
+    ).copy()
+    p_l1 = _bounded_series(capm.get("p_l1", pd.Series(0.0, index=capm.index)))
+    p_hard = _bounded_series(capm.get("p_hard_pass", pd.Series(0.0, index=capm.index)))
+    predicted_score = _bounded_series(capm.get("predicted_score", pd.Series(0.0, index=capm.index)))
+    uncertainty = _bounded_series(capm.get("uncertainty", pd.Series(0.5, index=capm.index)), default=0.5)
+    distance = 1.0 - _bounded_series(capm["capm_distance_to_l1_normalized"])
+    diversity = _bounded_series(capm["diversity_score"])
+    hard_mask = capm["capm_hard_risk_passed"].astype(float).clip(0.0, 1.0)
+    barrier_pressure = _normalized_positive_series(capm.get("capm_barrier_score", pd.Series(0.0, index=capm.index)))
+    best_score = _bounded(history["overall_score"].max()) if "overall_score" in history.columns and not history.empty else 0.0
+    predicted_improvement = (predicted_score - best_score).clip(0.0, 1.0)
+
+    literature_cfg = _nested_config(config, "literature_ensemble_hybrid")
+    alpha_cut = float(literature_cfg.get("hrcea_alpha_cut", 0.65))
+    relaxation_margin = float(literature_cfg.get("cesaea_relaxation_margin", 0.10))
+
+    joint_sample_promise = (
+        0.40 * predicted_score
+        + 0.25 * p_l1
+        + 0.20 * distance
+        + 0.15 * diversity
+    ).clip(0.0, 1.0)
+    capm["deaoe_constraint_urgency"] = (
+        0.55 * (1.0 - p_hard)
+        + 0.30 * barrier_pressure
+        + 0.15 * uncertainty
+    ).clip(0.0, 1.0)
+    capm["deaoe_on_demand_priority"] = (
+        joint_sample_promise * (0.75 + 0.25 * capm["deaoe_constraint_urgency"])
+    ).clip(0.0, 1.0)
+
+    boundary_focus = (1.0 - (p_hard - 0.5).abs() * 2.0).clip(0.0, 1.0)
+    capm["hrcea_alpha_gate_passed"] = pd.Series(
+        [(bool(p >= alpha_cut) or bool(hard)) for p, hard in zip(p_hard, hard_mask.astype(bool))],
+        index=capm.index,
+        dtype="object",
+    )
+    capm["hrcea_rectification_score"] = (
+        0.42 * p_hard
+        + 0.22 * (1.0 - uncertainty)
+        + 0.20 * distance
+        + 0.16 * boundary_focus
+    ).clip(0.0, 1.0)
+    capm.loc[~capm["hrcea_alpha_gate_passed"].astype(bool), "hrcea_rectification_score"] *= 0.80
+
+    capm["aiea_uncertainty_need"] = (uncertainty * (0.50 + 0.50 * p_l1)).clip(0.0, 1.0)
+    capm["aiea_influence_score"] = (
+        0.45 * predicted_improvement
+        + 0.30 * diversity
+        + 0.15 * distance
+        + 0.10 * capm["aiea_uncertainty_need"]
+    ).clip(0.0, 1.0)
+
+    classifier_vote = (p_l1 + p_hard + predicted_score) / 3.0
+    relaxed_vote = classifier_vote.copy()
+    relaxable = (hard_mask.astype(bool)) & (classifier_vote >= max(alpha_cut - relaxation_margin, 0.0))
+    relaxed_vote.loc[relaxable] = (relaxed_vote.loc[relaxable] + relaxation_margin).clip(0.0, 1.0)
+    capm["cesaea_relaxed_vote_score"] = (
+        0.72 * relaxed_vote
+        + 0.18 * hard_mask
+        + 0.10 * (1.0 - uncertainty)
+    ).clip(0.0, 1.0)
+
+    heterogeneity = _feature_heterogeneity(history, feature_cols)
+    sample_weight = (0.55 + 0.45 * (1.0 - uncertainty)).clip(0.0, 1.0)
+    aggregation_trust = min(max(0.55 + 0.20 * _history_pass_rate(history) + 0.25 * (1.0 - heterogeneity), 0.0), 1.0)
+    capm["eccoea_asaa_sample_weight"] = sample_weight
+    capm["eccoea_asaa_aggregation_trust"] = aggregation_trust
+    capm["eccoea_asaa_weighted_score"] = (
+        aggregation_trust
+        * sample_weight
+        * (0.40 * capm["cesaea_relaxed_vote_score"] + 0.30 * distance + 0.30 * diversity)
+    ).clip(0.0, 1.0)
+
+    weights = _literature_ensemble_weights(config)
+    capm["literature_ensemble_score"] = (
+        weights["deaoe"] * capm["deaoe_on_demand_priority"]
+        + weights["hrcea"] * capm["hrcea_rectification_score"]
+        + weights["aiea"] * capm["aiea_influence_score"]
+        + weights["cesaea"] * capm["cesaea_relaxed_vote_score"]
+        + weights["eccoea_asaa"] * capm["eccoea_asaa_weighted_score"]
+    ).clip(0.0, 1.0)
+    capm["acquisition_score"] = capm["literature_ensemble_score"]
+    capm["literature_components_json"] = [
+        json.dumps(
+            {
+                "deaoe_on_demand_priority": float(row["deaoe_on_demand_priority"]),
+                "deaoe_constraint_urgency": float(row["deaoe_constraint_urgency"]),
+                "hrcea_rectification_score": float(row["hrcea_rectification_score"]),
+                "hrcea_alpha_gate_passed": bool(row["hrcea_alpha_gate_passed"]),
+                "aiea_influence_score": float(row["aiea_influence_score"]),
+                "aiea_uncertainty_need": float(row["aiea_uncertainty_need"]),
+                "cesaea_relaxed_vote_score": float(row["cesaea_relaxed_vote_score"]),
+                "eccoea_asaa_weighted_score": float(row["eccoea_asaa_weighted_score"]),
+                "eccoea_asaa_aggregation_trust": float(row["eccoea_asaa_aggregation_trust"]),
+                "weights": weights,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        for _, row in capm.iterrows()
+    ]
+    capm["diagnostic_status"] = "literature_ensemble_hybrid"
+    return capm.sort_values(
+        ["literature_ensemble_score", "hrcea_alpha_gate_passed", "capm_hard_risk_passed", "candidate_id"],
+        ascending=[False, False, False, True],
+    ).head(top_k)
+
+
 def assign_candidate_roles(selected: pd.DataFrame) -> pd.DataFrame:
     output = selected.copy()
     output["selected_rank"] = range(1, len(output) + 1)
@@ -294,6 +449,18 @@ def _bounded(value: Any, default: float = 0.0) -> float:
     if numeric > 1.0:
         numeric = numeric / 100.0
     return float(min(max(numeric, 0.0), 1.0))
+
+
+def _bounded_series(values: pd.Series, default: float = 0.0) -> pd.Series:
+    return values.map(lambda value: _bounded(value, default=default)).astype(float)
+
+
+def _normalized_positive_series(values: pd.Series) -> pd.Series:
+    numeric = pd.to_numeric(values, errors="coerce").fillna(0.0).clip(lower=0.0)
+    max_value = float(numeric.max()) if not numeric.empty else 0.0
+    if max_value <= 0.0:
+        return pd.Series(0.0, index=values.index, dtype="float64")
+    return (numeric / max_value).clip(0.0, 1.0)
 
 
 def _shared_numeric_columns(left: pd.DataFrame, right: pd.DataFrame) -> list[str]:
@@ -371,6 +538,40 @@ def _adaptive_acquisition_weights(history: pd.DataFrame, config: Mapping[str, An
     if "level_label" in history.columns and int((history["level_label"] == "L1").sum()) >= int(adaptive_config.get("l1_distance_boost_min_count", 2)):
         weights.update({"distance": max(weights["distance"], 0.50), "diversity": 0.20})
     return _normalize_acquisition_weights(weights)
+
+
+def _literature_ensemble_weights(config: Mapping[str, Any] | None = None) -> dict[str, float]:
+    nested = _nested_config(config, "literature_ensemble_hybrid")
+    configured = nested.get("weights", {}) if isinstance(nested.get("weights", {}), Mapping) else {}
+    weights = {
+        key: float(configured.get(key, LITERATURE_ENSEMBLE_WEIGHTS[key]))
+        for key in LITERATURE_ENSEMBLE_WEIGHTS
+    }
+    total = sum(weights.values()) or 1.0
+    return {key: value / total for key, value in weights.items()}
+
+
+def _history_pass_rate(history: pd.DataFrame) -> float:
+    hard_col = "hard_constraint_passed" if "hard_constraint_passed" in history.columns else "hard_pass"
+    if hard_col not in history.columns or history.empty:
+        return 0.5
+    return float(history[hard_col].astype(bool).mean())
+
+
+def _feature_heterogeneity(history: pd.DataFrame, feature_cols: Sequence[str]) -> float:
+    if history.empty or not feature_cols:
+        return 0.5
+    ratios: list[float] = []
+    for col in feature_cols:
+        values = pd.to_numeric(history[col], errors="coerce").dropna()
+        if len(values) < 2:
+            continue
+        mean_abs = abs(float(values.mean()))
+        std = float(values.std(skipna=True) or 0.0)
+        ratios.append(min(std / max(mean_abs, 1e-9), 1.0))
+    if not ratios:
+        return 0.5
+    return float(sum(ratios) / len(ratios))
 
 
 def _normalize_acquisition_weights(weights: Mapping[str, float]) -> dict[str, float]:
