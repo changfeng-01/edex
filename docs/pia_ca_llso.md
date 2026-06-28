@@ -9,6 +9,8 @@ The module targets candidate selection under limited simulation budget. It keeps
 - data_source = real_simulation_csv
 - engineering_validity = simulation_only
 
+For the formal paper-facing definition of the problem, objectives, formulas, CAPM-Distance, acquisition functions, and end-to-end pseudocode, use `docs/pia_ca_llso_formal_method_zh.md` as the single source of terminology. In particular, `overall_score` is the single-run simulation score, `objective_score` is the profile-weighted scoring objective, `acquisition_score` is the next-run simulation priority, and `simulations_to_target` is the validation outcome.
+
 ## 2. CA-LLSO Baseline
 
 The baseline follows classifier-assisted LLSO style candidate selection: classify candidate levels, find predicted L1-like candidates, then rank by raw parameter-space distance to known L1 samples.

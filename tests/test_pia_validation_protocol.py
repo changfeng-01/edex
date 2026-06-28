@@ -15,6 +15,9 @@ def test_validation_protocol_loads_required_methods_and_ablation_settings() -> N
     protocol = load_validation_protocol("config/pia_ca_llso_validation_protocol.yaml")
 
     assert protocol["primary_outcome"] == "simulations_to_target"
+    assert "pia_physics_distance" in protocol["methods"]
+    assert "literature_ensemble_hybrid" in protocol["methods"]
+    assert "sklearn_surrogate_baseline" in protocol["methods"]
     assert "pia_evolve_full" in protocol["methods"]
     assert "no_llso_offspring" in protocol["ablations"]
 
@@ -36,9 +39,12 @@ def test_validation_protocol_expands_budget_seed_scenario_grid() -> None:
         "methods": [
             "random",
             "ca_llso_raw_distance",
+            "pia_physics_distance",
             "pia_capm_distance",
             "adaptive_pia_capm",
             "classifier_level_hybrid",
+            "literature_ensemble_hybrid",
+            "sklearn_surrogate_baseline",
             "pia_evolve_full",
         ],
         "ablations": [
@@ -60,7 +66,7 @@ def test_validation_protocol_expands_budget_seed_scenario_grid() -> None:
 
     specs = expand_validation_grid(protocol)
 
-    assert len(specs) == 168
+    assert len(specs) == 252
     assert specs[0].scenario_id == "sample_goa"
     assert specs[0].target_score == 80
 

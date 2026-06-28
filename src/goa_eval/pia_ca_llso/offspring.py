@@ -118,7 +118,7 @@ def generate_llso_offspring(
     # Fallback if no teachers
     if len(teacher_pool) == 0:
         if "hard_constraint_passed" in history.columns and "overall_score" in history.columns:
-            teacher_pool = history[history["hard_constraint_passed"] == True].nlargest(
+            teacher_pool = history[history["hard_constraint_passed"].eq(True)].nlargest(
                 max(2, len(history) // 2), "overall_score"
             )
         if len(teacher_pool) == 0:

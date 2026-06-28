@@ -45,10 +45,25 @@ def render_validation_report(
         "- boundary_audit_passed",
         "- invalid_result_rejection_count",
         "",
-        "## Results summary",
+        "## Per-run details",
+        _table(_select_columns(run_frame, [
+            "scenario_id",
+            "method",
+            "ablation",
+            "seed",
+            "budget",
+            "target_hit",
+            "simulations_to_target",
+            "best_score_final",
+            "convergence_auc",
+            "hard_pass_rate",
+            "best_so_far_curve_path",
+        ])),
+        "",
+        "## Method scenario budget summary",
         _table(summary_frame),
         "",
-        "## Pairwise win rates",
+        "## Pairwise matrix win rates",
         _table(win_rate_frame),
         "",
         "## Failure cases",
@@ -101,6 +116,13 @@ def _table(frame: pd.DataFrame) -> str:
     for _, row in text_frame.iterrows():
         rows.append("| " + " | ".join(str(row[column]) for column in columns) + " |")
     return "\n".join(rows)
+
+
+def _select_columns(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    present = [column for column in columns if column in frame.columns]
+    return frame[present] if present else frame
 
 
 def _failure_cases(run_frame: pd.DataFrame) -> str:

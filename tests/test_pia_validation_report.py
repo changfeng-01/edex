@@ -68,6 +68,14 @@ def test_validation_report_includes_ablation_table() -> None:
     assert "capm_only" in report
 
 
+def test_validation_report_separates_run_summary_and_pairwise_tables() -> None:
+    report = render_validation_report(_protocol(), _run_frame(), _summary_frame(), pd.DataFrame())
+
+    assert "Per-run details" in report
+    assert "Method scenario budget summary" in report
+    assert "Pairwise matrix win rates" in report
+
+
 def test_validation_report_includes_boundary_statement() -> None:
     report = render_validation_report(_protocol(), _run_frame(), _summary_frame(), pd.DataFrame())
 
