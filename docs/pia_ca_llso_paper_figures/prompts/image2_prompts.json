@@ -1,0 +1,54 @@
+[
+  {
+    "figure_id": "fig01",
+    "output_file": "figures/fig01_graphical_abstract.png",
+    "model": "gpt-image-2",
+    "purpose": "label-light graphical abstract base image; deterministic Python overlays provide final labels",
+    "prompt": "Publication-quality graphical abstract for a simulation-only GOA circuit optimization paper. Clean white background, left-to-right workflow: historical real_simulation_csv samples and candidate designs, physics feature mapping phi(x), CAPM-Distance physics manifold, PIA-CA-LLSO selector, next-run simulation batch, imported simulation results, evidence audit. Modern scientific schematic, colorblind-safe blue green orange palette, minimal text placeholders, no photorealistic lab hardware, no claim of silicon validation.",
+    "status": "gpt-image-2 prompt recorded; final repository figure uses deterministic label overlay",
+    "boundary": {
+      "data_source": "real_simulation_csv",
+      "engineering_validity": "simulation_only",
+      "must_resimulate": true
+    }
+  },
+  {
+    "figure_id": "fig02",
+    "output_file": "figures/fig02_closed_loop_architecture.png",
+    "model": "gpt-image-2",
+    "purpose": "label-light closed-loop architecture base image; deterministic Python overlays provide final labels",
+    "prompt": "Journal-quality systems architecture diagram for PIA-CA-LLSO closed-loop optimizer. Show modules as clean blocks: history CSV, level labeling L1 L2 L3 L4, LLSO offspring generation, repair candidates, PIA selector, simulation batch, offline or external simulator, result import, resume state, boundary audit. Arrows form a closed loop. Use professional vector-like style, white background, subtle circuit-grid motif, minimal text placeholders.",
+    "status": "gpt-image-2 prompt recorded; final repository figure uses deterministic label overlay",
+    "boundary": {
+      "data_source": "real_simulation_csv",
+      "engineering_validity": "simulation_only",
+      "must_resimulate": true
+    }
+  },
+  {
+    "figure_id": "fig03",
+    "output_file": "figures/fig03_capm_physics_manifold.png",
+    "model": "gpt-image-2",
+    "purpose": "label-light physics manifold base image; deterministic Python overlays provide final labels",
+    "prompt": "Conceptual scientific diagram of constraint-aware physics manifold distance for GOA circuit optimization. Show raw parameter space on the left transformed to physics feature space phi(x) on the right. In the physics manifold, show an L1 basin, candidate points, soft barrier risk region, geodesic path around risky region, missing-feature uncertainty halo. Clean academic style, colorblind-safe, no dense labels, no 3D clutter.",
+    "status": "gpt-image-2 prompt recorded; final repository figure uses deterministic label overlay",
+    "boundary": {
+      "data_source": "real_simulation_csv",
+      "engineering_validity": "simulation_only",
+      "must_resimulate": true
+    }
+  },
+  {
+    "figure_id": "fig04",
+    "output_file": "figures/fig04_acquisition_ensemble.png",
+    "model": "gpt-image-2",
+    "purpose": "label-light acquisition ensemble base image; deterministic Python overlays provide final labels",
+    "prompt": "Publication schematic for candidate acquisition ensemble. Central candidate x receives evidence from CAPM distance, adaptive physics weights, classifier probabilities p_L1 and p_hard, diversity, uncertainty, and literature-inspired ensemble components DEAOE HRCEA AIEA CESAEA ECCoEA-ASAA. These combine into acquisition score A(x), then top-k next-run simulation suggestions. Clean block diagram, white background, professional journal style, minimal text placeholders.",
+    "status": "gpt-image-2 prompt recorded; final repository figure uses deterministic label overlay",
+    "boundary": {
+      "data_source": "real_simulation_csv",
+      "engineering_validity": "simulation_only",
+      "must_resimulate": true
+    }
+  }
+]

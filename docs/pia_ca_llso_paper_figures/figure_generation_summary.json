@@ -1,0 +1,37 @@
+{
+  "boundary": {
+    "data_source": "real_simulation_csv",
+    "engineering_validity": "simulation_only",
+    "must_resimulate": true
+  },
+  "evidence_role": "sample_smoke_visualization",
+  "sources": {
+    "formal_method": "docs/pia_ca_llso_formal_method_zh.md",
+    "sample_history": "examples/pia_ca_llso/sample_history.csv",
+    "sample_candidates": "examples/pia_ca_llso/sample_candidates.csv",
+    "sample_results": "examples/pia_ca_llso/case_packs/sample_goa/simulation_results.csv",
+    "validation_summary": "not_found",
+    "ablation_summary": "outputs/pia_capm_benchmark/pia_ablation_summary.json",
+    "selected_candidates": "outputs/pia_capm_suggest/pia_selected_candidates.csv"
+  },
+  "generated_files": [
+    "docs/pia_ca_llso_paper_figures/figure_captions_zh.md",
+    "docs/pia_ca_llso_paper_figures/figure_manifest.md",
+    "docs/pia_ca_llso_paper_figures/figures/fig01_graphical_abstract.pdf",
+    "docs/pia_ca_llso_paper_figures/figures/fig01_graphical_abstract.png",
+    "docs/pia_ca_llso_paper_figures/figures/fig02_closed_loop_architecture.pdf",
+    "docs/pia_ca_llso_paper_figures/figures/fig02_closed_loop_architecture.png",
+    "docs/pia_ca_llso_paper_figures/figures/fig03_capm_physics_manifold.pdf",
+    "docs/pia_ca_llso_paper_figures/figures/fig03_capm_physics_manifold.png",
+    "docs/pia_ca_llso_paper_figures/figures/fig04_acquisition_ensemble.pdf",
+    "docs/pia_ca_llso_paper_figures/figures/fig04_acquisition_ensemble.png",
+    "docs/pia_ca_llso_paper_figures/figures/fig05_strategy_benchmark.pdf",
+    "docs/pia_ca_llso_paper_figures/figures/fig05_strategy_benchmark.png",
+    "docs/pia_ca_llso_paper_figures/figures/fig06_ablation_and_boundary.pdf",
+    "docs/pia_ca_llso_paper_figures/figures/fig06_ablation_and_boundary.png",
+    "docs/pia_ca_llso_paper_figures/figures/fig07_candidate_acquisition_diagnostics.pdf",
+    "docs/pia_ca_llso_paper_figures/figures/fig07_candidate_acquisition_diagnostics.png",
+    "docs/pia_ca_llso_paper_figures/prompts/image2_prompts.json",
+    "docs/pia_ca_llso_paper_figures/README.md"
+  ]
+}
