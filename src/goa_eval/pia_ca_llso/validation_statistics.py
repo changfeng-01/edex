@@ -20,6 +20,7 @@ def summarize_validation_runs(run_summaries: list[dict]) -> pd.DataFrame:
     for key, group in grouped:
         target_times = pd.to_numeric(group["simulations_to_target"], errors="coerce")
         best_scores = pd.to_numeric(group["best_score_final"], errors="coerce")
+        best_ci = bootstrap_mean_ci(best_scores.dropna().tolist())
         hit_values = group["target_hit"].astype(float)
         auc_values = pd.to_numeric(group["convergence_auc"], errors="coerce")
         hard_values = pd.to_numeric(group["hard_pass_rate"], errors="coerce")
@@ -35,13 +36,18 @@ def summarize_validation_runs(run_summaries: list[dict]) -> pd.DataFrame:
                 "target_hit_rate_ci_low": target_low,
                 "target_hit_rate_ci_high": target_high,
                 "best_score_mean": _mean(best_scores),
+                "best_score_median": _median(best_scores),
                 "best_score_std": _std(best_scores),
+                "best_score_ci_low": best_ci[0],
+                "best_score_ci_high": best_ci[1],
                 "best_score_var": _var(best_scores),
                 "simulations_to_target_mean": _mean(target_times),
                 "simulations_to_target_median": _median(target_times),
+                "simulations_to_target_std": _std(target_times),
                 "simulations_to_target_ci_low": target_times_low,
                 "simulations_to_target_ci_high": target_times_high,
                 "convergence_auc_mean": _mean(auc_values),
+                "convergence_auc_median": _median(auc_values),
                 "convergence_auc_std": _std(auc_values),
                 "convergence_auc_var": _var(auc_values),
                 "convergence_auc_ci_low": auc_low,
@@ -51,6 +57,7 @@ def summarize_validation_runs(run_summaries: list[dict]) -> pd.DataFrame:
                 "hard_pass_rate_var": _var(hard_values),
                 "hard_pass_rate_ci_low": hard_low,
                 "hard_pass_rate_ci_high": hard_high,
+                "not_evaluable_count": int((group.get("evidence_status", pd.Series(index=group.index, dtype="object")) == "not_evaluable").sum()),
                 "boundary_audit_pass_rate": float(group["boundary_audit_passed"].astype(bool).mean()),
                 "data_source": "real_simulation_csv",
                 "engineering_validity": "simulation_only",

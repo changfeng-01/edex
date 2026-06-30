@@ -7,10 +7,13 @@ import pandas as pd
 
 from goa_eval.pia_ca_llso.benchmark import run_ablation_benchmark, run_closed_loop_benchmark
 from goa_eval.pia_ca_llso.boundary_audit import audit_evolution_outputs
+from goa_eval.pia_ca_llso.formal_audit import write_audit_tables, write_formal_source_lock
 from goa_eval.pia_ca_llso.integration import CandidateAdapter, HistoryAdapter
 from goa_eval.pia_ca_llso.io import ensure_output_dir, read_config, write_json, write_markdown
 from goa_eval.pia_ca_llso.labeling import assign_level_labels, summarize_label_distribution
+from goa_eval.pia_ca_llso.leakage import leakage_audit_rows
 from goa_eval.pia_ca_llso.loop import suggest_next_run
+from goa_eval.pia_ca_llso.method_registry import method_registry_records
 from goa_eval.pia_ca_llso.multi_scenario_validation import run_multi_scenario_validation
 from goa_eval.pia_ca_llso.paper_reproduction import DEFAULT_REPRODUCTION_METHODS, run_paper_reproduction_benchmark
 from goa_eval.pia_ca_llso.report import render_candidate_report
@@ -286,9 +289,13 @@ def handle_pia_validate(args: argparse.Namespace) -> int:
     }
     scenario_cache: dict[str, dict] = {}
     run_summaries = []
+    leakage_rows = []
     for spec in specs:
         if spec.scenario_id not in scenario_cache:
             scenario_cache[spec.scenario_id] = load_scenario(scenario_entries[spec.scenario_id])
+            leakage_rows.extend(
+                leakage_audit_rows(spec.scenario_id, scenario_cache[spec.scenario_id]["candidates"])
+            )
         run_summaries.append(
             run_validation_spec(
                 spec,
@@ -301,9 +308,16 @@ def handle_pia_validate(args: argparse.Namespace) -> int:
     run_frame = pd.DataFrame(run_summaries)
     summary_frame = summarize_validation_runs(run_summaries)
     win_rate_frame = compute_pairwise_win_rates(run_frame, baseline="random")
+    fairness_frame, leakage_frame, scenario_frame = write_audit_tables(
+        output_dir,
+        run_summaries=run_summaries,
+        scenario_bundles=scenario_cache,
+        leakage_rows=leakage_rows,
+    )
     run_frame.to_csv(output_dir / "validation_runs.csv", index=False)
     summary_frame.to_csv(output_dir / "validation_summary.csv", index=False)
     win_rate_frame.to_csv(output_dir / "pairwise_win_rates.csv", index=False)
+    write_json(output_dir / "method_registry.json", {"methods": method_registry_records()})
     write_json(
         output_dir / "validation_summary.json",
         {
@@ -313,11 +327,25 @@ def handle_pia_validate(args: argparse.Namespace) -> int:
             "engineering_validity": "simulation_only",
             "must_resimulate": True,
             "summary": summary_frame.to_dict(orient="records"),
+            "fairness_audit_rows": len(fairness_frame),
+            "leakage_audit_passed": bool(leakage_frame["leakage_check_passed"].all()) if not leakage_frame.empty else True,
+            "scenario_count": len(scenario_frame),
         },
     )
     write_markdown(
         output_dir / "experimental_validation_report.md",
         render_validation_report(protocol, run_frame, summary_frame, win_rate_frame),
+    )
+    write_markdown(
+        output_dir / "formal_validation_report.md",
+        render_validation_report(protocol, run_frame, summary_frame, win_rate_frame, formal=True),
+    )
+    write_formal_source_lock(
+        output_dir,
+        protocol=protocol,
+        run_summaries=run_summaries,
+        scenario_bundles=scenario_cache,
+        command_args=["pia-validate", *(_validation_command_args(args))],
     )
     if args.smoke:
         _run_paper_reproduction_sidecar(args, protocol, output_dir)
@@ -336,7 +364,11 @@ def _run_paper_reproduction_sidecar(args: argparse.Namespace, protocol: dict, ou
     candidates = CandidateAdapter().load(candidate_csv)
     target_score = float(args.target_score if args.target_score is not None else protocol.get("target_score", 80.0))
     top_k = int(args.top_k if args.top_k is not None else protocol.get("top_k", 4))
-    methods = _resolve_validation_methods(args.methods, protocol, smoke=args.smoke)
+    methods = [
+        method
+        for method in _resolve_validation_methods(args.methods, protocol, smoke=args.smoke)
+        if method in DEFAULT_REPRODUCTION_METHODS
+    ] or list(DEFAULT_REPRODUCTION_METHODS)
     run_paper_reproduction_benchmark(
         history,
         candidates,
@@ -358,6 +390,9 @@ def _select_validation_specs(
     if smoke:
         first_scenario = str(protocol["scenarios"][0]["scenario_id"])
         first_two_seeds = {int(seed) for seed in protocol["seeds"][:2]}
+        smoke_ablations = {
+            str(ablation) for ablation in protocol.get("smoke_ablations", ["full"])
+        }
         selected = [
             ValidationRunSpec(
                 scenario_id=spec.scenario_id,
@@ -368,7 +403,12 @@ def _select_validation_specs(
                 target_score=spec.target_score,
             )
             for spec in specs
-            if spec.scenario_id == first_scenario and spec.seed in first_two_seeds and spec.budget == protocol["budgets"][0]
+            if (
+                spec.scenario_id == first_scenario
+                and spec.seed in first_two_seeds
+                and spec.budget == protocol["budgets"][0]
+                and spec.ablation in smoke_ablations
+            )
         ]
     if max_runs is not None:
         selected = selected[: int(max_runs)]

@@ -15,10 +15,15 @@ def test_validation_protocol_loads_required_methods_and_ablation_settings() -> N
     protocol = load_validation_protocol("config/pia_ca_llso_validation_protocol.yaml")
 
     assert protocol["primary_outcome"] == "simulations_to_target"
+    assert protocol["validation_profile"] == "formal"
+    assert protocol["budgets"] == [10, 20, 50, 100, 200]
+    assert len(protocol["seeds"]) == 20
     assert "pia_physics_distance" in protocol["methods"]
     assert "literature_ensemble_hybrid" in protocol["methods"]
     assert "sklearn_surrogate_baseline" in protocol["methods"]
+    assert "paper_ca_llso" in protocol["methods"]
     assert "pia_evolve_full" in protocol["methods"]
+    assert "no_capm_barrier" in protocol["ablations"]
     assert "no_llso_offspring" in protocol["ablations"]
 
 

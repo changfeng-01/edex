@@ -39,6 +39,8 @@ def test_validation_runner_writes_run_manifest_and_summary(tmp_path) -> None:
     assert (run_dir / "run_manifest.json").exists()
     assert (run_dir / "run_summary.json").exists()
     assert (run_dir / "best_so_far_curve.csv").exists()
+    assert summary["result_source"] == "best_so_far_curve.csv"
+    assert summary["evidence_status"] in {"evaluable", "not_evaluable"}
     assert summary["best_so_far_curve_path"].endswith("best_so_far_curve.csv")
 
 
@@ -69,6 +71,16 @@ def test_validation_runner_separates_method_and_ablation_labels(tmp_path) -> Non
     assert summary["method"] == "random"
     assert summary["ablation"] == "capm_only"
     assert summary["strategy"] == "random"
+
+
+def test_validation_runner_rejects_candidate_result_leakage(tmp_path) -> None:
+    import pytest
+
+    bundle = load_scenario("examples/pia_ca_llso/scenarios/sample_goa.yaml")
+    bundle["candidates"] = bundle["candidates"].assign(overall_score=[1] * len(bundle["candidates"]))
+
+    with pytest.raises(ValueError, match="leakage"):
+        run_validation_spec(_spec(), bundle, tmp_path, smoke=True)
 
 
 def test_validation_runner_simulations_to_target_matches_best_so_far_curve(tmp_path) -> None:

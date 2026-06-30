@@ -6,6 +6,7 @@ from typing import Any, Callable, Mapping, Sequence
 import pandas as pd
 
 from goa_eval.pia_ca_llso.acquisition import attach_acquisition_scores, compute_diversity, explain_acquisition
+from goa_eval.pia_ca_llso.leakage import FORMAL_RESULT_LEAKAGE_COLUMNS
 from goa_eval.pia_ca_llso.physics_distance import (
     FORBIDDEN_DISTANCE_COLUMNS,
     GOA_DEFAULT_WEIGHTS,
@@ -75,6 +76,9 @@ def select_candidates(
         selected = scored.head(top_k)
     elif strategy == "adaptive_pia_capm":
         scored = select_adaptive_capm_distance(candidates, history, top_k, config=config)
+        selected = scored.head(top_k)
+    elif strategy == "sklearn_surrogate_baseline":
+        scored = select_sklearn_surrogate_baseline(candidates, history, top_k, config=config)
         selected = scored.head(top_k)
     elif strategy == "classifier_level_hybrid":
         scored = select_classifier_level_hybrid(candidates, history, top_k, config=config)
@@ -299,6 +303,36 @@ def select_classifier_level_hybrid(
     capm["diagnostic_status"] = "classifier_level_hybrid"
     return capm.sort_values(
         ["classifier_hybrid_score", "capm_hard_risk_passed", "p_l1", "candidate_id"],
+        ascending=[False, False, False, True],
+    ).head(top_k)
+
+
+def select_sklearn_surrogate_baseline(
+    candidates: pd.DataFrame,
+    history: pd.DataFrame,
+    top_k: int = 4,
+    config: Mapping[str, Any] | None = None,
+) -> pd.DataFrame:
+    safe_candidates = candidates.drop(
+        columns=[column for column in FORMAL_RESULT_LEAKAGE_COLUMNS if column in candidates.columns],
+        errors="ignore",
+    )
+    feature_cols = _shared_numeric_columns(safe_candidates, history)
+    output = predict_candidates(train_baseline_models(history, feature_cols), safe_candidates, feature_cols)
+    predicted_score = _bounded_series(output.get("predicted_score", pd.Series(0.0, index=output.index)))
+    p_hard = _bounded_series(output.get("p_hard_pass", pd.Series(0.5, index=output.index)), default=0.5)
+    uncertainty = _bounded_series(output.get("uncertainty", pd.Series(0.5, index=output.index)), default=0.5)
+    output = _attach_diversity(output, feature_cols)
+    output["surrogate_baseline_score"] = (
+        0.55 * predicted_score
+        + 0.25 * p_hard
+        + 0.10 * output["diversity_score"].astype(float)
+        + 0.10 * uncertainty
+    ).clip(0.0, 1.0)
+    output["acquisition_score"] = output["surrogate_baseline_score"]
+    output["diagnostic_status"] = "sklearn_surrogate_baseline"
+    return output.sort_values(
+        ["surrogate_baseline_score", "p_hard_pass", "predicted_score", "candidate_id"],
         ascending=[False, False, False, True],
     ).head(top_k)
 
