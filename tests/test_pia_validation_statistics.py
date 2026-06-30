@@ -48,6 +48,8 @@ def test_statistics_compute_mean_std_and_hit_rate() -> None:
     assert row["best_score_mean"] == 88.0
     assert row["boundary_audit_pass_rate"] == 1.0
     assert row["engineering_validity"] == "simulation_only"
+    assert "simulations_to_target_ci_low" in frame.columns
+    assert "best_score_ci_high" in frame.columns
 
 
 def test_statistics_compute_convergence_auc_from_curve() -> None:

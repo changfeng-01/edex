@@ -32,6 +32,18 @@ def build_ablation_config(base_config: dict, ablation: str) -> tuple[dict, str]:
         _set_enabled(config, "repair_candidates", False)
         _set_enabled(config, "evaluation_scheduler", False)
         return config, "pia_capm_distance"
+    if ablation == "no_capm_barrier":
+        config.setdefault("capm_distance", {})["barrier_enabled"] = False
+        return config, strategy
+    if ablation == "no_capm_geodesic":
+        config.setdefault("capm_distance", {})["geodesic_enabled"] = False
+        return config, strategy
+    if ablation == "no_capm_coupling":
+        config.setdefault("capm_distance", {})["coupling_enabled"] = False
+        return config, strategy
+    if ablation == "no_missing_penalty":
+        config.setdefault("capm_distance", {})["missing_penalty_enabled"] = False
+        return config, strategy
     raise ValueError(f"Unknown PIA validation ablation: {ablation}")
 
 

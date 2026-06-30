@@ -20,17 +20,32 @@ def summarize_validation_runs(run_summaries: list[dict]) -> pd.DataFrame:
     for key, group in grouped:
         target_times = pd.to_numeric(group["simulations_to_target"], errors="coerce")
         best_scores = pd.to_numeric(group["best_score_final"], errors="coerce")
+        target_ci = bootstrap_mean_ci(target_times.dropna().tolist())
+        best_ci = bootstrap_mean_ci(best_scores.dropna().tolist())
+        auc_values = pd.to_numeric(group["convergence_auc"], errors="coerce")
+        auc_ci = bootstrap_mean_ci(auc_values.dropna().tolist())
         rows.append(
             {
                 **dict(zip(GROUP_COLUMNS, key)),
                 "run_count": int(len(group)),
                 "target_hit_rate": float(group["target_hit"].mean()),
                 "best_score_mean": _mean(best_scores),
+                "best_score_median": _median(best_scores),
                 "best_score_std": _std(best_scores),
+                "best_score_ci_low": best_ci[0],
+                "best_score_ci_high": best_ci[1],
                 "simulations_to_target_mean": _mean(target_times),
                 "simulations_to_target_median": _median(target_times),
-                "convergence_auc_mean": _mean(pd.to_numeric(group["convergence_auc"], errors="coerce")),
+                "simulations_to_target_std": _std(target_times),
+                "simulations_to_target_ci_low": target_ci[0],
+                "simulations_to_target_ci_high": target_ci[1],
+                "convergence_auc_mean": _mean(auc_values),
+                "convergence_auc_median": _median(auc_values),
+                "convergence_auc_std": _std(auc_values),
+                "convergence_auc_ci_low": auc_ci[0],
+                "convergence_auc_ci_high": auc_ci[1],
                 "hard_pass_rate_mean": _mean(pd.to_numeric(group["hard_pass_rate"], errors="coerce")),
+                "not_evaluable_count": int((group.get("evidence_status", pd.Series(index=group.index, dtype="object")) == "not_evaluable").sum()),
                 "boundary_audit_pass_rate": float(group["boundary_audit_passed"].astype(bool).mean()),
                 "data_source": "real_simulation_csv",
                 "engineering_validity": "simulation_only",

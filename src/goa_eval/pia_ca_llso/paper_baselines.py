@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from goa_eval.pia_ca_llso.physics_distance import FORBIDDEN_DISTANCE_COLUMNS
+from goa_eval.pia_ca_llso.leakage import FORMAL_RESULT_LEAKAGE_COLUMNS
 from goa_eval.pia_ca_llso.sklearn_baseline import predict_candidates, train_baseline_models
 
 
@@ -21,6 +22,7 @@ CLAIM_BOUNDARY = "not_original_paper_benchmark_reproduction"
 
 RESULT_LEAKAGE_COLUMNS = {
     *FORBIDDEN_DISTANCE_COLUMNS,
+    *FORMAL_RESULT_LEAKAGE_COLUMNS,
     "real_score",
     "target_hit",
     "simulation_result",
