@@ -6,6 +6,7 @@ from typing import Any, Callable, Mapping, Sequence
 import pandas as pd
 
 from goa_eval.pia_ca_llso.acquisition import attach_acquisition_scores, compute_diversity, explain_acquisition
+from goa_eval.pia_ca_llso.leakage import FORMAL_RESULT_LEAKAGE_COLUMNS
 from goa_eval.pia_ca_llso.physics_distance import (
     FORBIDDEN_DISTANCE_COLUMNS,
     GOA_DEFAULT_WEIGHTS,
@@ -82,6 +83,9 @@ def select_candidates(
     elif strategy == "classifier_level_hybrid":
         scored = select_classifier_level_hybrid(candidates, history, top_k, config=config)
         selected = scored.head(top_k)
+    elif strategy == "sklearn_surrogate_baseline":
+        scored = select_sklearn_surrogate_baseline(candidates, history, top_k)
+        selected = scored.head(top_k)
     elif strategy in LITERATURE_ENSEMBLE_STRATEGIES:
         scored = select_literature_ensemble_hybrid(candidates, history, top_k, config=config)
         selected = scored.head(top_k)
@@ -96,7 +100,7 @@ def select_candidates(
     if strategy == "classifier_level_hybrid":
         model_report["classifier_model_status"] = _model_status(scored)
     if strategy == "sklearn_surrogate_baseline":
-        model_report["classifier_model_status"] = _model_status(scored)
+        model_report["surrogate_model_status"] = _model_status(scored)
     if strategy in LITERATURE_ENSEMBLE_STRATEGIES:
         model_report["classifier_model_status"] = _model_status(scored)
         model_report["paper_lineage"] = [
@@ -137,6 +141,27 @@ def select_physics_distance(candidates: pd.DataFrame, history: pd.DataFrame, top
     output = _attach_diversity(output, feature_cols)
     output = attach_acquisition_scores(output)
     return output.sort_values("acquisition_score", ascending=False).head(top_k)
+
+
+def select_sklearn_surrogate_baseline(candidates: pd.DataFrame, history: pd.DataFrame, top_k: int = 4) -> pd.DataFrame:
+    safe_candidates = _drop_result_columns(candidates)
+    feature_cols = _shared_numeric_columns(safe_candidates, history)
+    output = predict_candidates(train_baseline_models(history, feature_cols), safe_candidates, feature_cols)
+    output = _attach_diversity(output, feature_cols)
+    output["surrogate_score_component"] = _bounded_series(output["predicted_score"], default=50.0)
+    output["surrogate_hard_component"] = _bounded_series(output["p_hard_pass"], default=0.5)
+    output["surrogate_uncertainty_component"] = _bounded_series(output["uncertainty"], default=0.5)
+    output["acquisition_score"] = (
+        0.45 * output["surrogate_score_component"]
+        + 0.25 * output["surrogate_hard_component"]
+        + 0.20 * output["surrogate_uncertainty_component"]
+        + 0.10 * output["diversity_score"].astype(float)
+    ).clip(0.0, 1.0)
+    output["diagnostic_status"] = "sklearn_surrogate_baseline"
+    output["data_source"] = "real_simulation_csv"
+    output["engineering_validity"] = "simulation_only"
+    output["must_resimulate"] = True
+    return output.sort_values(["acquisition_score", "candidate_id"], ascending=[False, True]).head(top_k)
 
 
 def select_capm_distance(
@@ -288,8 +313,12 @@ def select_sklearn_surrogate_baseline(
     top_k: int = 4,
     config: Mapping[str, Any] | None = None,
 ) -> pd.DataFrame:
-    feature_cols = _shared_numeric_columns(candidates, history)
-    output = predict_candidates(train_baseline_models(history, feature_cols), candidates, feature_cols)
+    safe_candidates = candidates.drop(
+        columns=[column for column in FORMAL_RESULT_LEAKAGE_COLUMNS if column in candidates.columns],
+        errors="ignore",
+    )
+    feature_cols = _shared_numeric_columns(safe_candidates, history)
+    output = predict_candidates(train_baseline_models(history, feature_cols), safe_candidates, feature_cols)
     predicted_score = _bounded_series(output.get("predicted_score", pd.Series(0.0, index=output.index)))
     p_hard = _bounded_series(output.get("p_hard_pass", pd.Series(0.5, index=output.index)), default=0.5)
     uncertainty = _bounded_series(output.get("uncertainty", pd.Series(0.5, index=output.index)), default=0.5)
@@ -500,6 +529,11 @@ def _shared_numeric_columns(left: pd.DataFrame, right: pd.DataFrame) -> list[str
         for col in left.columns
         if col in right.columns and col not in FORBIDDEN_DISTANCE_COLUMNS and pd.api.types.is_numeric_dtype(left[col])
     ]
+
+
+def _drop_result_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    drop_columns = [column for column in frame.columns if column in FORBIDDEN_DISTANCE_COLUMNS and column != "candidate_id"]
+    return frame.drop(columns=drop_columns, errors="ignore")
 
 
 def _history_label_columns(history: pd.DataFrame) -> list[str]:

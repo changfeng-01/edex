@@ -13,7 +13,7 @@ from goa_eval.pia_ca_llso.io import ensure_output_dir, read_config, write_json, 
 from goa_eval.pia_ca_llso.labeling import assign_level_labels, summarize_label_distribution
 from goa_eval.pia_ca_llso.leakage import leakage_audit_rows
 from goa_eval.pia_ca_llso.loop import suggest_next_run
-from goa_eval.pia_ca_llso.method_registry import PAIRWISE_BASELINES, method_registry_records
+from goa_eval.pia_ca_llso.method_registry import method_registry_records
 from goa_eval.pia_ca_llso.multi_scenario_validation import run_multi_scenario_validation
 from goa_eval.pia_ca_llso.paper_reproduction import DEFAULT_REPRODUCTION_METHODS, run_paper_reproduction_benchmark
 from goa_eval.pia_ca_llso.report import render_candidate_report
@@ -307,13 +307,7 @@ def handle_pia_validate(args: argparse.Namespace) -> int:
 
     run_frame = pd.DataFrame(run_summaries)
     summary_frame = summarize_validation_runs(run_summaries)
-    win_rate_frames = [
-        compute_pairwise_win_rates(run_frame, baseline=baseline)
-        for baseline in PAIRWISE_BASELINES
-        if baseline in set(run_frame.get("method", pd.Series(dtype="object")))
-    ]
-    non_empty_win_rate_frames = [frame for frame in win_rate_frames if not frame.empty]
-    win_rate_frame = pd.concat(non_empty_win_rate_frames, ignore_index=True) if non_empty_win_rate_frames else pd.DataFrame()
+    win_rate_frame = compute_pairwise_win_rates(run_frame, baseline="random")
     fairness_frame, leakage_frame, scenario_frame = write_audit_tables(
         output_dir,
         run_summaries=run_summaries,

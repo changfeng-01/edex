@@ -65,6 +65,7 @@ def run_multi_scenario_validation(
     seeds: Sequence[int] | None = None,
     methods: Sequence[str] | None = None,
     top_k: int | None = None,
+    budgets: Sequence[int] | None = None,
     target_score: float | None = None,
     config: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -72,7 +73,7 @@ def run_multi_scenario_validation(
     out.mkdir(parents=True, exist_ok=True)
     active_seeds = list(seeds or protocol.get("seeds") or DEFAULT_MULTI_SCENARIO_SEEDS)
     active_methods = list(methods or protocol.get("methods") or DEFAULT_MULTI_SCENARIO_METHODS)
-    budget = int(top_k if top_k is not None else protocol.get("top_k", 4))
+    active_budgets = _resolve_budgets(protocol, top_k=top_k, budgets=budgets)
     target = float(target_score if target_score is not None else protocol.get("target_score", 80.0))
     scenarios = [materialize_validation_scenario(item) for item in protocol.get("scenarios", [])]
     if not scenarios:
@@ -83,34 +84,35 @@ def run_multi_scenario_validation(
     for scenario in scenarios:
         for seed in active_seeds:
             seeded_candidates = _seed_candidates(scenario.candidates, int(seed))
-            for method in active_methods:
-                selected = _select_multiscenario_method(method, scenario.history, seeded_candidates, top_k=budget, config=config)
-                selected = _attach_imported_evidence(selected, scenario.evidence)
-                selected["scenario_id"] = scenario.scenario_id
-                selected["seed"] = int(seed)
-                selected["method"] = method
-                selected["budget"] = budget
-                selected["budget_index"] = range(1, len(selected) + 1)
-                selected["evidence_available"] = scenario.evidence_available
-                selected["included_in_statistical_claim"] = bool(scenario.evidence_available)
-                selected["sparse_history"] = scenario.sparse_history
-                selected["data_source"] = "real_simulation_csv"
-                selected["engineering_validity"] = "simulation_only"
-                selected["must_resimulate"] = True
-                metrics = _method_metrics(selected, target_score=target)
-                method_summary_rows.append(
-                    {
-                        "scenario_id": scenario.scenario_id,
-                        "seed": int(seed),
-                        "method": method,
-                        "budget": budget,
-                        "evidence_available": scenario.evidence_available,
-                        "included_in_statistical_claim": bool(scenario.evidence_available),
-                        "sparse_history": scenario.sparse_history,
-                        **{key: value for key, value in metrics.items() if key != "convergence_curve"},
-                    }
-                )
-                run_rows.extend(selected.to_dict("records"))
+            for budget in active_budgets:
+                for method in active_methods:
+                    selected = _select_multiscenario_method(method, scenario.history, seeded_candidates, top_k=budget, config=config)
+                    selected = _attach_imported_evidence(selected, scenario.evidence)
+                    selected["scenario_id"] = scenario.scenario_id
+                    selected["seed"] = int(seed)
+                    selected["method"] = method
+                    selected["budget"] = int(budget)
+                    selected["budget_index"] = range(1, len(selected) + 1)
+                    selected["evidence_available"] = scenario.evidence_available
+                    selected["included_in_statistical_claim"] = bool(scenario.evidence_available)
+                    selected["sparse_history"] = scenario.sparse_history
+                    selected["data_source"] = "real_simulation_csv"
+                    selected["engineering_validity"] = "simulation_only"
+                    selected["must_resimulate"] = True
+                    metrics = _method_metrics(selected, target_score=target)
+                    method_summary_rows.append(
+                        {
+                            "scenario_id": scenario.scenario_id,
+                            "seed": int(seed),
+                            "method": method,
+                            "budget": int(budget),
+                            "evidence_available": scenario.evidence_available,
+                            "included_in_statistical_claim": bool(scenario.evidence_available),
+                            "sparse_history": scenario.sparse_history,
+                            **{key: value for key, value in metrics.items() if key != "convergence_curve"},
+                        }
+                    )
+                    run_rows.extend(selected.to_dict("records"))
 
     runs = pd.DataFrame(run_rows)
     per_seed = pd.DataFrame(method_summary_rows)
@@ -136,7 +138,8 @@ def run_multi_scenario_validation(
         "seed_count": len(active_seeds),
         "methods": active_methods,
         "target_score": target,
-        "top_k": budget,
+        "budgets": active_budgets,
+        "top_k": active_budgets[0] if len(active_budgets) == 1 else None,
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
         "must_resimulate": True,
@@ -200,9 +203,12 @@ def render_multi_scenario_report(
             f"{float(row.get('target_hit_rate_mean', 0.0)):.3f} | {float(row.get('target_hit_rate_std', 0.0)):.3f} | "
             f"{float(row.get('convergence_auc_mean', 0.0)):.3f} | {float(row.get('convergence_auc_std', 0.0)):.3f} |"
         )
-    lines.extend(["", "## Win Rates", "", "| Method | Win Rate | Scenario Wins |", "|---|---:|---:|"])
+    lines.extend(["", "## Win Rates", "", "| Method | Budget | Win Rate | Scenario Wins |", "|---|---:|---:|---:|"])
     for _, row in win_rates.iterrows():
-        lines.append(f"| {row['method']} | {float(row.get('win_rate', 0.0)):.3f} | {int(row.get('scenario_wins', 0))} |")
+        lines.append(
+            f"| {row['method']} | {int(row.get('budget', 0))} | "
+            f"{float(row.get('win_rate', 0.0)):.3f} | {int(row.get('scenario_wins', 0))} |"
+        )
     lines.extend(["", "## Majority Vote", "", _markdown_table(majority) if not majority.empty else "No evidence-backed scenarios."])
     lines.extend(["", "## No Repair Ablation", "", _markdown_table(no_repair) if not no_repair.empty else "No evidence-backed no-repair comparison."])
     lines.extend(
@@ -223,7 +229,7 @@ def _select_multiscenario_method(
     top_k: int,
     config: Mapping[str, Any] | None,
 ) -> pd.DataFrame:
-    if method == "pia_full":
+    if method in {"pia_full", "pia_evolve_full"}:
         return _select_method("classifier_level_hybrid", history, candidates, candidates, top_k=top_k, config=config)
     if method == "pia_no_repair":
         no_repair_config = copy.deepcopy(dict(config or {}))
@@ -238,13 +244,13 @@ def _select_multiscenario_method(
 def _aggregate_summary(per_seed: pd.DataFrame) -> pd.DataFrame:
     rows = []
     metrics = ["target_hit_rate", "convergence_auc", "best_evidence_score", "mean_acquisition_score"]
-    group_cols = ["scenario_id", "method"]
-    for (scenario_id, method), group in per_seed.groupby(group_cols, dropna=False):
+    group_cols = ["scenario_id", "method", "budget"]
+    for (scenario_id, method, budget), group in per_seed.groupby(group_cols, dropna=False):
         row: dict[str, Any] = {
             "scenario_id": scenario_id,
             "method": method,
+            "budget": int(budget),
             "seed_count": int(group["seed"].nunique()),
-            "budget": int(group["budget"].iloc[0]) if not group.empty else 0,
             "evidence_available": bool(group["evidence_available"].all()),
             "included_in_statistical_claim": bool(group["included_in_statistical_claim"].all()),
             "sparse_history": bool(group["sparse_history"].all()),
@@ -267,14 +273,17 @@ def _aggregate_summary(per_seed: pd.DataFrame) -> pd.DataFrame:
 def _multi_scenario_win_rates(per_seed: pd.DataFrame) -> pd.DataFrame:
     evidence = per_seed[per_seed["included_in_statistical_claim"].astype(bool)].copy()
     methods = sorted(per_seed["method"].dropna().unique())
-    wins = {method: 0 for method in methods}
-    totals = {method: 0 for method in methods}
-    for scenario_id, scenario_group in evidence.groupby("scenario_id"):
+    budgets = sorted(int(value) for value in per_seed["budget"].dropna().unique())
+    wins = {(method, budget): 0 for method in methods for budget in budgets}
+    totals = {(method, budget): 0 for method in methods for budget in budgets}
+    for (scenario_id, budget), scenario_group in evidence.groupby(["scenario_id", "budget"], dropna=False):
+        budget_int = int(budget)
         scores = []
         for method, group in scenario_group.groupby("method"):
             scores.append(
                 {
                     "method": method,
+                    "budget": budget_int,
                     "target_hit_rate": float(pd.to_numeric(group["target_hit_rate"], errors="coerce").mean()),
                     "convergence_auc": float(pd.to_numeric(group["convergence_auc"], errors="coerce").mean()),
                 }
@@ -282,23 +291,25 @@ def _multi_scenario_win_rates(per_seed: pd.DataFrame) -> pd.DataFrame:
         if not scores:
             continue
         for method in methods:
-            totals[method] += 1
+            totals[(method, budget_int)] += 1
         best_hit = max(row["target_hit_rate"] for row in scores)
         best_auc = max(row["convergence_auc"] for row in scores if row["target_hit_rate"] == best_hit)
         winners = [row["method"] for row in scores if row["target_hit_rate"] == best_hit and row["convergence_auc"] == best_auc]
         if len(winners) == 1:
-            wins[winners[0]] += 1
+            wins[(winners[0], budget_int)] += 1
     return pd.DataFrame(
         [
             {
                 "method": method,
-                "scenario_wins": int(wins[method]),
-                "scenario_comparisons": int(totals[method]),
-                "win_rate": float(wins[method] / totals[method]) if totals[method] else 0.0,
+                "budget": int(budget),
+                "scenario_wins": int(wins[(method, budget)]),
+                "scenario_comparisons": int(totals[(method, budget)]),
+                "win_rate": float(wins[(method, budget)] / totals[(method, budget)]) if totals[(method, budget)] else 0.0,
                 "data_source": "real_simulation_csv",
                 "engineering_validity": "simulation_only",
                 "must_resimulate": True,
             }
+            for budget in budgets
             for method in methods
         ]
     )
@@ -306,29 +317,33 @@ def _multi_scenario_win_rates(per_seed: pd.DataFrame) -> pd.DataFrame:
 
 def _majority_vote(win_rates: pd.DataFrame) -> pd.DataFrame:
     if win_rates.empty:
-        return pd.DataFrame(columns=["method", "majority_scenario_win_rate", "majority_winner"])
+        return pd.DataFrame(columns=["method", "budget", "majority_scenario_win_rate", "majority_winner"])
     rows = []
-    max_rate = float(win_rates["win_rate"].max())
-    for _, row in win_rates.iterrows():
-        rate = float(row["win_rate"])
-        rows.append(
-            {
-                "method": row["method"],
-                "majority_scenario_win_rate": rate,
-                "majority_winner": bool(rate == max_rate and rate > 0.5),
-                "data_source": "real_simulation_csv",
-                "engineering_validity": "simulation_only",
-                "must_resimulate": True,
-            }
-        )
+    for budget, group in win_rates.groupby("budget", dropna=False):
+        max_rate = float(group["win_rate"].max())
+        for _, row in group.iterrows():
+            rate = float(row["win_rate"])
+            rows.append(
+                {
+                    "method": row["method"],
+                    "budget": int(budget),
+                    "majority_scenario_win_rate": rate,
+                    "majority_winner": bool(rate == max_rate and rate > 0.5),
+                    "data_source": "real_simulation_csv",
+                    "engineering_validity": "simulation_only",
+                    "must_resimulate": True,
+                }
+            )
     return pd.DataFrame(rows)
 
 
 def _no_repair_ablation(per_seed: pd.DataFrame) -> pd.DataFrame:
     evidence = per_seed[per_seed["included_in_statistical_claim"].astype(bool)]
     rows = []
-    for scenario_id, group in evidence.groupby("scenario_id"):
+    for (scenario_id, budget), group in evidence.groupby(["scenario_id", "budget"], dropna=False):
         full = group[group["method"] == "pia_full"]
+        if full.empty:
+            full = group[group["method"] == "pia_evolve_full"]
         no_repair = group[group["method"] == "pia_no_repair"]
         if full.empty or no_repair.empty:
             continue
@@ -336,6 +351,7 @@ def _no_repair_ablation(per_seed: pd.DataFrame) -> pd.DataFrame:
             {
                 "comparison": "pia_full_vs_pia_no_repair",
                 "scenario_id": scenario_id,
+                "budget": int(budget),
                 "target_hit_rate_delta": float(full["target_hit_rate"].mean() - no_repair["target_hit_rate"].mean()),
                 "convergence_auc_delta": float(full["convergence_auc"].mean() - no_repair["convergence_auc"].mean()),
                 "repair_helped": bool(
@@ -354,6 +370,7 @@ def _no_repair_ablation(per_seed: pd.DataFrame) -> pd.DataFrame:
             {
                 "comparison": "pia_full_vs_pia_no_repair",
                 "scenario_id": "",
+                "budget": 0,
                 "target_hit_rate_delta": np.nan,
                 "convergence_auc_delta": np.nan,
                 "repair_helped": False,
@@ -376,6 +393,23 @@ def _markdown_table(frame: pd.DataFrame) -> str:
     for _, row in frame.iterrows():
         lines.append("| " + " | ".join("" if pd.isna(row[column]) else str(row[column]) for column in columns) + " |")
     return "\n".join(lines)
+
+
+def _resolve_budgets(
+    protocol: Mapping[str, Any],
+    top_k: int | None = None,
+    budgets: Sequence[int] | None = None,
+) -> list[int]:
+    if budgets:
+        values = budgets
+    elif top_k is not None:
+        values = [top_k]
+    elif protocol.get("budgets"):
+        values = protocol.get("budgets", [])
+    else:
+        values = [protocol.get("top_k", 4)]
+    resolved = [max(1, int(value)) for value in values]
+    return resolved or [4]
 
 
 def _materialize_action_candidates(candidates: pd.DataFrame) -> pd.DataFrame:

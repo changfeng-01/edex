@@ -20,31 +20,43 @@ def summarize_validation_runs(run_summaries: list[dict]) -> pd.DataFrame:
     for key, group in grouped:
         target_times = pd.to_numeric(group["simulations_to_target"], errors="coerce")
         best_scores = pd.to_numeric(group["best_score_final"], errors="coerce")
-        target_ci = bootstrap_mean_ci(target_times.dropna().tolist())
         best_ci = bootstrap_mean_ci(best_scores.dropna().tolist())
+        hit_values = group["target_hit"].astype(float)
         auc_values = pd.to_numeric(group["convergence_auc"], errors="coerce")
-        auc_ci = bootstrap_mean_ci(auc_values.dropna().tolist())
+        hard_values = pd.to_numeric(group["hard_pass_rate"], errors="coerce")
+        target_low, target_high = bootstrap_mean_ci(hit_values)
+        target_times_low, target_times_high = bootstrap_mean_ci(target_times)
+        auc_low, auc_high = bootstrap_mean_ci(auc_values)
+        hard_low, hard_high = bootstrap_mean_ci(hard_values)
         rows.append(
             {
                 **dict(zip(GROUP_COLUMNS, key)),
                 "run_count": int(len(group)),
                 "target_hit_rate": float(group["target_hit"].mean()),
+                "target_hit_rate_ci_low": target_low,
+                "target_hit_rate_ci_high": target_high,
                 "best_score_mean": _mean(best_scores),
                 "best_score_median": _median(best_scores),
                 "best_score_std": _std(best_scores),
                 "best_score_ci_low": best_ci[0],
                 "best_score_ci_high": best_ci[1],
+                "best_score_var": _var(best_scores),
                 "simulations_to_target_mean": _mean(target_times),
                 "simulations_to_target_median": _median(target_times),
                 "simulations_to_target_std": _std(target_times),
-                "simulations_to_target_ci_low": target_ci[0],
-                "simulations_to_target_ci_high": target_ci[1],
+                "simulations_to_target_ci_low": target_times_low,
+                "simulations_to_target_ci_high": target_times_high,
                 "convergence_auc_mean": _mean(auc_values),
                 "convergence_auc_median": _median(auc_values),
                 "convergence_auc_std": _std(auc_values),
-                "convergence_auc_ci_low": auc_ci[0],
-                "convergence_auc_ci_high": auc_ci[1],
-                "hard_pass_rate_mean": _mean(pd.to_numeric(group["hard_pass_rate"], errors="coerce")),
+                "convergence_auc_var": _var(auc_values),
+                "convergence_auc_ci_low": auc_low,
+                "convergence_auc_ci_high": auc_high,
+                "hard_pass_rate_mean": _mean(hard_values),
+                "hard_pass_rate_std": _std(hard_values),
+                "hard_pass_rate_var": _var(hard_values),
+                "hard_pass_rate_ci_low": hard_low,
+                "hard_pass_rate_ci_high": hard_high,
                 "not_evaluable_count": int((group.get("evidence_status", pd.Series(index=group.index, dtype="object")) == "not_evaluable").sum()),
                 "boundary_audit_pass_rate": float(group["boundary_audit_passed"].astype(bool).mean()),
                 "data_source": "real_simulation_csv",
@@ -55,30 +67,28 @@ def summarize_validation_runs(run_summaries: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def compute_pairwise_win_rates(summary_frame: pd.DataFrame, baseline: str) -> pd.DataFrame:
+def compute_pairwise_win_rates(summary_frame: pd.DataFrame, baseline: str = "random") -> pd.DataFrame:
     if summary_frame.empty:
         return pd.DataFrame()
     rows = []
     keys = ["scenario_id", "seed", "budget", "ablation"]
     for key, group in summary_frame.groupby(keys, dropna=False):
-        baseline_rows = group[group["method"] == baseline]
-        if baseline_rows.empty:
-            continue
-        baseline_row = baseline_rows.iloc[0]
-        for _, row in group[group["method"] != baseline].iterrows():
-            rows.append(
-                {
-                    **dict(zip(keys, key)),
-                    "baseline": baseline,
-                    "method": row["method"],
-                    "win": _wins(row, baseline_row),
-                    "data_source": "real_simulation_csv",
-                    "engineering_validity": "simulation_only",
-                    "must_resimulate": True,
-                }
-            )
+        for baseline_method, baseline_group in group.groupby("method", dropna=False):
+            baseline_row = baseline_group.iloc[0]
+            for _, row in group[group["method"] != baseline_method].iterrows():
+                rows.append(
+                    {
+                        **dict(zip(keys, key)),
+                        "baseline": baseline_method,
+                        "method": row["method"],
+                        "win": _wins(row, baseline_row),
+                        "data_source": "real_simulation_csv",
+                        "engineering_validity": "simulation_only",
+                        "must_resimulate": True,
+                    }
+                )
     if not rows:
-        return pd.DataFrame(columns=[*keys, "baseline", "method", f"win_rate_vs_{baseline}", "comparison_count"])
+        return pd.DataFrame(columns=["method", "baseline", "budget", "ablation", "win_rate", f"win_rate_vs_{baseline}", "comparison_count"])
     comparisons = pd.DataFrame(rows)
     output = (
         comparisons.groupby(["method", "baseline", "budget", "ablation"], dropna=False)
@@ -90,8 +100,14 @@ def compute_pairwise_win_rates(summary_frame: pd.DataFrame, baseline: str) -> pd
             must_resimulate=("must_resimulate", "first"),
         )
         .reset_index()
-        .rename(columns={"win": f"win_rate_vs_{baseline}"})
+        .rename(columns={"win": "win_rate"})
     )
+    compat_col = f"win_rate_vs_{baseline}"
+    output[compat_col] = output["win_rate"].where(output["baseline"].astype(str) == str(baseline))
+    output = output.sort_values(
+        by=["method", "budget", "ablation", "baseline"],
+        key=lambda column: column.astype(str).map(lambda value: f"0_{value}" if value == str(baseline) else f"1_{value}"),
+    ).reset_index(drop=True)
     return output
 
 
@@ -137,6 +153,11 @@ def _mean(series: pd.Series) -> float:
 def _std(series: pd.Series) -> float:
     clean = series.dropna()
     return float(clean.std(ddof=0)) if not clean.empty else float("nan")
+
+
+def _var(series: pd.Series) -> float:
+    clean = series.dropna()
+    return float(clean.var(ddof=0)) if not clean.empty else float("nan")
 
 
 def _median(series: pd.Series) -> float:
