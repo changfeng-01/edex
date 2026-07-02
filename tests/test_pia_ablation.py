@@ -43,6 +43,16 @@ def test_ablation_no_scheduler_disables_evaluation_scheduler() -> None:
     assert config["evaluation_scheduler"]["enabled"] is False
 
 
+def test_active_influence_on_demand_component_ablations_disable_components() -> None:
+    influence_config, _ = build_ablation_config(_base_config(), "no_influence_graph")
+    constraint_config, _ = build_ablation_config(_base_config(), "no_on_demand_constraint")
+    transfer_config, _ = build_ablation_config(_base_config(), "no_transfer_trust")
+
+    assert influence_config["active_influence_on_demand"]["influence_graph_enabled"] is False
+    assert constraint_config["active_influence_on_demand"]["on_demand_constraint_enabled"] is False
+    assert transfer_config["active_influence_on_demand"]["transfer_trust_enabled"] is False
+
+
 def test_ablation_capm_only_uses_pia_capm_distance_and_disables_adaptive_parts() -> None:
     config, strategy = build_ablation_config(_base_config(), "capm_only")
 

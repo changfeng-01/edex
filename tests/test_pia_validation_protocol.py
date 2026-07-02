@@ -24,7 +24,9 @@ def test_validation_protocol_loads_required_methods_and_ablation_settings() -> N
     assert "paper_ca_llso" in protocol["methods"]
     assert "pia_evolve_full" in protocol["methods"]
     assert "active_uncertainty_diversity" in protocol["methods"]
+    assert "active_influence_on_demand" in protocol["methods"]
     assert "no_capm_barrier" in protocol["ablations"]
+    assert "no_influence_graph" in protocol["ablations"]
     assert "no_llso_offspring" in protocol["ablations"]
 
 
@@ -50,6 +52,7 @@ def test_validation_protocol_expands_budget_seed_scenario_grid() -> None:
             "adaptive_pia_capm",
             "classifier_level_hybrid",
             "active_uncertainty_diversity",
+            "active_influence_on_demand",
             "literature_ensemble_hybrid",
             "sklearn_surrogate_baseline",
             "pia_evolve_full",
@@ -61,6 +64,9 @@ def test_validation_protocol_expands_budget_seed_scenario_grid() -> None:
             "no_constraint_repair",
             "no_llso_offspring",
             "no_evaluation_scheduler",
+            "no_influence_graph",
+            "no_on_demand_constraint",
+            "no_transfer_trust",
             "capm_only",
         ],
         "scenarios": [{"scenario_id": "sample_goa"}],
@@ -73,7 +79,7 @@ def test_validation_protocol_expands_budget_seed_scenario_grid() -> None:
 
     specs = expand_validation_grid(protocol)
 
-    assert len(specs) == 280
+    assert len(specs) == 440
     assert specs[0].scenario_id == "sample_goa"
     assert specs[0].target_score == 80
 

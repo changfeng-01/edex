@@ -7,7 +7,12 @@ from goa_eval.pia_ca_llso.evaluation_scheduler import attach_evaluation_schedule
 from goa_eval.pia_ca_llso.features import extract_physics_features
 from goa_eval.pia_ca_llso.labeling import assign_level_labels
 from goa_eval.pia_ca_llso.physics_distance import FORBIDDEN_DISTANCE_COLUMNS
-from goa_eval.pia_ca_llso.selector import ACTIVE_ACQUISITION_STRATEGY, CLASSIFIER_REQUIRED_STRATEGIES, select_candidates
+from goa_eval.pia_ca_llso.selector import (
+    ACTIVE_ACQUISITION_STRATEGY,
+    ACTIVE_INFLUENCE_ON_DEMAND_STRATEGY,
+    CLASSIFIER_REQUIRED_STRATEGIES,
+    select_candidates,
+)
 from goa_eval.pia_ca_llso.sklearn_baseline import predict_candidates, train_baseline_models
 
 
@@ -71,6 +76,6 @@ def _classifier_status(models: dict) -> str:
 def _classifier_predictions_enabled(strategy: str, config: dict) -> bool:
     if strategy not in CLASSIFIER_REQUIRED_STRATEGIES:
         return False
-    if strategy == ACTIVE_ACQUISITION_STRATEGY:
+    if strategy in {ACTIVE_ACQUISITION_STRATEGY, ACTIVE_INFLUENCE_ON_DEMAND_STRATEGY}:
         return config.get("classifier_level_hybrid", {}).get("enabled", True) is not False
     return True
