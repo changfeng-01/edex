@@ -35,6 +35,7 @@ COMMAND_ARGV = {
     "pia-suggest": ["pia-suggest", "--history-csv", "history.csv", "--candidate-csv", "candidates.csv", "--output-dir", "out"],
     "pia-benchmark": ["pia-benchmark", "--history-csv", "history.csv", "--candidate-csv", "candidates.csv", "--output-dir", "out"],
     "pia-export-contract": ["pia-export-contract", "--output-dir", "out"],
+    "pia-render-transistor-netlists": ["pia-render-transistor-netlists", "--simulation-batch", "batch.csv", "--template", "template.spice", "--output-dir", "out"],
     "pia-train-from-db": ["pia-train-from-db"],
     "pia-evolve": ["pia-evolve", "--history-csv", "history.csv", "--candidate-csv", "candidates.csv", "--config", "config.yaml", "--output-dir", "out"],
     "pia-validate": ["pia-validate", "--protocol", "protocol.yaml", "--output-dir", "out"],

@@ -107,6 +107,74 @@ profiles:
         area_proxy: 0.05
         delta_vth_margin_v: 0.05
 
+  transistor_level_goa:
+    type: "transistor_level_goa_shift_register"
+    aliases:
+      - transistor_goa
+      - tft_goa_transistor_level
+      - pia_transistor_level
+    boundary:
+      data_source: "real_simulation_csv"
+      engineering_validity: "simulation_only"
+      must_resimulate: true
+    reference:
+      source: "local_fixture_contract"
+      note: "Template and CSV fixture define the next-run simulation interface only; external simulation results remain required."
+    required_analyses:
+      - tran
+    metrics:
+      delay_s:
+        source: transistor_level_simulation_results
+        unit: s
+        maximum: 2.0e-6
+        direction: smaller_better
+      rise_time_s:
+        source: transistor_level_simulation_results
+        unit: s
+        maximum: 2.0e-6
+        direction: smaller_better
+      fall_time_s:
+        source: transistor_level_simulation_results
+        unit: s
+        maximum: 1.5e-6
+        direction: smaller_better
+      power_w:
+        source: transistor_level_simulation_results
+        unit: W
+        maximum: 0.10
+        direction: smaller_better
+      voh_min_v:
+        source: transistor_level_simulation_results
+        unit: V
+        minimum: 10.0
+        direction: larger_better
+      constraint_violation:
+        source: transistor_level_simulation_results
+        maximum: 0.10
+        direction: smaller_better
+    hard_constraints:
+      delay_s:
+        maximum: 2.0e-6
+      rise_time_s:
+        maximum: 2.0e-6
+      fall_time_s:
+        maximum: 1.5e-6
+      voh_min_v:
+        minimum: 10.0
+      constraint_violation:
+        maximum: 0.10
+    objective:
+      scalarization:
+        method: weighted_sum
+        missing_metric_policy: not_evaluable
+      weights:
+        delay_s: 0.20
+        rise_time_s: 0.15
+        fall_time_s: 0.15
+        power_w: 0.15
+        voh_min_v: 0.20
+        constraint_violation: 0.15
+
   ota_general:
     type: "analog_amplifier"
     aliases:

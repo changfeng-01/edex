@@ -1,0 +1,30 @@
+* PIA transistor-level GOA next-run simulation template
+* Generated netlists are simulation inputs only; results must be re-imported from external simulator CSV.
+.param VDD={VDD}
+.param VSS={VSS}
+.param VGH={VGH}
+.param VGL={VGL}
+.param VTH_SHIFT={Vth_shift}
+.param CLOAD={C_load}
+.param CBOOT={C_boot}
+.param TRISE={CLK_rise_time}
+.param TFALL={CLK_fall_time}
+
+Vdd vdd 0 {VDD}
+Vss vss 0 {VSS}
+Vgh vgh 0 {VGH}
+Vgl vgl 0 {VGL}
+Vclk clk 0 PULSE({VGL} {VGH} 0 {CLK_rise_time} {CLK_fall_time} 1u 2u)
+
+Mpu out clk vgh vgh tft_model W={M_pullup_W} L={M_pullup_L}
+Mpd out clk vgl vgl tft_model W={M_pulldown_W} L={M_pulldown_L}
+Mrst out rst vss vss tft_model W={M_reset_W} L={M_reset_L}
+Mboot boot clk out out tft_model W={M_bootstrap_W} L={M_bootstrap_L}
+Cload out 0 {C_load}
+Cboot boot out {C_boot}
+
+.model tft_model nmos level=1 vto={Vth_shift}
+.tran 0.01u 4u
+.measure tran rise_time_s TRIG v(out) VAL='0.1*VGH' RISE=1 TARG v(out) VAL='0.9*VGH' RISE=1
+.measure tran fall_time_s TRIG v(out) VAL='0.9*VGH' FALL=1 TARG v(out) VAL='0.1*VGH' FALL=1
+.end

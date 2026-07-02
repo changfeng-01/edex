@@ -1,0 +1,147 @@
+problem_name: pia_ca_llso_transistor_level_goa
+target_score: 80
+parameter_columns:
+  - M_pullup_W
+  - M_pullup_L
+  - M_pulldown_W
+  - M_pulldown_L
+  - M_reset_W
+  - M_reset_L
+  - M_bootstrap_W
+  - M_bootstrap_L
+  - C_load
+  - C_boot
+  - VDD
+  - VSS
+  - VGH
+  - VGL
+  - Vth_shift
+  - CLK_rise_time
+  - CLK_fall_time
+metric_columns:
+  - overall_score
+  - delay_s
+  - rise_time_s
+  - fall_time_s
+  - power_w
+  - voh_min_v
+  - constraint_violation
+status_columns:
+  status: status
+score_columns:
+  overall_score: overall_score
+hard_constraint_columns:
+  - hard_constraint_passed
+forbidden_leakage_columns:
+  - delay
+  - delay_s
+  - rise_time
+  - rise_time_s
+  - fall_time
+  - fall_time_s
+  - power
+  - power_w
+  - waveform_score
+  - output_high
+  - output_low
+  - voh_min_v
+  - overshoot
+  - undershoot
+  - holding_droop
+  - total_score
+  - overall_score
+  - hard_constraint_passed
+physics_features:
+  profile: transistor_level
+feature_weights:
+  cboot_cload_ratio: 2.0
+  pullup_pulldown_ratio: 2.0
+  drive_to_load_ratio: 1.6
+  ron_pullup_cload_proxy: 1.5
+  ron_pulldown_cload_proxy: 1.5
+  vgh_vth_margin: 1.5
+  vgl_off_margin: 1.5
+  clk_slew_proxy: 1.2
+  area_proxy: 0.8
+capm_distance:
+  lambda_barrier: 1.0
+  lambda_graph: 1.0
+  lambda_missing: 1.0
+  k_neighbors: 4
+  min_vgh_vth_margin: 0.2
+  min_vgl_off_margin: 0.2
+  min_cboot_cload_ratio: 0.35
+  max_ron_pullup_cload_proxy: 2.0
+  max_ron_pulldown_cload_proxy: 2.0
+  min_pullup_pulldown_ratio: 0.5
+  max_pullup_pulldown_ratio: 2.0
+  max_clk_slew_proxy: 2.0
+  couplings:
+    - {left: ron_pullup_cload_proxy, right: clk_slew_proxy, weight: 0.25, enabled: true}
+    - {left: ron_pulldown_cload_proxy, right: clk_slew_proxy, weight: 0.25, enabled: true}
+    - {left: cboot_cload_ratio, right: vgh_vth_margin, weight: 0.25, enabled: true}
+    - {left: drive_to_load_ratio, right: area_proxy, weight: 0.15, enabled: true}
+    - {left: pullup_pulldown_ratio, right: clk_slew_proxy, weight: 0.10, enabled: true}
+  penalty_config:
+    vgh_vth_margin:
+      type: exponential
+      alpha: 2.0
+    vgl_off_margin:
+      type: exponential
+      alpha: 2.0
+    cboot_cload_ratio:
+      type: exponential
+      alpha: 2.0
+    ron_pullup_cload_proxy:
+      type: exponential
+      alpha: 2.0
+    ron_pulldown_cload_proxy:
+      type: exponential
+      alpha: 2.0
+    clk_slew_proxy:
+      type: exponential
+      alpha: 2.0
+    pullup_pulldown_ratio:
+      type: quadratic
+      alpha: 2.0
+labeling:
+  score_col: overall_score
+  hard_pass_col: hard_constraint_passed
+active_uncertainty_diversity:
+  enabled: true
+  weights:
+    base_score: 0.45
+    uncertainty: 0.25
+    batch_diversity: 0.20
+    hard_gate: 0.10
+active_influence_on_demand:
+  enabled: true
+  influence_graph_enabled: true
+  on_demand_constraint_enabled: true
+  transfer_trust_enabled: true
+  weights:
+    active_base: 0.30
+    influence_gain: 0.22
+    constraint_urgency: 0.18
+    uncertainty: 0.15
+    transfer_trust: 0.10
+    batch_diversity: 0.05
+classifier_level_hybrid:
+  enabled: true
+  min_history_rows: 4
+simulation_executor:
+  mode: offline
+  result_required_columns:
+    - candidate_id
+    - overall_score
+    - hard_constraint_passed
+    - delay_s
+    - rise_time_s
+    - fall_time_s
+    - power_w
+    - voh_min_v
+metadata:
+  circuit_profile: transistor_level_goa
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only
+  must_resimulate: true
