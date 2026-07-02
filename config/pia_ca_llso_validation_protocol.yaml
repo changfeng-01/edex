@@ -17,6 +17,7 @@ methods:
   - paper_distributed_multi_constraint
   - classifier_level_hybrid
   - active_uncertainty_diversity
+  - active_influence_on_demand
   - pia_evolve_full
 smoke_methods:
   - random
@@ -30,6 +31,7 @@ smoke_methods:
   - paper_distributed_multi_constraint
   - classifier_level_hybrid
   - active_uncertainty_diversity
+  - active_influence_on_demand
   - pia_evolve_full
 smoke_ablations:
   - full
@@ -40,6 +42,9 @@ ablations:
   - no_constraint_repair
   - no_llso_offspring
   - no_evaluation_scheduler
+  - no_influence_graph
+  - no_on_demand_constraint
+  - no_transfer_trust
   - capm_only
   - no_capm_barrier
   - no_capm_geodesic

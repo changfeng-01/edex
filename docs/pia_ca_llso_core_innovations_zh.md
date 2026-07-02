@@ -129,6 +129,8 @@ PIA-CA-LLSO 的距离目标不是任意历史样本，而是高质量可行的 L
 
 > CAPM-Distance 是主创新；`literature_ensemble_hybrid` 是基于相关工作的可审计扩展 acquisition layer，用于增强候选选择、支持消融实验和论文对照。
 
+`active_influence_on_demand` 将其中最适合当前低数据昂贵仿真的三类思想提升为正式主动采集策略：AIEA 的邻域 influence、DEAOE/HRCEA 的按需约束确认、以及分布式代理集成的保守 trust。它不是 `literature_ensemble_hybrid` 的替代，而是把 `active_uncertainty_diversity` 的 batch selection 扩展为可消融的预算调度策略。
+
 需要注意：
 
 - 目前该层仍是启发式工程融合。
@@ -199,7 +201,7 @@ PIA-CA-LLSO 已经从单次候选排序扩展成闭环流程：
 为了让创新点更适合投稿，需要补齐以下实验：
 
 1. **CAPM 消融**：完整 CAPM vs 无 barrier vs 无 geodesic vs 无 coupling vs 无 missing penalty。
-2. **策略对比**：random、ca_llso_raw_distance、pia_physics_distance、pia_capm_distance、adaptive_pia_capm、classifier_level_hybrid、active_uncertainty_diversity、literature_ensemble_hybrid。
+2. **策略对比**：random、ca_llso_raw_distance、pia_physics_distance、pia_capm_distance、adaptive_pia_capm、classifier_level_hybrid、active_uncertainty_diversity、active_influence_on_demand、literature_ensemble_hybrid。
 3. **预算敏感性**：不同 simulation budget 下的 best score、target hit rate、simulations to target。
 4. **约束效果**：hard pass rate、mean constraint violation、被 barrier 降权候选的后续仿真表现。
 5. **小样本鲁棒性**：不同初始 history size 下的性能。

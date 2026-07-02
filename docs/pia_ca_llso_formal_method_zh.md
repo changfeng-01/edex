@@ -42,6 +42,8 @@ CAPM pairwise 距离写作 `D_pair(x,y) = D_tensor(x,y) + lambda_barrier * max(B
 
 `active_uncertainty_diversity` 是面向 low-data expensive simulation 的主动采样层。它不替换 `classifier_level_hybrid`，而是将其输出作为 base score，并加入随机森林树间方差、分类熵不确定性和批内 greedy diversity。其形式写作 `A_active(x) = gamma_1 A_hybrid(x) + gamma_2 uncertainty(x) + gamma_3 batch_diversity(x|S_t) + gamma_4 hard_gate(x)`。其中 `uncertainty(x)` 由 `level_entropy_uncertainty`、`hard_pass_entropy_uncertainty` 和 `score_tree_std_uncertainty` 合成，`batch_diversity(x|S_t)` 对应相对当前已选集合的 `batch_diversity_score`。该策略只决定下一轮仿真优先级，不能写成已验证性能提升。
 
+`active_influence_on_demand` 是 `active_uncertainty_diversity` 之上的正式主动采集策略，用于 low-data expensive simulation 的预算调度。其形式写作 `A_aiod(x) = eta_1 A_active(x) + eta_2 influence_gain(x) + eta_3 constraint_urgency(x) + eta_4 uncertainty(x) + eta_5 transfer_trust(x) + eta_6 batch_diversity(x|S_t)`。其中 `influence_gain(x)` 对应 CAPM/物理特征邻域中的不确定性影响增益，`constraint_urgency(x)` 对应硬约束边界和 CAPM barrier 的按需确认优先级，`transfer_trust(x)` 对应历史通过率、特征异质性和代理组件可靠性的保守信任项。该策略输出字段包括 `active_influence_on_demand_score`、`influence_gain_score`、`constraint_urgency_score`、`transfer_trust_score`、`on_demand_eval_priority` 和 `aiod_components_json`。它仍然只输出 next-run simulation suggestions，不能写作真实仿真已验证优越。
+
 `literature_ensemble_hybrid` 是可审计的扩展 acquisition layer，其形式写作 `A_lit(x) = sum_r omega_r A_r(x)`。这里的 `r` 对应 DEAOE、HRCEA、AIEA、CESAEA 和 ECCoEA-ASAA 启发式子分量，包括 on-demand priority、rectification score、influence score、relaxed classifier vote 和 adaptive aggregation trust。该层用于吸收相关工作思想并支持消融分析，不应写成对五篇论文算法的完整复现。
 
 ## 6. Algorithm 1: PIA-CA-LLSO 闭环优化主流程
@@ -154,13 +156,16 @@ Output:
 7. If strategy is active_uncertainty_diversity, reuse classifier/CAPM
    evidence as the base score, compute forest-entropy uncertainty, and
    select top_k with greedy max-min batch diversity as A_active(x).
-8. If strategy is literature_ensemble_hybrid, compute the DEAOE,
+8. If strategy is active_influence_on_demand, reuse A_active(x), compute
+   CAPM-neighborhood influence gain, on-demand constraint urgency, and
+   transfer trust, then select top_k with greedy batch updates as A_aiod(x).
+9. If strategy is literature_ensemble_hybrid, compute the DEAOE,
    HRCEA, AIEA, CESAEA, and ECCoEA-ASAA inspired sub-scores and combine
    them as A_lit(x).
-9. Select the top_k candidates and assign roles in rank order:
+10. Select the top_k candidates and assign roles in rank order:
    exploitation_best, l1_center, boundary_learning,
    diversity_exploration, additional_candidate.
-10. Generate selection_reason text and explanation_report with
+11. Generate selection_reason text and explanation_report with
    claim_boundary = next-run simulation suggestions.
 ```
 

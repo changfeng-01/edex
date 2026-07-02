@@ -536,3 +536,138 @@ def test_active_uncertainty_diversity_falls_back_when_classifier_is_disabled() -
     assert result.selected_candidates.iloc[0]["candidate_id"] == "fallback"
     assert result.selected_candidates.iloc[0]["model_status"] == "classifier_disabled"
     assert result.selected_candidates.iloc[0]["active_uncertainty_score"] == 0.5
+
+
+def test_active_influence_on_demand_prefers_influential_candidate_when_base_scores_are_close() -> None:
+    history = pd.DataFrame([
+        {
+            "sample_id": "h1", "level_label": "L1", "overall_score": 95, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.0, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.4, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.5, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        }
+    ])
+    common = {
+        "p_l1": 0.82, "p_hard_pass": 0.82, "predicted_score": 84.0,
+        "predicted_level": "L1", "model_status": "ok",
+        "pullup_pulldown_ratio": 1.0, "ron_pulldown_cload_proxy": 0.4,
+        "vgh_vth_margin": 2.4, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+    }
+    candidates = pd.DataFrame([
+        {"candidate_id": "hub", **common, "uncertainty": 0.20, "cboot_cload_ratio": 1.05, "ron_pullup_cload_proxy": 0.45},
+        {"candidate_id": "near_uncertain_a", **common, "p_l1": 0.30, "p_hard_pass": 0.35, "predicted_score": 20.0, "uncertainty": 0.55, "cboot_cload_ratio": 1.06, "ron_pullup_cload_proxy": 0.46},
+        {"candidate_id": "near_uncertain_b", **common, "p_l1": 0.30, "p_hard_pass": 0.35, "predicted_score": 20.0, "uncertainty": 0.55, "cboot_cload_ratio": 1.07, "ron_pullup_cload_proxy": 0.47},
+        {"candidate_id": "isolated", **common, "uncertainty": 0.20, "cboot_cload_ratio": 1.75, "ron_pullup_cload_proxy": 0.85},
+    ])
+
+    result = select_candidates(candidates, history, strategy="active_influence_on_demand", top_k=1)
+
+    selected = result.selected_candidates.iloc[0]
+    assert selected["candidate_id"] == "hub"
+    assert selected["diagnostic_status"] == "active_influence_on_demand"
+    for column in [
+        "active_influence_on_demand_score",
+        "influence_gain_score",
+        "constraint_urgency_score",
+        "transfer_trust_score",
+        "on_demand_eval_priority",
+        "aiod_components_json",
+    ]:
+        assert column in result.all_candidates.columns
+    components = json.loads(selected["aiod_components_json"])
+    assert components["influence_gain"] > 0.5
+    assert result.model_report["active_lineage"][0].startswith("active_uncertainty_diversity")
+
+
+def test_active_influence_on_demand_prioritizes_constraint_urgency_when_base_scores_are_close() -> None:
+    history = pd.DataFrame([
+        {
+            "sample_id": "h1", "level_label": "L1", "overall_score": 95, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.0, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.4, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.5, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        }
+    ])
+    common = {
+        "predicted_level": "L1",
+        "uncertainty": 0.55, "model_status": "ok",
+        "cboot_cload_ratio": 1.05, "pullup_pulldown_ratio": 1.0,
+        "ron_pullup_cload_proxy": 0.45, "ron_pulldown_cload_proxy": 0.4,
+        "vgh_vth_margin": 2.4, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+    }
+    candidates = pd.DataFrame([
+        {"candidate_id": "safe_clear", **common, "p_l1": 0.82, "predicted_score": 80.0, "p_hard_pass": 0.70},
+        {"candidate_id": "constraint_boundary", **common, "p_l1": 0.98, "predicted_score": 98.0, "p_hard_pass": 0.55},
+    ])
+
+    result = select_candidates(candidates, history, strategy="active_influence_on_demand", top_k=1)
+
+    selected = result.selected_candidates.iloc[0]
+    assert selected["candidate_id"] == "constraint_boundary"
+    safe = result.all_candidates[result.all_candidates["candidate_id"] == "safe_clear"].iloc[0]
+    assert float(selected["constraint_urgency_score"]) > float(safe["constraint_urgency_score"])
+    assert bool(selected["must_resimulate"]) is True
+    assert selected["data_source"] == "real_simulation_csv"
+    assert selected["engineering_validity"] == "simulation_only"
+
+
+def test_active_influence_on_demand_uses_greedy_batch_diversity() -> None:
+    history = pd.DataFrame([
+        {
+            "sample_id": "h1", "level_label": "L1", "overall_score": 95, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.0, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.4, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.5, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        }
+    ])
+    common = {
+        "p_l1": 0.85, "p_hard_pass": 0.85, "predicted_score": 85.0,
+        "predicted_level": "L1", "uncertainty": 0.4, "model_status": "ok",
+        "pullup_pulldown_ratio": 1.0, "ron_pulldown_cload_proxy": 0.4,
+        "vgh_vth_margin": 2.4, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+    }
+    candidates = pd.DataFrame([
+        {"candidate_id": "near_a", **common, "cboot_cload_ratio": 1.05, "ron_pullup_cload_proxy": 0.45},
+        {"candidate_id": "near_b", **common, "cboot_cload_ratio": 1.06, "ron_pullup_cload_proxy": 0.46},
+        {"candidate_id": "far", **common, "cboot_cload_ratio": 1.8, "ron_pullup_cload_proxy": 0.9},
+    ])
+
+    result = select_candidates(candidates, history, strategy="active_influence_on_demand", top_k=2)
+
+    assert "far" in set(result.selected_candidates["candidate_id"])
+    assert result.selected_candidates["selection_step"].tolist() == [1, 2]
+    far = result.selected_candidates[result.selected_candidates["candidate_id"] == "far"].iloc[0]
+    assert float(far["batch_diversity_score"]) > 0.0
+
+
+def test_active_influence_on_demand_falls_back_when_classifier_is_disabled() -> None:
+    history = pd.DataFrame([
+        {
+            "sample_id": "h1", "level_label": "L1", "overall_score": 95, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.4, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.5, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        }
+    ])
+    candidates = pd.DataFrame([
+        {
+            "candidate_id": "fallback",
+            "cboot_cload_ratio": 1.15, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.45, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.4, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        }
+    ])
+
+    result = select_candidates(
+        candidates,
+        history,
+        strategy="active_influence_on_demand",
+        top_k=1,
+        config={"classifier_level_hybrid": {"enabled": False}},
+    )
+
+    selected = result.selected_candidates.iloc[0]
+    assert selected["candidate_id"] == "fallback"
+    assert selected["model_status"] == "classifier_disabled"
+    assert selected["active_uncertainty_score"] == 0.5
+    assert "aiod_components_json" in result.all_candidates.columns

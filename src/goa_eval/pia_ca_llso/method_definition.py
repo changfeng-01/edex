@@ -82,6 +82,11 @@ FORMULAS = {
         "A_active(x) = gamma_1 A_hybrid(x) + gamma_2 uncertainty(x) "
         "+ gamma_3 batch_diversity(x|S_t) + gamma_4 hard_gate(x)"
     ),
+    "active_influence_on_demand": (
+        "A_aiod(x) = eta_1 A_active(x) + eta_2 influence_gain(x) "
+        "+ eta_3 constraint_urgency(x) + eta_4 uncertainty(x) "
+        "+ eta_5 transfer_trust(x) + eta_6 batch_diversity(x|S_t)"
+    ),
     "literature_ensemble": "A_lit(x) = sum_r omega_r A_r(x)",
 }
 

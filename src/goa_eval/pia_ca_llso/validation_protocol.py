@@ -19,6 +19,7 @@ MINIMUM_METHODS = {
     "adaptive_pia_capm",
     "classifier_level_hybrid",
     "active_uncertainty_diversity",
+    "active_influence_on_demand",
     "literature_ensemble_hybrid",
     "sklearn_surrogate_baseline",
     "pia_evolve_full",
@@ -30,6 +31,9 @@ MINIMUM_ABLATIONS = {
     "no_constraint_repair",
     "no_llso_offspring",
     "no_evaluation_scheduler",
+    "no_influence_graph",
+    "no_on_demand_constraint",
+    "no_transfer_trust",
     "capm_only",
 }
 REQUIRED_METHODS = set(FORMAL_METHODS)

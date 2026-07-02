@@ -26,6 +26,15 @@ def build_ablation_config(base_config: dict, ablation: str) -> tuple[dict, str]:
     if ablation == "no_evaluation_scheduler":
         _set_enabled(config, "evaluation_scheduler", False)
         return config, strategy
+    if ablation == "no_influence_graph":
+        config.setdefault("active_influence_on_demand", {})["influence_graph_enabled"] = False
+        return config, strategy
+    if ablation == "no_on_demand_constraint":
+        config.setdefault("active_influence_on_demand", {})["on_demand_constraint_enabled"] = False
+        return config, strategy
+    if ablation == "no_transfer_trust":
+        config.setdefault("active_influence_on_demand", {})["transfer_trust_enabled"] = False
+        return config, strategy
     if ablation == "capm_only":
         _set_enabled(config, "classifier_level_hybrid", False)
         _set_enabled(config, "adaptive_capm", False)

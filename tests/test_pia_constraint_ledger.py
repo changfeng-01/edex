@@ -6,6 +6,7 @@ import pandas as pd
 
 from goa_eval.pia_ca_llso.candidate_generator import generate_constraint_repair_candidates
 from goa_eval.pia_ca_llso.constraint_ledger import attach_constraint_ledger
+from goa_eval.pia_ca_llso.evaluation_scheduler import attach_evaluation_schedule
 from goa_eval.pia_ca_llso.loop import suggest_next_run
 
 
@@ -228,3 +229,29 @@ def test_evaluation_scheduler_assigns_window_and_constraint_plan() -> None:
     plan = json.loads(selected.iloc[0]["constraint_eval_plan_json"])
     assert plan["constraints"]
     assert result.feature_report["evaluation_scheduler"]["enabled"] is True
+
+
+def test_evaluation_scheduler_uses_active_influence_on_demand_priority() -> None:
+    selected = pd.DataFrame([
+        {
+            "candidate_id": "boundary",
+            "predicted_level": "L1",
+            "p_l1": 0.82,
+            "p_hard_pass": 0.54,
+            "capm_barrier_score": 0.0,
+            "on_demand_eval_priority": 0.82,
+            "constraint_urgency_score": 0.72,
+            "vgh_vth_margin": 0.18,
+        }
+    ])
+
+    scheduled, report = attach_evaluation_schedule(
+        selected,
+        {"evaluation_scheduler": {"enabled": True, "full_frame_top_k": 1}},
+    )
+
+    assert scheduled.iloc[0]["simulation_window"] == "short_window"
+    assert scheduled.iloc[0]["evaluation_state"] == "partial_constraint_evaluated"
+    plan = json.loads(scheduled.iloc[0]["constraint_eval_plan_json"])
+    assert any(item["feature"] == "active_influence_on_demand" for item in plan["constraints"])
+    assert report["scheduled_count"] == 1

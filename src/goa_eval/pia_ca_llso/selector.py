@@ -46,14 +46,29 @@ ACTIVE_UNCERTAINTY_DIVERSITY_WEIGHTS = {
     "hard_gate": 0.10,
 }
 
+ACTIVE_INFLUENCE_ON_DEMAND_WEIGHTS = {
+    "active_base": 0.30,
+    "influence_gain": 0.22,
+    "constraint_urgency": 0.18,
+    "uncertainty": 0.15,
+    "transfer_trust": 0.10,
+    "batch_diversity": 0.05,
+}
+
 LITERATURE_ENSEMBLE_STRATEGIES = {
     "literature_ensemble_hybrid",
     "deaoe_hrcea_aiea_cesaea_eccoea_asaa",
 }
 
 ACTIVE_ACQUISITION_STRATEGY = "active_uncertainty_diversity"
+ACTIVE_INFLUENCE_ON_DEMAND_STRATEGY = "active_influence_on_demand"
 
-CLASSIFIER_REQUIRED_STRATEGIES = {"classifier_level_hybrid", ACTIVE_ACQUISITION_STRATEGY, *LITERATURE_ENSEMBLE_STRATEGIES}
+CLASSIFIER_REQUIRED_STRATEGIES = {
+    "classifier_level_hybrid",
+    ACTIVE_ACQUISITION_STRATEGY,
+    ACTIVE_INFLUENCE_ON_DEMAND_STRATEGY,
+    *LITERATURE_ENSEMBLE_STRATEGIES,
+}
 
 LITERATURE_ENSEMBLE_WEIGHTS = {
     "deaoe": 0.22,
@@ -95,6 +110,9 @@ def select_candidates(
     elif strategy == ACTIVE_ACQUISITION_STRATEGY:
         scored = select_active_uncertainty_diversity(candidates, history, top_k, config=config)
         selected = scored.head(top_k)
+    elif strategy == ACTIVE_INFLUENCE_ON_DEMAND_STRATEGY:
+        scored = select_active_influence_on_demand(candidates, history, top_k, config=config)
+        selected = scored.head(top_k)
     elif strategy in LITERATURE_ENSEMBLE_STRATEGIES:
         scored = select_literature_ensemble_hybrid(candidates, history, top_k, config=config)
         selected = scored.head(top_k)
@@ -106,8 +124,15 @@ def select_candidates(
     selected = assign_candidate_roles(selected.reset_index(drop=True))
     selected["selection_reason"] = [explain_acquisition(row) for row in selected.to_dict("records")]
     model_report: dict[str, object] = {"strategy": strategy, "selected_count": int(len(selected))}
-    if strategy in {"classifier_level_hybrid", ACTIVE_ACQUISITION_STRATEGY}:
+    if strategy in {"classifier_level_hybrid", ACTIVE_ACQUISITION_STRATEGY, ACTIVE_INFLUENCE_ON_DEMAND_STRATEGY}:
         model_report["classifier_model_status"] = _model_status(scored)
+    if strategy == ACTIVE_INFLUENCE_ON_DEMAND_STRATEGY:
+        model_report["active_lineage"] = [
+            "active_uncertainty_diversity:base active acquisition",
+            "AIEA-inspired:CAPM-neighborhood influence gain",
+            "DEAOE/HRCEA-inspired:on-demand constraint urgency",
+            "distributed surrogate ensemble-inspired:transfer trust",
+        ]
     if strategy == "sklearn_surrogate_baseline":
         model_report["surrogate_model_status"] = _model_status(scored)
     if strategy in LITERATURE_ENSEMBLE_STRATEGIES:
@@ -462,6 +487,111 @@ def select_active_uncertainty_diversity(
     ).reset_index(drop=True)
 
 
+def select_active_influence_on_demand(
+    candidates: pd.DataFrame,
+    history: pd.DataFrame,
+    top_k: int = 4,
+    config: Mapping[str, Any] | None = None,
+) -> pd.DataFrame:
+    """Active acquisition with CAPM-neighborhood influence and on-demand constraint urgency."""
+    candidate_count = max(len(candidates), top_k)
+    scored = select_active_uncertainty_diversity(candidates, history, candidate_count, config=config).copy()
+    if scored.empty:
+        return scored
+
+    aiod_cfg = _nested_config(config, ACTIVE_INFLUENCE_ON_DEMAND_STRATEGY)
+    weights = _active_influence_on_demand_weights(aiod_cfg)
+    feature_cols = _shared_numeric_columns(scored, history)
+
+    influence_enabled = aiod_cfg.get("influence_graph_enabled", True) is not False
+    constraint_enabled = aiod_cfg.get("on_demand_constraint_enabled", True) is not False
+    transfer_enabled = aiod_cfg.get("transfer_trust_enabled", True) is not False
+
+    scored["influence_gain_score"] = (
+        _influence_gain_scores(scored, history, feature_cols, config=config)
+        if influence_enabled
+        else pd.Series(0.0, index=scored.index, dtype="float64")
+    )
+    scored["constraint_urgency_score"] = (
+        _constraint_urgency_scores(scored)
+        if constraint_enabled
+        else pd.Series(0.0, index=scored.index, dtype="float64")
+    )
+    scored["transfer_trust_score"] = (
+        _transfer_trust_scores(scored, history, feature_cols)
+        if transfer_enabled
+        else pd.Series(0.0, index=scored.index, dtype="float64")
+    )
+    scored["on_demand_eval_priority"] = (
+        0.60 * scored["constraint_urgency_score"].astype(float)
+        + 0.25 * scored["influence_gain_score"].astype(float)
+        + 0.15 * _bounded_series(scored.get("active_uncertainty_score", pd.Series(0.5, index=scored.index)), default=0.5)
+    ).clip(0.0, 1.0)
+    scored["selection_step"] = pd.NA
+    scored["active_influence_on_demand_score"] = 0.0
+    scored["aiod_components_json"] = ""
+    scored["data_source"] = "real_simulation_csv"
+    scored["engineering_validity"] = "simulation_only"
+    scored["must_resimulate"] = True
+
+    def _capm_distance_fn(a: pd.Series, b: pd.Series) -> float:
+        result = compute_capm_distance(a, b, config=config)
+        return float(result.get("distance", float("inf")))
+
+    remaining = scored.copy()
+    selected_rows: list[pd.Series] = []
+    selected_frame = pd.DataFrame()
+    selected_count = min(top_k, len(remaining))
+
+    for step in range(selected_count):
+        step_rows = []
+        for idx, row in remaining.iterrows():
+            diversity = _dynamic_batch_diversity(row, selected_frame, feature_cols, _capm_distance_fn)
+            score = _active_influence_on_demand_score(row, diversity, weights)
+            step_rows.append(
+                {
+                    "index": idx,
+                    "score": score,
+                    "batch_diversity": diversity,
+                    "candidate_id": str(row.get("candidate_id", "")),
+                }
+            )
+        step_frame = pd.DataFrame(step_rows)
+        winner_index = step_frame.sort_values(["score", "candidate_id"], ascending=[False, True]).iloc[0]["index"]
+        winner = remaining.loc[winner_index].copy()
+        winning_metrics = step_frame[step_frame["index"] == winner_index].iloc[0]
+        winner["batch_diversity_score"] = float(winning_metrics["batch_diversity"])
+        winner["active_influence_on_demand_score"] = float(winning_metrics["score"])
+        winner["selection_step"] = step + 1
+        winner["aiod_components_json"] = _aiod_components_json(winner, weights)
+        selected_rows.append(winner)
+        selected_frame = pd.concat([selected_frame, winner.to_frame().T], ignore_index=True)
+        remaining = remaining.drop(index=winner_index)
+
+    selected = pd.DataFrame(selected_rows)
+    if not selected.empty:
+        selected["acquisition_score"] = selected["active_influence_on_demand_score"]
+        selected["diagnostic_status"] = ACTIVE_INFLUENCE_ON_DEMAND_STRATEGY
+
+    if not remaining.empty:
+        final_selected = selected if not selected.empty else pd.DataFrame()
+        for idx, row in remaining.iterrows():
+            diversity = _dynamic_batch_diversity(row, final_selected, feature_cols, _capm_distance_fn)
+            score = _active_influence_on_demand_score(row, diversity, weights)
+            remaining.loc[idx, "batch_diversity_score"] = diversity
+            remaining.loc[idx, "active_influence_on_demand_score"] = score
+            remaining.loc[idx, "aiod_components_json"] = _aiod_components_json(remaining.loc[idx], weights)
+        remaining["acquisition_score"] = remaining["active_influence_on_demand_score"]
+        remaining["diagnostic_status"] = "active_influence_on_demand_unselected"
+
+    ordered = pd.concat([selected, remaining], ignore_index=True, sort=False)
+    return ordered.sort_values(
+        ["selection_step", "active_influence_on_demand_score", "candidate_id"],
+        ascending=[True, False, True],
+        na_position="last",
+    ).reset_index(drop=True)
+
+
 def select_literature_ensemble_hybrid(
     candidates: pd.DataFrame,
     history: pd.DataFrame,
@@ -765,6 +895,103 @@ def _feature_heterogeneity(history: pd.DataFrame, feature_cols: Sequence[str]) -
     return float(sum(ratios) / len(ratios))
 
 
+def _influence_gain_scores(
+    scored: pd.DataFrame,
+    history: pd.DataFrame,
+    feature_cols: Sequence[str],
+    config: Mapping[str, Any] | None = None,
+) -> pd.Series:
+    if len(scored) <= 1 or not feature_cols:
+        return _influence_fallback_scores(scored)
+    k_neighbors = max(1, min(3, len(scored) - 1))
+    uncertainty = _bounded_series(scored.get("active_uncertainty_score", pd.Series(0.5, index=scored.index)), default=0.5)
+    fallback = _influence_fallback_scores(scored)
+    raw_scores: dict[Any, float] = {}
+    for idx, row in scored.iterrows():
+        neighbors: list[tuple[float, Any]] = []
+        for other_idx, other in scored.iterrows():
+            if idx == other_idx:
+                continue
+            try:
+                distance = float(compute_capm_distance(row, other, config=config).get("distance", float("inf")))
+            except Exception:
+                distance = float("inf")
+            if pd.isna(distance) or distance == float("inf"):
+                continue
+            neighbors.append((max(distance, 0.0), other_idx))
+        if not neighbors:
+            raw_scores[idx] = float(fallback.loc[idx])
+            continue
+        nearest = sorted(neighbors, key=lambda item: item[0])[:k_neighbors]
+        weights = [1.0 / (1.0 + distance) for distance, _ in nearest]
+        weighted_uncertainty = sum(weights[pos] * float(uncertainty.loc[other_idx]) for pos, (_, other_idx) in enumerate(nearest))
+        total_weight = sum(weights) or 1.0
+        neighborhood_need = weighted_uncertainty / total_weight
+        density = min(sum(weights) / k_neighbors, 1.0)
+        promise = _bounded(row.get("active_acquisition_score", row.get("acquisition_score", 0.5)), default=0.5)
+        influence = (0.65 * neighborhood_need + 0.35 * density) * (0.50 + 0.50 * promise)
+        raw_scores[idx] = float(min(max(influence, 0.0), 1.0))
+    return pd.Series(raw_scores, index=scored.index, dtype="float64").fillna(0.5).clip(0.0, 1.0)
+
+
+def _influence_fallback_scores(scored: pd.DataFrame) -> pd.Series:
+    diversity = _bounded_series(scored.get("diversity_score", pd.Series(0.5, index=scored.index)), default=0.5)
+    proximity = 1.0 - _bounded_series(
+        scored.get("capm_distance_to_l1_normalized", pd.Series(0.5, index=scored.index)),
+        default=0.5,
+    )
+    return (0.50 * diversity + 0.50 * proximity).clip(0.0, 1.0)
+
+
+def _constraint_urgency_scores(scored: pd.DataFrame) -> pd.Series:
+    p_hard = _bounded_series(scored.get("p_hard_pass", pd.Series(0.5, index=scored.index)), default=0.5)
+    boundary_focus = (1.0 - (p_hard - 0.5).abs() * 2.0).clip(0.0, 1.0)
+    barrier = _normalized_positive_series(scored.get("capm_barrier_score", pd.Series(0.0, index=scored.index)))
+    uncertainty = _bounded_series(scored.get("active_uncertainty_score", pd.Series(0.5, index=scored.index)), default=0.5)
+    hard_risk = 1.0 - scored.get("capm_hard_risk_passed", pd.Series(False, index=scored.index)).astype(bool).astype(float)
+    return (0.40 * boundary_focus + 0.25 * barrier + 0.25 * uncertainty + 0.10 * hard_risk).clip(0.0, 1.0)
+
+
+def _transfer_trust_scores(scored: pd.DataFrame, history: pd.DataFrame, feature_cols: Sequence[str]) -> pd.Series:
+    if history.empty or not feature_cols:
+        return pd.Series(0.5, index=scored.index, dtype="float64")
+    pass_rate = _history_pass_rate(history)
+    heterogeneity = _feature_heterogeneity(history, feature_cols)
+    global_trust = min(max(0.50 + 0.25 * pass_rate + 0.25 * (1.0 - heterogeneity), 0.0), 1.0)
+    sample_confidence = 1.0 - _bounded_series(
+        scored.get("active_uncertainty_score", pd.Series(0.5, index=scored.index)),
+        default=0.5,
+    )
+    return (0.65 * global_trust + 0.35 * sample_confidence).clip(0.0, 1.0)
+
+
+def _dynamic_batch_diversity(
+    row: pd.Series,
+    selected_frame: pd.DataFrame,
+    feature_cols: Sequence[str],
+    distance_fn: Callable[[pd.Series, pd.Series], float],
+) -> float:
+    if selected_frame.empty or not feature_cols:
+        return 1.0
+    distances = [distance_fn(row, chosen) for _, chosen in selected_frame.iterrows()]
+    finite = [distance for distance in distances if not pd.isna(distance) and distance != float("inf")]
+    if not finite:
+        return 1.0
+    return float(min(max(min(finite), 0.0), 1.0))
+
+
+def _active_influence_on_demand_score(row: Mapping[str, Any], batch_diversity: float, weights: Mapping[str, float]) -> float:
+    score = (
+        weights["active_base"] * _bounded(row.get("active_acquisition_score", row.get("acquisition_score", 0.0)))
+        + weights["influence_gain"] * _bounded(row.get("influence_gain_score", 0.5), default=0.5)
+        + weights["constraint_urgency"] * _bounded(row.get("constraint_urgency_score", 0.5), default=0.5)
+        + weights["uncertainty"] * _bounded(row.get("active_uncertainty_score", row.get("uncertainty", 0.5)), default=0.5)
+        + weights["transfer_trust"] * _bounded(row.get("transfer_trust_score", 0.5), default=0.5)
+        + weights["batch_diversity"] * _bounded(batch_diversity)
+    )
+    return float(min(max(score, 0.0), 1.0))
+
+
 def _normalize_acquisition_weights(weights: Mapping[str, float]) -> dict[str, float]:
     active = {key: float(weights.get(key, CAPM_ACQUISITION_WEIGHTS[key])) for key in CAPM_ACQUISITION_WEIGHTS}
     total = sum(active.values()) or 1.0
@@ -781,6 +1008,16 @@ def _active_acquisition_weights(config: Mapping[str, Any]) -> dict[str, float]:
     return {key: value / total for key, value in weights.items()}
 
 
+def _active_influence_on_demand_weights(config: Mapping[str, Any]) -> dict[str, float]:
+    configured = config.get("weights", {}) if isinstance(config.get("weights", {}), Mapping) else {}
+    weights = {
+        key: float(configured.get(key, ACTIVE_INFLUENCE_ON_DEMAND_WEIGHTS[key]))
+        for key in ACTIVE_INFLUENCE_ON_DEMAND_WEIGHTS
+    }
+    total = sum(weights.values()) or 1.0
+    return {key: value / total for key, value in weights.items()}
+
+
 def _active_components_json(row: Mapping[str, Any], weights: Mapping[str, float]) -> str:
     payload = {
         "base_score": _bounded(row.get("classifier_hybrid_score", row.get("acquisition_score", 0.0))),
@@ -791,6 +1028,20 @@ def _active_components_json(row: Mapping[str, Any], weights: Mapping[str, float]
         "hard_pass_entropy_uncertainty": _bounded(row.get("hard_pass_entropy_uncertainty", 0.5), default=0.5),
         "predicted_score_tree_std": float(row.get("predicted_score_tree_std", 0.0) or 0.0),
         "score_tree_std_uncertainty": _bounded(row.get("score_tree_std_uncertainty", 0.5), default=0.5),
+        "weights": dict(weights),
+    }
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+def _aiod_components_json(row: Mapping[str, Any], weights: Mapping[str, float]) -> str:
+    payload = {
+        "active_base": _bounded(row.get("active_acquisition_score", row.get("acquisition_score", 0.0))),
+        "influence_gain": _bounded(row.get("influence_gain_score", 0.5), default=0.5),
+        "constraint_urgency": _bounded(row.get("constraint_urgency_score", 0.5), default=0.5),
+        "uncertainty": _bounded(row.get("active_uncertainty_score", row.get("uncertainty", 0.5)), default=0.5),
+        "transfer_trust": _bounded(row.get("transfer_trust_score", 0.5), default=0.5),
+        "batch_diversity": _bounded(row.get("batch_diversity_score", 0.0)),
+        "on_demand_eval_priority": _bounded(row.get("on_demand_eval_priority", 0.0)),
         "weights": dict(weights),
     }
     return json.dumps(payload, ensure_ascii=False, sort_keys=True)

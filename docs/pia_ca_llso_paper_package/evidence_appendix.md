@@ -18,7 +18,7 @@
 | `outputs/pia_phase3_smoke/pairwise_win_rates.csv` | 各方法相对 random 的 win_rate_vs_random=0.0，comparison_count=2 | 不能声称 PIA 系列在该 smoke 中优于 random |
 | `outputs/pia_phase3_smoke/paper_reproduction_report.md` | classifier_level_hybrid 与 paper_ca_llso 均 simulations_to_target=1；两个 paper-inspired baseline 为 2 | 侧面支持 classifier_level_hybrid 在统一协议下表现不弱于 paper_ca_llso |
 | `outputs/pia_phase3_smoke/paper_baseline_summary.csv` | classifier_level_hybrid: hit 1.0, AUC 282.0, best 94.0；paper_ca_llso: hit 1.0, AUC 280.5, best 94.0；另两个 baseline: hit 0.75, best 91.0 | 可写入 Table IV，但必须标注非原论文 benchmark 复现 |
-| `config/pia_ca_llso_validation_protocol.yaml` | 当前协议新增 `active_uncertainty_diversity` 方法 | 说明主动采样策略已接入下一轮验证，但旧 smoke 数值不能回填为该策略结果 |
+| `config/pia_ca_llso_validation_protocol.yaml` | 当前协议新增 `active_uncertainty_diversity` 与 `active_influence_on_demand` 方法 | 说明主动采样策略已接入下一轮验证，但旧 smoke 数值不能回填为这些策略结果 |
 
 ## 文献来源
 
@@ -36,7 +36,8 @@
 - CAPM-Distance 替代 SPICE 或其他电路仿真器。
 - 当前候选已经过硅验证、实验台验证、样品验证或 tapeout 验证。
 - Phase 3 smoke 已证明 PIA-CA-LLSO 显著优于 random。
-- active_uncertainty_diversity 已经通过真实仿真证明优于 classifier_level_hybrid。
+- active_uncertainty_diversity 相对 classifier_level_hybrid 的真实仿真优越性结论。
+- active_influence_on_demand 相对 active_uncertainty_diversity 的真实仿真优越性结论。
 - paper-baseline reproduction 是外部论文 benchmark 表格的完整复现。
 
 ## 可支持的保守结论
@@ -46,5 +47,6 @@
 - PIA-CA-LLSO 已形成方法定义、代码接口、图表包、smoke validation 和 paper-baseline reproduction 的一致证据链。
 - CAPM-Distance 是 next-run simulation suggestions 的仿真前候选排序 proxy。
 - active_uncertainty_diversity 是 low-data active acquisition 的候选采样扩展，会输出 next-run simulation suggestions，仍需要后续真实仿真确认。
+- active_influence_on_demand 是融合 influence、on-demand constraint urgency 和 transfer trust 的 simulation-only active acquisition 扩展，会输出 next-run simulation suggestions，仍需要后续真实仿真确认。
 - Phase 3 smoke 证明验证链路和 boundary audit 可以运行，但不能给出强优越性结论。
 - Paper-baseline reproduction 在统一 GOA/PIA simulation-only 协议下显示 classifier_level_hybrid 与 paper_ca_llso 均能以 1 次仿真达到目标，两个 paper-inspired baseline 为 0.75 hit rate 和 2 次到目标。

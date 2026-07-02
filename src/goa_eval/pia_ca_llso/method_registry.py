@@ -17,6 +17,7 @@ FORMAL_METHODS = (
     "paper_distributed_multi_constraint",
     "classifier_level_hybrid",
     "active_uncertainty_diversity",
+    "active_influence_on_demand",
     "pia_evolve_full",
 )
 
@@ -27,6 +28,9 @@ FORMAL_ABLATIONS = (
     "no_constraint_repair",
     "no_llso_offspring",
     "no_evaluation_scheduler",
+    "no_influence_graph",
+    "no_on_demand_constraint",
+    "no_transfer_trust",
     "capm_only",
     "no_capm_barrier",
     "no_capm_geodesic",
@@ -54,6 +58,7 @@ METHOD_REGISTRY: dict[str, dict[str, Any]] = {
     "paper_distributed_multi_constraint": {"category": "paper_inspired_baseline", "uses_pia_ablation": False},
     "classifier_level_hybrid": {"category": "pia_main_single_step", "uses_pia_ablation": True},
     "active_uncertainty_diversity": {"category": "pia_active_acquisition", "uses_pia_ablation": True},
+    "active_influence_on_demand": {"category": "pia_active_acquisition", "uses_pia_ablation": True},
     "pia_evolve_full": {"category": "pia_closed_loop", "uses_pia_ablation": True},
 }
 

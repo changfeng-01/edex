@@ -58,6 +58,15 @@ def _schedule_row(row: pd.Series, index: int, full_frame_top_k: int) -> tuple[st
     p_hard = _number(row.get("p_hard_pass"), 0.5)
     p_l1 = _number(row.get("p_l1"), 0.5)
     predicted_l1 = str(row.get("predicted_level", "")) == "L1" or p_l1 >= 0.7
+    on_demand_priority = _number(row.get("on_demand_eval_priority"), None)
+    constraint_urgency = _number(row.get("constraint_urgency_score"), 0.0)
+    if on_demand_priority is not None:
+        if index < full_frame_top_k and predicted_l1 and p_hard >= 0.6 and barrier <= 0.0 and on_demand_priority >= 0.75:
+            return "needs_full_frame", "full_frame", "needs_full_frame"
+        if constraint_urgency >= 0.65 or barrier > 0.0 or p_hard < 0.55:
+            return "partial_constraint_evaluated", "short_window", "partial_constraint_evaluated"
+        if on_demand_priority >= 0.55:
+            return "pending_influence_eval", "event_window", "pending_influence_eval"
     if index < full_frame_top_k and predicted_l1 and p_hard >= 0.6 and barrier <= 0.0:
         return "needs_full_frame", "full_frame", "needs_full_frame"
     if barrier > 0.0 or p_hard < 0.5:
@@ -69,6 +78,8 @@ def _schedule_row(row: pd.Series, index: int, full_frame_top_k: int) -> tuple[st
 
 def _constraint_plan(row: pd.Series) -> dict[str, Any]:
     constraints = []
+    on_demand_priority = _number(row.get("on_demand_eval_priority"), None)
+    constraint_urgency = _number(row.get("constraint_urgency_score"), None)
     for feature in PRIORITY_FEATURES:
         value = _number(row.get(feature), None)
         if value is None:
@@ -83,6 +94,14 @@ def _constraint_plan(row: pd.Series) -> dict[str, Any]:
         if feature == "cboot_cload_ratio" and value < 0.35:
             priority = "high"
         constraints.append({"feature": feature, "value": value, "priority": priority})
+    if on_demand_priority is not None:
+        constraints.append(
+            {
+                "feature": "active_influence_on_demand",
+                "value": on_demand_priority,
+                "priority": "high" if (constraint_urgency or 0.0) >= 0.65 else "review",
+            }
+        )
     constraints.sort(key=lambda item: 0 if item["priority"] == "high" else 1)
     if not constraints:
         constraints.append({"feature": "overall_candidate", "value": None, "priority": "review"})

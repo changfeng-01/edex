@@ -119,6 +119,18 @@ active_uncertainty_diversity:
     uncertainty: 0.25
     batch_diversity: 0.20
     hard_gate: 0.10
+active_influence_on_demand:
+  enabled: true
+  influence_graph_enabled: true
+  on_demand_constraint_enabled: true
+  transfer_trust_enabled: true
+  weights:
+    active_base: 0.30
+    influence_gain: 0.22
+    constraint_urgency: 0.18
+    uncertainty: 0.15
+    transfer_trust: 0.10
+    batch_diversity: 0.05
 literature_ensemble_hybrid:
   enabled: true
   hrcea_alpha_cut: 0.65
@@ -145,6 +157,7 @@ benchmark:
     - adaptive_pia_capm
     - classifier_level_hybrid
     - active_uncertainty_diversity
+    - active_influence_on_demand
     - literature_ensemble_hybrid
 metadata:
   data_source: real_simulation_csv
