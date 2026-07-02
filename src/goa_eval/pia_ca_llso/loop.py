@@ -7,7 +7,7 @@ from goa_eval.pia_ca_llso.evaluation_scheduler import attach_evaluation_schedule
 from goa_eval.pia_ca_llso.features import extract_physics_features
 from goa_eval.pia_ca_llso.labeling import assign_level_labels
 from goa_eval.pia_ca_llso.physics_distance import FORBIDDEN_DISTANCE_COLUMNS
-from goa_eval.pia_ca_llso.selector import CLASSIFIER_REQUIRED_STRATEGIES, select_candidates
+from goa_eval.pia_ca_llso.selector import ACTIVE_ACQUISITION_STRATEGY, CLASSIFIER_REQUIRED_STRATEGIES, select_candidates
 from goa_eval.pia_ca_llso.sklearn_baseline import predict_candidates, train_baseline_models
 
 
@@ -29,8 +29,9 @@ def suggest_next_run(history: pd.DataFrame, candidates: pd.DataFrame, config: di
             repair_joined[column] = repair_features[column].values
         candidate_joined = pd.concat([candidate_joined, repair_joined], ignore_index=True, sort=False)
         repair_report["feature_report"] = repair_feature_report
-    classifier_report = {"enabled": strategy in CLASSIFIER_REQUIRED_STRATEGIES, "model_status": "not_used"}
-    if strategy in CLASSIFIER_REQUIRED_STRATEGIES:
+    classifier_enabled = _classifier_predictions_enabled(strategy, config)
+    classifier_report = {"enabled": classifier_enabled, "model_status": "not_used"}
+    if classifier_enabled:
         feature_cols = _shared_model_features(candidate_joined, history_joined)
         models = train_baseline_models(history_joined, feature_cols)
         candidate_joined = predict_candidates(models, candidate_joined, feature_cols)
@@ -65,3 +66,11 @@ def _shared_model_features(candidates: pd.DataFrame, history: pd.DataFrame) -> l
 def _classifier_status(models: dict) -> str:
     statuses = [str(value.get("model_status")) for value in models.values() if isinstance(value, dict)]
     return "ok" if "ok" in statuses else "insufficient_data"
+
+
+def _classifier_predictions_enabled(strategy: str, config: dict) -> bool:
+    if strategy not in CLASSIFIER_REQUIRED_STRATEGIES:
+        return False
+    if strategy == ACTIVE_ACQUISITION_STRATEGY:
+        return config.get("classifier_level_hybrid", {}).get("enabled", True) is not False
+    return True

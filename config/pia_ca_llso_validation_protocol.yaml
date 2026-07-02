@@ -16,6 +16,7 @@ methods:
   - paper_adaptive_constraint_eval
   - paper_distributed_multi_constraint
   - classifier_level_hybrid
+  - active_uncertainty_diversity
   - pia_evolve_full
 smoke_methods:
   - random
@@ -28,6 +29,7 @@ smoke_methods:
   - paper_adaptive_constraint_eval
   - paper_distributed_multi_constraint
   - classifier_level_hybrid
+  - active_uncertainty_diversity
   - pia_evolve_full
 smoke_ablations:
   - full

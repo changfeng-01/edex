@@ -23,6 +23,7 @@ def test_validation_protocol_loads_required_methods_and_ablation_settings() -> N
     assert "sklearn_surrogate_baseline" in protocol["methods"]
     assert "paper_ca_llso" in protocol["methods"]
     assert "pia_evolve_full" in protocol["methods"]
+    assert "active_uncertainty_diversity" in protocol["methods"]
     assert "no_capm_barrier" in protocol["ablations"]
     assert "no_llso_offspring" in protocol["ablations"]
 
@@ -48,6 +49,7 @@ def test_validation_protocol_expands_budget_seed_scenario_grid() -> None:
             "pia_capm_distance",
             "adaptive_pia_capm",
             "classifier_level_hybrid",
+            "active_uncertainty_diversity",
             "literature_ensemble_hybrid",
             "sklearn_surrogate_baseline",
             "pia_evolve_full",
@@ -71,7 +73,7 @@ def test_validation_protocol_expands_budget_seed_scenario_grid() -> None:
 
     specs = expand_validation_grid(protocol)
 
-    assert len(specs) == 252
+    assert len(specs) == 280
     assert specs[0].scenario_id == "sample_goa"
     assert specs[0].target_score == 80
 

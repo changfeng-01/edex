@@ -40,6 +40,8 @@ CAPM pairwise 距离写作 `D_pair(x,y) = D_tensor(x,y) + lambda_barrier * max(B
 
 `classifier_level_hybrid` 将分类器概率、预测分数、CAPM 距离、硬风险门控和多样性合并。其形式写作 `A_hybrid(x) = beta_1 p_L1(x) + beta_2 p_hard(x) + beta_3 pred_score(x) + beta_4 (1 - norm(D_geodesic)) + beta_5 hard_mask(x) + beta_6 diversity(x)`。其中 `p_L1(x)` 对应 `p_l1`，`p_hard(x)` 对应 `p_hard_pass`，`pred_score(x)` 对应 `predicted_score`，`hard_mask(x)` 对应 `capm_hard_risk_passed`。
 
+`active_uncertainty_diversity` 是面向 low-data expensive simulation 的主动采样层。它不替换 `classifier_level_hybrid`，而是将其输出作为 base score，并加入随机森林树间方差、分类熵不确定性和批内 greedy diversity。其形式写作 `A_active(x) = gamma_1 A_hybrid(x) + gamma_2 uncertainty(x) + gamma_3 batch_diversity(x|S_t) + gamma_4 hard_gate(x)`。其中 `uncertainty(x)` 由 `level_entropy_uncertainty`、`hard_pass_entropy_uncertainty` 和 `score_tree_std_uncertainty` 合成，`batch_diversity(x|S_t)` 对应相对当前已选集合的 `batch_diversity_score`。该策略只决定下一轮仿真优先级，不能写成已验证性能提升。
+
 `literature_ensemble_hybrid` 是可审计的扩展 acquisition layer，其形式写作 `A_lit(x) = sum_r omega_r A_r(x)`。这里的 `r` 对应 DEAOE、HRCEA、AIEA、CESAEA 和 ECCoEA-ASAA 启发式子分量，包括 on-demand priority、rectification score、influence score、relaxed classifier vote 和 adaptive aggregation trust。该层用于吸收相关工作思想并支持消融分析，不应写成对五篇论文算法的完整复现。
 
 ## 6. Algorithm 1: PIA-CA-LLSO 闭环优化主流程
@@ -149,13 +151,16 @@ Output:
 6. If strategy is classifier_level_hybrid, ensure p_l1, p_hard_pass,
    predicted_score, uncertainty, and model_status exist; then compute
    A_hybrid(x).
-7. If strategy is literature_ensemble_hybrid, compute the DEAOE,
+7. If strategy is active_uncertainty_diversity, reuse classifier/CAPM
+   evidence as the base score, compute forest-entropy uncertainty, and
+   select top_k with greedy max-min batch diversity as A_active(x).
+8. If strategy is literature_ensemble_hybrid, compute the DEAOE,
    HRCEA, AIEA, CESAEA, and ECCoEA-ASAA inspired sub-scores and combine
    them as A_lit(x).
-8. Select the top_k candidates and assign roles in rank order:
+9. Select the top_k candidates and assign roles in rank order:
    exploitation_best, l1_center, boundary_learning,
    diversity_exploration, additional_candidate.
-9. Generate selection_reason text and explanation_report with
+10. Generate selection_reason text and explanation_report with
    claim_boundary = next-run simulation suggestions.
 ```
 

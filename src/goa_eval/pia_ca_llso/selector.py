@@ -39,12 +39,21 @@ CLASSIFIER_HYBRID_WEIGHTS = {
     "diversity_score": 0.05,
 }
 
+ACTIVE_UNCERTAINTY_DIVERSITY_WEIGHTS = {
+    "base_score": 0.45,
+    "uncertainty": 0.25,
+    "batch_diversity": 0.20,
+    "hard_gate": 0.10,
+}
+
 LITERATURE_ENSEMBLE_STRATEGIES = {
     "literature_ensemble_hybrid",
     "deaoe_hrcea_aiea_cesaea_eccoea_asaa",
 }
 
-CLASSIFIER_REQUIRED_STRATEGIES = {"classifier_level_hybrid", *LITERATURE_ENSEMBLE_STRATEGIES}
+ACTIVE_ACQUISITION_STRATEGY = "active_uncertainty_diversity"
+
+CLASSIFIER_REQUIRED_STRATEGIES = {"classifier_level_hybrid", ACTIVE_ACQUISITION_STRATEGY, *LITERATURE_ENSEMBLE_STRATEGIES}
 
 LITERATURE_ENSEMBLE_WEIGHTS = {
     "deaoe": 0.22,
@@ -83,8 +92,8 @@ def select_candidates(
     elif strategy == "classifier_level_hybrid":
         scored = select_classifier_level_hybrid(candidates, history, top_k, config=config)
         selected = scored.head(top_k)
-    elif strategy == "sklearn_surrogate_baseline":
-        scored = select_sklearn_surrogate_baseline(candidates, history, top_k)
+    elif strategy == ACTIVE_ACQUISITION_STRATEGY:
+        scored = select_active_uncertainty_diversity(candidates, history, top_k, config=config)
         selected = scored.head(top_k)
     elif strategy in LITERATURE_ENSEMBLE_STRATEGIES:
         scored = select_literature_ensemble_hybrid(candidates, history, top_k, config=config)
@@ -97,7 +106,7 @@ def select_candidates(
     selected = assign_candidate_roles(selected.reset_index(drop=True))
     selected["selection_reason"] = [explain_acquisition(row) for row in selected.to_dict("records")]
     model_report: dict[str, object] = {"strategy": strategy, "selected_count": int(len(selected))}
-    if strategy == "classifier_level_hybrid":
+    if strategy in {"classifier_level_hybrid", ACTIVE_ACQUISITION_STRATEGY}:
         model_report["classifier_model_status"] = _model_status(scored)
     if strategy == "sklearn_surrogate_baseline":
         model_report["surrogate_model_status"] = _model_status(scored)
@@ -143,7 +152,12 @@ def select_physics_distance(candidates: pd.DataFrame, history: pd.DataFrame, top
     return output.sort_values("acquisition_score", ascending=False).head(top_k)
 
 
-def select_sklearn_surrogate_baseline(candidates: pd.DataFrame, history: pd.DataFrame, top_k: int = 4) -> pd.DataFrame:
+def select_sklearn_surrogate_baseline(
+    candidates: pd.DataFrame,
+    history: pd.DataFrame,
+    top_k: int = 4,
+    config: Mapping[str, Any] | None = None,
+) -> pd.DataFrame:
     safe_candidates = _drop_result_columns(candidates)
     feature_cols = _shared_numeric_columns(safe_candidates, history)
     output = predict_candidates(train_baseline_models(history, feature_cols), safe_candidates, feature_cols)
@@ -307,34 +321,145 @@ def select_classifier_level_hybrid(
     ).head(top_k)
 
 
-def select_sklearn_surrogate_baseline(
+def select_active_uncertainty_diversity(
     candidates: pd.DataFrame,
     history: pd.DataFrame,
     top_k: int = 4,
     config: Mapping[str, Any] | None = None,
 ) -> pd.DataFrame:
-    safe_candidates = candidates.drop(
-        columns=[column for column in FORMAL_RESULT_LEAKAGE_COLUMNS if column in candidates.columns],
-        errors="ignore",
+    active_cfg = _nested_config(config, ACTIVE_ACQUISITION_STRATEGY)
+    classifier_enabled = _nested_config(config, "classifier_level_hybrid").get("enabled", True) is not False
+    candidate_count = max(len(candidates), top_k)
+    if classifier_enabled:
+        scored = select_classifier_level_hybrid(
+            candidates,
+            history,
+            top_k=candidate_count,
+            config=config,
+        ).copy()
+    else:
+        scored = select_capm_distance(
+            candidates,
+            history,
+            top_k=candidate_count,
+            config=config,
+            diagnostic_status="active_uncertainty_diversity_classifier_disabled",
+            sort_by_acquisition=True,
+        ).copy()
+        scored["classifier_hybrid_score"] = scored["acquisition_score"]
+        scored["p_l1"] = 0.5
+        scored["p_hard_pass"] = scored["capm_hard_risk_passed"].astype(float)
+        scored["predicted_score"] = 50.0
+        scored["predicted_level"] = "L2"
+        scored["uncertainty"] = 0.5
+        scored["level_entropy_uncertainty"] = 0.5
+        scored["hard_pass_entropy_uncertainty"] = 0.5
+        scored["predicted_score_tree_std"] = 0.0
+        scored["score_tree_std_uncertainty"] = 0.5
+        scored["model_status"] = "classifier_disabled"
+
+    if scored.empty:
+        return scored
+
+    weights = _active_acquisition_weights(active_cfg)
+    feature_cols = _shared_numeric_columns(scored, history)
+
+    def _capm_distance_fn(a: pd.Series, b: pd.Series) -> float:
+        result = compute_capm_distance(a, b, config=config)
+        return float(result.get("distance", float("inf")))
+
+    scored["active_uncertainty_score"] = _bounded_series(
+        scored.get("uncertainty", pd.Series(0.5, index=scored.index)),
+        default=0.5,
     )
-    feature_cols = _shared_numeric_columns(safe_candidates, history)
-    output = predict_candidates(train_baseline_models(history, feature_cols), safe_candidates, feature_cols)
-    predicted_score = _bounded_series(output.get("predicted_score", pd.Series(0.0, index=output.index)))
-    p_hard = _bounded_series(output.get("p_hard_pass", pd.Series(0.5, index=output.index)), default=0.5)
-    uncertainty = _bounded_series(output.get("uncertainty", pd.Series(0.5, index=output.index)), default=0.5)
-    output = _attach_diversity(output, feature_cols)
-    output["surrogate_baseline_score"] = (
-        0.55 * predicted_score
-        + 0.25 * p_hard
-        + 0.10 * output["diversity_score"].astype(float)
-        + 0.10 * uncertainty
-    ).clip(0.0, 1.0)
-    output["acquisition_score"] = output["surrogate_baseline_score"]
-    output["diagnostic_status"] = "sklearn_surrogate_baseline"
-    return output.sort_values(
-        ["surrogate_baseline_score", "p_hard_pass", "predicted_score", "candidate_id"],
-        ascending=[False, False, False, True],
-    ).head(top_k)
+    scored["batch_diversity_score"] = 0.0
+    scored["selection_step"] = pd.NA
+    scored["active_acquisition_score"] = 0.0
+    scored["active_components_json"] = ""
+
+    remaining = scored.copy()
+    selected_rows: list[pd.Series] = []
+    selected_frame = pd.DataFrame()
+    selected_count = min(top_k, len(remaining))
+
+    for step in range(selected_count):
+        step_rows = []
+        for idx, row in remaining.iterrows():
+            if step == 0:
+                diversity = 1.0
+            else:
+                distances = []
+                for _, chosen in selected_frame.iterrows():
+                    if feature_cols:
+                        distances.append(_capm_distance_fn(row, chosen))
+                diversity = float(min(distances)) if distances else 1.0
+                diversity = float(min(max(diversity, 0.0), 1.0))
+            base_score = _bounded(row.get("classifier_hybrid_score", row.get("acquisition_score", 0.0)))
+            uncertainty = _bounded(row.get("active_uncertainty_score", 0.5), default=0.5)
+            hard_gate = 1.0 if bool(row.get("capm_hard_risk_passed", False)) else 0.0
+            active_score = (
+                weights["base_score"] * base_score
+                + weights["uncertainty"] * uncertainty
+                + weights["batch_diversity"] * diversity
+                + weights["hard_gate"] * hard_gate
+            )
+            first_step_score = 0.65 * base_score + 0.25 * uncertainty + 0.10 * hard_gate
+            step_rows.append(
+                {
+                    "index": idx,
+                    "active_score": float(min(max(active_score, 0.0), 1.0)),
+                    "first_step_score": float(min(max(first_step_score, 0.0), 1.0)),
+                    "batch_diversity": diversity,
+                    "candidate_id": str(row.get("candidate_id", "")),
+                }
+            )
+        step_frame = pd.DataFrame(step_rows)
+        sort_score = "first_step_score" if step == 0 else "active_score"
+        winner_index = step_frame.sort_values([sort_score, "candidate_id"], ascending=[False, True]).iloc[0]["index"]
+        winner = remaining.loc[winner_index].copy()
+        winning_metrics = step_frame[step_frame["index"] == winner_index].iloc[0]
+        winner["active_acquisition_score"] = float(winning_metrics["active_score"])
+        winner["batch_diversity_score"] = float(winning_metrics["batch_diversity"])
+        winner["selection_step"] = step + 1
+        winner["active_components_json"] = _active_components_json(winner, weights)
+        selected_rows.append(winner)
+        selected_frame = pd.concat([selected_frame, winner.to_frame().T], ignore_index=True)
+        remaining = remaining.drop(index=winner_index)
+
+    selected = pd.DataFrame(selected_rows)
+    if not selected.empty:
+        selected["acquisition_score"] = selected["active_acquisition_score"]
+        selected["diagnostic_status"] = "active_uncertainty_diversity"
+
+    if not remaining.empty:
+        final_selected = selected if not selected.empty else pd.DataFrame()
+        for idx, row in remaining.iterrows():
+            if final_selected.empty or not feature_cols:
+                diversity = 1.0
+            else:
+                diversity = min(_capm_distance_fn(row, chosen) for _, chosen in final_selected.iterrows())
+                diversity = float(min(max(diversity, 0.0), 1.0))
+            base_score = _bounded(row.get("classifier_hybrid_score", row.get("acquisition_score", 0.0)))
+            uncertainty = _bounded(row.get("active_uncertainty_score", 0.5), default=0.5)
+            hard_gate = 1.0 if bool(row.get("capm_hard_risk_passed", False)) else 0.0
+            active_score = (
+                weights["base_score"] * base_score
+                + weights["uncertainty"] * uncertainty
+                + weights["batch_diversity"] * diversity
+                + weights["hard_gate"] * hard_gate
+            )
+            remaining.loc[idx, "batch_diversity_score"] = diversity
+            remaining.loc[idx, "active_acquisition_score"] = float(min(max(active_score, 0.0), 1.0))
+            remaining.loc[idx, "active_components_json"] = _active_components_json(remaining.loc[idx], weights)
+        remaining["acquisition_score"] = remaining["active_acquisition_score"]
+        remaining["diagnostic_status"] = "active_uncertainty_diversity_unselected"
+
+    ordered = pd.concat([selected, remaining], ignore_index=True, sort=False)
+    return ordered.sort_values(
+        ["selection_step", "active_acquisition_score", "candidate_id"],
+        ascending=[True, False, True],
+        na_position="last",
+    ).reset_index(drop=True)
 
 
 def select_literature_ensemble_hybrid(
@@ -532,7 +657,8 @@ def _shared_numeric_columns(left: pd.DataFrame, right: pd.DataFrame) -> list[str
 
 
 def _drop_result_columns(frame: pd.DataFrame) -> pd.DataFrame:
-    drop_columns = [column for column in frame.columns if column in FORBIDDEN_DISTANCE_COLUMNS and column != "candidate_id"]
+    forbidden = set(FORBIDDEN_DISTANCE_COLUMNS) | set(FORMAL_RESULT_LEAKAGE_COLUMNS)
+    drop_columns = [column for column in frame.columns if column in forbidden and column != "candidate_id"]
     return frame.drop(columns=drop_columns, errors="ignore")
 
 
@@ -643,6 +769,31 @@ def _normalize_acquisition_weights(weights: Mapping[str, float]) -> dict[str, fl
     active = {key: float(weights.get(key, CAPM_ACQUISITION_WEIGHTS[key])) for key in CAPM_ACQUISITION_WEIGHTS}
     total = sum(active.values()) or 1.0
     return {key: value / total for key, value in active.items()}
+
+
+def _active_acquisition_weights(config: Mapping[str, Any]) -> dict[str, float]:
+    configured = config.get("weights", {}) if isinstance(config.get("weights", {}), Mapping) else {}
+    weights = {
+        key: float(configured.get(key, ACTIVE_UNCERTAINTY_DIVERSITY_WEIGHTS[key]))
+        for key in ACTIVE_UNCERTAINTY_DIVERSITY_WEIGHTS
+    }
+    total = sum(weights.values()) or 1.0
+    return {key: value / total for key, value in weights.items()}
+
+
+def _active_components_json(row: Mapping[str, Any], weights: Mapping[str, float]) -> str:
+    payload = {
+        "base_score": _bounded(row.get("classifier_hybrid_score", row.get("acquisition_score", 0.0))),
+        "uncertainty": _bounded(row.get("active_uncertainty_score", 0.5), default=0.5),
+        "batch_diversity": _bounded(row.get("batch_diversity_score", 0.0)),
+        "hard_gate": bool(row.get("capm_hard_risk_passed", False)),
+        "level_entropy_uncertainty": _bounded(row.get("level_entropy_uncertainty", 0.5), default=0.5),
+        "hard_pass_entropy_uncertainty": _bounded(row.get("hard_pass_entropy_uncertainty", 0.5), default=0.5),
+        "predicted_score_tree_std": float(row.get("predicted_score_tree_std", 0.0) or 0.0),
+        "score_tree_std_uncertainty": _bounded(row.get("score_tree_std_uncertainty", 0.5), default=0.5),
+        "weights": dict(weights),
+    }
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 
 def _nested_config(config: Mapping[str, Any] | None, key: str) -> Mapping[str, Any]:

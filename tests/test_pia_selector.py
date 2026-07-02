@@ -424,3 +424,115 @@ def test_literature_ensemble_hybrid_exposes_paper_component_scores() -> None:
     components = json.loads(result.all_candidates.iloc[0]["literature_components_json"])
     assert set(components["weights"]) == {"deaoe", "hrcea", "aiea", "cesaea", "eccoea_asaa"}
     assert result.model_report["paper_lineage"][0].startswith("DEAOE")
+
+
+def test_active_uncertainty_diversity_prefers_uncertain_candidate_when_base_scores_are_close() -> None:
+    history = pd.DataFrame([
+        {
+            "sample_id": "h1", "level_label": "L1", "overall_score": 95, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.4, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.5, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+        {
+            "sample_id": "h2", "level_label": "L4", "overall_score": 20, "hard_constraint_passed": False,
+            "cboot_cload_ratio": 0.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 3.5, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 0.05, "vgl_off_margin": 2.0, "clk_slew_proxy": 1.5,
+        },
+    ])
+    candidates = pd.DataFrame([
+        {
+            "candidate_id": "slightly_safe",
+            "p_l1": 0.82, "p_hard_pass": 0.82, "predicted_score": 84.0, "predicted_level": "L1",
+            "uncertainty": 0.05, "model_status": "ok",
+            "cboot_cload_ratio": 1.16, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.45, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.4, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+        {
+            "candidate_id": "uncertain_boundary",
+            "p_l1": 0.80, "p_hard_pass": 0.80, "predicted_score": 82.0, "predicted_level": "L1",
+            "uncertainty": 0.95, "model_status": "ok",
+            "level_entropy_uncertainty": 0.9, "hard_pass_entropy_uncertainty": 0.9,
+            "predicted_score_tree_std": 8.0, "score_tree_std_uncertainty": 1.0,
+            "cboot_cload_ratio": 1.15, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.46, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.35, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+    ])
+
+    result = select_candidates(candidates, history, strategy="active_uncertainty_diversity", top_k=1)
+
+    assert result.selected_candidates.iloc[0]["candidate_id"] == "uncertain_boundary"
+    assert result.selected_candidates.iloc[0]["diagnostic_status"] == "active_uncertainty_diversity"
+    for column in [
+        "active_acquisition_score",
+        "active_uncertainty_score",
+        "batch_diversity_score",
+        "active_components_json",
+        "selection_step",
+    ]:
+        assert column in result.all_candidates.columns
+    components = json.loads(result.selected_candidates.iloc[0]["active_components_json"])
+    assert components["uncertainty"] > 0.9
+
+
+def test_active_uncertainty_diversity_uses_greedy_batch_diversity() -> None:
+    history = pd.DataFrame([
+        {
+            "sample_id": "h1", "level_label": "L1", "overall_score": 95, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.0, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.4, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.5, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        }
+    ])
+    common = {
+        "p_l1": 0.85, "p_hard_pass": 0.85, "predicted_score": 85.0,
+        "predicted_level": "L1", "uncertainty": 0.4, "model_status": "ok",
+        "pullup_pulldown_ratio": 1.0, "ron_pulldown_cload_proxy": 0.4,
+        "vgh_vth_margin": 2.4, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+    }
+    candidates = pd.DataFrame([
+        {"candidate_id": "near_a", **common, "cboot_cload_ratio": 1.05, "ron_pullup_cload_proxy": 0.45},
+        {"candidate_id": "near_b", **common, "cboot_cload_ratio": 1.06, "ron_pullup_cload_proxy": 0.46},
+        {"candidate_id": "far", **common, "cboot_cload_ratio": 1.8, "ron_pullup_cload_proxy": 0.9},
+    ])
+
+    result = select_candidates(candidates, history, strategy="active_uncertainty_diversity", top_k=2)
+
+    assert "far" in set(result.selected_candidates["candidate_id"])
+    assert result.selected_candidates["selection_step"].tolist() == [1, 2]
+    far = result.selected_candidates[result.selected_candidates["candidate_id"] == "far"].iloc[0]
+    assert float(far["batch_diversity_score"]) > 0.0
+
+
+def test_active_uncertainty_diversity_falls_back_when_classifier_is_disabled() -> None:
+    history = pd.DataFrame([
+        {
+            "sample_id": "h1", "level_label": "L1", "overall_score": 95, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.4, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.5, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        }
+    ])
+    candidates = pd.DataFrame([
+        {
+            "candidate_id": "fallback",
+            "cboot_cload_ratio": 1.15, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.45, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.4, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        }
+    ])
+
+    result = select_candidates(
+        candidates,
+        history,
+        strategy="active_uncertainty_diversity",
+        top_k=1,
+        config={"classifier_level_hybrid": {"enabled": False}},
+    )
+
+    assert result.selected_candidates.iloc[0]["candidate_id"] == "fallback"
+    assert result.selected_candidates.iloc[0]["model_status"] == "classifier_disabled"
+    assert result.selected_candidates.iloc[0]["active_uncertainty_score"] == 0.5

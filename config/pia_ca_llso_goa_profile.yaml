@@ -112,6 +112,13 @@ adaptive_capm:
 classifier_level_hybrid:
   enabled: true
   min_history_rows: 4
+active_uncertainty_diversity:
+  enabled: true
+  weights:
+    base_score: 0.45
+    uncertainty: 0.25
+    batch_diversity: 0.20
+    hard_gate: 0.10
 literature_ensemble_hybrid:
   enabled: true
   hrcea_alpha_cut: 0.65
@@ -137,6 +144,7 @@ benchmark:
     - pia_capm_distance
     - adaptive_pia_capm
     - classifier_level_hybrid
+    - active_uncertainty_diversity
     - literature_ensemble_hybrid
 metadata:
   data_source: real_simulation_csv

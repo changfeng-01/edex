@@ -18,6 +18,7 @@ MINIMUM_METHODS = {
     "pia_capm_distance",
     "adaptive_pia_capm",
     "classifier_level_hybrid",
+    "active_uncertainty_diversity",
     "literature_ensemble_hybrid",
     "sklearn_surrogate_baseline",
     "pia_evolve_full",

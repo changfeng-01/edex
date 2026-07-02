@@ -16,6 +16,7 @@ FORMAL_METHODS = (
     "paper_adaptive_constraint_eval",
     "paper_distributed_multi_constraint",
     "classifier_level_hybrid",
+    "active_uncertainty_diversity",
     "pia_evolve_full",
 )
 
@@ -52,6 +53,7 @@ METHOD_REGISTRY: dict[str, dict[str, Any]] = {
     "paper_adaptive_constraint_eval": {"category": "paper_inspired_baseline", "uses_pia_ablation": False},
     "paper_distributed_multi_constraint": {"category": "paper_inspired_baseline", "uses_pia_ablation": False},
     "classifier_level_hybrid": {"category": "pia_main_single_step", "uses_pia_ablation": True},
+    "active_uncertainty_diversity": {"category": "pia_active_acquisition", "uses_pia_ablation": True},
     "pia_evolve_full": {"category": "pia_closed_loop", "uses_pia_ablation": True},
 }
 
