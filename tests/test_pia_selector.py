@@ -309,6 +309,63 @@ def test_classifier_level_hybrid_falls_back_when_training_data_is_insufficient()
     assert result.selected_candidates.loc[0, "diagnostic_status"] == "classifier_level_hybrid"
 
 
+def test_sklearn_surrogate_baseline_ranks_without_result_leakage() -> None:
+    history = pd.DataFrame([
+        {
+            "sample_id": "h1", "level_label": "L1", "overall_score": 95, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.2, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.4, "ron_pulldown_cload_proxy": 0.4,
+            "vgh_vth_margin": 2.5, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.5,
+        },
+        {
+            "sample_id": "h2", "level_label": "L2", "overall_score": 82, "hard_constraint_passed": True,
+            "cboot_cload_ratio": 1.0, "pullup_pulldown_ratio": 1.2,
+            "ron_pullup_cload_proxy": 0.8, "ron_pulldown_cload_proxy": 0.7,
+            "vgh_vth_margin": 2.0, "vgl_off_margin": 1.7, "clk_slew_proxy": 0.8,
+        },
+        {
+            "sample_id": "h3", "level_label": "L4", "overall_score": 25, "hard_constraint_passed": False,
+            "cboot_cload_ratio": 0.2, "pullup_pulldown_ratio": 2.0,
+            "ron_pullup_cload_proxy": 3.5, "ron_pulldown_cload_proxy": 3.2,
+            "vgh_vth_margin": 0.05, "vgl_off_margin": 0.2, "clk_slew_proxy": 1.8,
+        },
+        {
+            "sample_id": "h4", "level_label": "L3", "overall_score": 55, "hard_constraint_passed": False,
+            "cboot_cload_ratio": 0.6, "pullup_pulldown_ratio": 1.8,
+            "ron_pullup_cload_proxy": 2.0, "ron_pulldown_cload_proxy": 1.8,
+            "vgh_vth_margin": 1.0, "vgl_off_margin": 0.7, "clk_slew_proxy": 1.2,
+        },
+    ])
+    candidates = pd.DataFrame([
+        {
+            "candidate_id": "safe",
+            "overall_score": 1.0,
+            "hard_constraint_passed": False,
+            "cboot_cload_ratio": 1.18, "pullup_pulldown_ratio": 1.0,
+            "ron_pullup_cload_proxy": 0.45, "ron_pulldown_cload_proxy": 0.45,
+            "vgh_vth_margin": 2.4, "vgl_off_margin": 2.0, "clk_slew_proxy": 0.55,
+        },
+        {
+            "candidate_id": "leaky_high_score",
+            "overall_score": 999.0,
+            "hard_constraint_passed": True,
+            "cboot_cload_ratio": 0.2, "pullup_pulldown_ratio": 2.0,
+            "ron_pullup_cload_proxy": 3.5, "ron_pulldown_cload_proxy": 3.2,
+            "vgh_vth_margin": 0.05, "vgl_off_margin": 0.2, "clk_slew_proxy": 1.8,
+        },
+    ])
+
+    result = select_candidates(candidates, history, strategy="sklearn_surrogate_baseline", top_k=2)
+
+    assert result.model_report["surrogate_model_status"] in {"ok", "insufficient_data"}
+    assert result.selected_candidates.iloc[0]["candidate_id"] == "safe"
+    assert result.selected_candidates["diagnostic_status"].eq("sklearn_surrogate_baseline").all()
+    assert "acquisition_score" in result.all_candidates.columns
+    assert "candidate_role" in result.selected_candidates.columns
+    assert "overall_score" not in result.all_candidates.columns
+    assert "hard_constraint_passed" not in result.all_candidates.columns
+
+
 def test_literature_ensemble_hybrid_exposes_paper_component_scores() -> None:
     history = pd.DataFrame([
         {

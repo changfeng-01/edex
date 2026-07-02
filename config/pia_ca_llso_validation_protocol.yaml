@@ -1,16 +1,38 @@
 name: pia_ca_llso_phase3_validation
+validation_profile: formal
 primary_outcome: simulations_to_target
 target_score: 80
-budgets: [20, 50, 100]
-seeds: [11, 23, 37, 41, 53]
+budgets: [10, 20, 50, 100, 200]
+seeds: [11, 23, 37, 41, 53, 67, 79, 83, 97, 101, 109, 127, 131, 149, 157, 163, 173, 181, 191, 199]
 methods:
+  - random
+  - ca_llso_raw_distance
+  - pia_physics_distance
+  - pia_capm_distance
+  - adaptive_pia_capm
+  - sklearn_surrogate_baseline
+  - literature_ensemble_hybrid
+  - paper_ca_llso
+  - paper_adaptive_constraint_eval
+  - paper_distributed_multi_constraint
+  - classifier_level_hybrid
+  - active_uncertainty_diversity
+  - pia_evolve_full
+smoke_methods:
   - random
   - ca_llso_raw_distance
   - pia_capm_distance
   - adaptive_pia_capm
+  - sklearn_surrogate_baseline
+  - literature_ensemble_hybrid
+  - paper_ca_llso
+  - paper_adaptive_constraint_eval
+  - paper_distributed_multi_constraint
   - classifier_level_hybrid
   - active_uncertainty_diversity
   - pia_evolve_full
+smoke_ablations:
+  - full
 ablations:
   - full
   - no_classifier
@@ -19,10 +41,14 @@ ablations:
   - no_llso_offspring
   - no_evaluation_scheduler
   - capm_only
+  - no_capm_barrier
+  - no_capm_geodesic
+  - no_capm_coupling
+  - no_missing_penalty
 scenarios:
   - scenario_id: sample_goa
     history_csv: examples/pia_ca_llso/sample_history.csv
-    candidate_csv: examples/pia_ca_llso/sample_candidates.csv
+    candidate_csv: examples/pia_ca_llso/sample_candidates_pre_sim.csv
     config: config/pia_ca_llso_goa_profile.yaml
     source_type: local_fixture
     claim_boundary: CI fixture for closed-loop behavior only

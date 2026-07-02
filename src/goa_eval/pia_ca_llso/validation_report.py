@@ -11,9 +11,10 @@ def render_validation_report(
     run_frame: pd.DataFrame,
     summary_frame: pd.DataFrame,
     win_rate_frame: pd.DataFrame,
+    formal: bool = False,
 ) -> str:
     lines = [
-        "# PIA-CA-LLSO Experimental Validation",
+        "# PIA-CA-LLSO Formal Validation" if formal else "# PIA-CA-LLSO Experimental Validation",
         "",
         "## Purpose",
         "Evaluate whether PIA-CA-LLSO closed-loop evolution improves simulation-only outcomes under fixed budgets, multiple seeds, and ablations.",
@@ -45,11 +46,36 @@ def render_validation_report(
         "- boundary_audit_passed",
         "- invalid_result_rejection_count",
         "",
-        "## Results summary",
+        "## Per-run details",
+        _table(_select_columns(run_frame, [
+            "scenario_id",
+            "method",
+            "ablation",
+            "seed",
+            "budget",
+            "target_hit",
+            "simulations_to_target",
+            "best_score_final",
+            "convergence_auc",
+            "hard_pass_rate",
+            "best_so_far_curve_path",
+        ])),
+        "",
+        "## Method scenario budget summary",
         _table(summary_frame),
         "",
-        "## Pairwise win rates",
+        "## Pairwise matrix win rates",
         _table(win_rate_frame),
+        "",
+        "## Fair Comparison Protocol",
+        "All methods are evaluated under the same scenario manifests, initial histories, candidate pools, simulation budgets, target scores, seeds, scoring rules, and result-import procedures.",
+        "Acquisition methods may access only pre-simulation candidate features and historical simulation evidence. Result-derived candidate columns are rejected by leakage audit before ranking.",
+        "`target_hit` and `simulations_to_target` are derived only from per-run `best_so_far_curve.csv` artifacts.",
+        "",
+        "## Claim Thresholds",
+        "- Write `outperforms tested baselines` only when `pia_evolve_full` beats random, CA-LLSO, paper CA-LLSO, and sklearn surrogate baselines across most scenario x budget groups.",
+        "- Write `more sample-efficient under limited simulation budgets` only when gains are concentrated at low budgets.",
+        "- Write `framework validated, superiority not established` when smoke or fixture evidence does not separate methods.",
         "",
         "## Failure cases",
         _failure_cases(run_frame),
@@ -64,6 +90,7 @@ def render_validation_report(
         "- Local fixture runs are CI behavior checks and do not replace external simulator case packs.",
         "- Multiple comparisons are reported together; claims should not be cherry-picked from a single seed or ablation.",
         "- Imported simulator CSV rows remain simulation-only evidence.",
+        "- Paper baselines are unified protocol comparisons, not original-paper benchmark table reproductions.",
         "",
         "## Next algorithmic upgrades",
         "- Add more real simulation case packs before making stronger benchmark claims.",
@@ -101,6 +128,13 @@ def _table(frame: pd.DataFrame) -> str:
     for _, row in text_frame.iterrows():
         rows.append("| " + " | ".join(str(row[column]) for column in columns) + " |")
     return "\n".join(rows)
+
+
+def _select_columns(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    present = [column for column in columns if column in frame.columns]
+    return frame[present] if present else frame
 
 
 def _failure_cases(run_frame: pd.DataFrame) -> str:

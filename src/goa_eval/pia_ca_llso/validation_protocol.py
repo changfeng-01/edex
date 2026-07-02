@@ -8,17 +8,22 @@ from typing import Any, Mapping
 
 import yaml
 
+from goa_eval.pia_ca_llso.method_registry import FORMAL_ABLATIONS, FORMAL_METHODS
 
-REQUIRED_METHODS = {
+
+MINIMUM_METHODS = {
     "random",
     "ca_llso_raw_distance",
+    "pia_physics_distance",
     "pia_capm_distance",
     "adaptive_pia_capm",
     "classifier_level_hybrid",
     "active_uncertainty_diversity",
+    "literature_ensemble_hybrid",
+    "sklearn_surrogate_baseline",
     "pia_evolve_full",
 }
-REQUIRED_ABLATIONS = {
+MINIMUM_ABLATIONS = {
     "full",
     "no_classifier",
     "no_adaptive_capm",
@@ -27,6 +32,8 @@ REQUIRED_ABLATIONS = {
     "no_evaluation_scheduler",
     "capm_only",
 }
+REQUIRED_METHODS = set(FORMAL_METHODS)
+REQUIRED_ABLATIONS = set(FORMAL_ABLATIONS)
 BOUNDARY = {
     "data_source": "real_simulation_csv",
     "engineering_validity": "simulation_only",
@@ -67,8 +74,13 @@ def validate_protocol(protocol: Mapping[str, Any]) -> None:
         raise ValueError(f"validation protocol missing required fields: {', '.join(missing)}")
     if protocol["primary_outcome"] != "simulations_to_target":
         raise ValueError("primary_outcome must be simulations_to_target")
-    _require_values("methods", protocol["methods"], REQUIRED_METHODS)
-    _require_values("ablations", protocol["ablations"], REQUIRED_ABLATIONS)
+    if protocol.get("validation_profile") == "formal":
+        _require_values("methods", protocol["methods"], REQUIRED_METHODS)
+        _require_values("ablations", protocol["ablations"], REQUIRED_ABLATIONS)
+    else:
+        _require_values("methods", protocol["methods"], MINIMUM_METHODS)
+        _require_values("ablations", protocol["ablations"], MINIMUM_ABLATIONS)
+    _require_formal_defaults(protocol)
     for field, expected in BOUNDARY.items():
         actual = protocol["boundary"].get(field)
         if actual != expected:
@@ -107,3 +119,14 @@ def _require_values(name: str, values: Any, required: set[str]) -> None:
     missing = sorted(required - present)
     if missing:
         raise ValueError(f"{name} missing required values: {', '.join(missing)}")
+
+
+def _require_formal_defaults(protocol: Mapping[str, Any]) -> None:
+    if protocol.get("validation_profile") != "formal":
+        return
+    expected_budgets = [10, 20, 50, 100, 200]
+    budgets = [int(value) for value in protocol.get("budgets", [])]
+    if budgets != expected_budgets:
+        raise ValueError(f"formal validation budgets must be {expected_budgets}")
+    if len(protocol.get("seeds", [])) < 20:
+        raise ValueError("formal validation requires at least 20 seeds")

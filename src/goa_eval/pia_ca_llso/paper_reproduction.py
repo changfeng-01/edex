@@ -231,7 +231,14 @@ def _method_metrics(selected: pd.DataFrame, target_score: float) -> dict[str, An
         "simulations_to_target": target_hits[0] if target_hits else np.nan,
         "convergence_auc": float(np.trapezoid(curve)) if len(curve) > 1 else float(curve[0]) if curve else 0.0,
         "best_evidence_score": float(np.nanmax(feasible_scores)) if not feasible_scores.isna().all() else np.nan,
-        "mean_acquisition_score": float(pd.to_numeric(selected.get("acquisition_score", 0.0), errors="coerce").fillna(0.0).mean()),
+        "mean_acquisition_score": float(
+            pd.to_numeric(
+                selected.get("acquisition_score", pd.Series(0.0, index=selected.index)),
+                errors="coerce",
+            )
+            .fillna(0.0)
+            .mean()
+        ),
         "convergence_curve": [float(value) for value in curve],
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
