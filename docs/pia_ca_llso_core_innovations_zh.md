@@ -199,7 +199,7 @@ PIA-CA-LLSO 已经从单次候选排序扩展成闭环流程：
 为了让创新点更适合投稿，需要补齐以下实验：
 
 1. **CAPM 消融**：完整 CAPM vs 无 barrier vs 无 geodesic vs 无 coupling vs 无 missing penalty。
-2. **策略对比**：random、ca_llso_raw_distance、pia_physics_distance、pia_capm_distance、adaptive_pia_capm、classifier_level_hybrid、literature_ensemble_hybrid。
+2. **策略对比**：random、ca_llso_raw_distance、pia_physics_distance、pia_capm_distance、adaptive_pia_capm、classifier_level_hybrid、active_uncertainty_diversity、literature_ensemble_hybrid。
 3. **预算敏感性**：不同 simulation budget 下的 best score、target hit rate、simulations to target。
 4. **约束效果**：hard pass rate、mean constraint violation、被 barrier 降权候选的后续仿真表现。
 5. **小样本鲁棒性**：不同初始 history size 下的性能。

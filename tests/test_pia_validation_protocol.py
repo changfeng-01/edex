@@ -16,6 +16,7 @@ def test_validation_protocol_loads_required_methods_and_ablation_settings() -> N
 
     assert protocol["primary_outcome"] == "simulations_to_target"
     assert "pia_evolve_full" in protocol["methods"]
+    assert "active_uncertainty_diversity" in protocol["methods"]
     assert "no_llso_offspring" in protocol["ablations"]
 
 
@@ -39,6 +40,7 @@ def test_validation_protocol_expands_budget_seed_scenario_grid() -> None:
             "pia_capm_distance",
             "adaptive_pia_capm",
             "classifier_level_hybrid",
+            "active_uncertainty_diversity",
             "pia_evolve_full",
         ],
         "ablations": [
@@ -60,7 +62,7 @@ def test_validation_protocol_expands_budget_seed_scenario_grid() -> None:
 
     specs = expand_validation_grid(protocol)
 
-    assert len(specs) == 168
+    assert len(specs) == 196
     assert specs[0].scenario_id == "sample_goa"
     assert specs[0].target_score == 80
 

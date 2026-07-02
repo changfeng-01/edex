@@ -78,6 +78,10 @@ FORMULAS = {
         "A_hybrid(x) = beta_1 p_L1(x) + beta_2 p_hard(x) + beta_3 pred_score(x) "
         "+ beta_4 (1 - norm(D_geodesic)) + beta_5 hard_mask(x) + beta_6 diversity(x)"
     ),
+    "active_uncertainty_diversity": (
+        "A_active(x) = gamma_1 A_hybrid(x) + gamma_2 uncertainty(x) "
+        "+ gamma_3 batch_diversity(x|S_t) + gamma_4 hard_gate(x)"
+    ),
     "literature_ensemble": "A_lit(x) = sum_r omega_r A_r(x)",
 }
 

@@ -15,6 +15,7 @@ REQUIRED_METHODS = {
     "pia_capm_distance",
     "adaptive_pia_capm",
     "classifier_level_hybrid",
+    "active_uncertainty_diversity",
     "pia_evolve_full",
 }
 REQUIRED_ABLATIONS = {

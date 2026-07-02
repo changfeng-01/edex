@@ -42,7 +42,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     benchmark.add_argument("--candidate-csv")
     benchmark.add_argument("--config")
     benchmark.add_argument("--output-dir", required=True)
-    benchmark.add_argument("--strategies", default="random,ca_llso_raw_distance,pia_physics_distance,pia_capm_distance,adaptive_pia_capm,classifier_level_hybrid,literature_ensemble_hybrid")
+    benchmark.add_argument("--strategies", default="random,ca_llso_raw_distance,pia_physics_distance,pia_capm_distance,adaptive_pia_capm,classifier_level_hybrid,active_uncertainty_diversity,literature_ensemble_hybrid")
     benchmark.add_argument("--target-score", type=float, default=80)
     benchmark.add_argument("--seed", type=int, default=42)
     benchmark.add_argument("--closed-loop", action="store_true")

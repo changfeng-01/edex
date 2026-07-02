@@ -77,6 +77,7 @@ def test_formal_method_document_contains_required_formulas_and_algorithms() -> N
         "D_geodesic(x,L1)",
         "A_capm(x)",
         "A_hybrid(x)",
+        "A_active(x)",
         "A_lit(x)",
         "Algorithm 1",
         "Algorithm 2",
