@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import glob
+import json
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -129,19 +130,23 @@ def run_simulation_step(
         }
 
     elif mode == "external_command":
-        command_template = exec_cfg.get("external_command", "")
-        if not command_template:
+        command_template = exec_cfg.get("external_command")
+        command_argv = exec_cfg.get("external_command_argv")
+        if not command_template and not command_argv:
             return pd.DataFrame(), {
                 "status": "error",
                 "mode": "external_command",
                 "generation": generation,
                 "reason": "no_command_template",
             }
+        if command_template and not bool(exec_cfg.get("allow_shell_command", True)):
+            raise ValueError("legacy shell command is disabled; use external_command_argv")
 
         result_glob = exec_cfg.get("result_glob", "*.csv")
         result_path = output_dir / "simulation_results.csv"
         invocation = run_external_simulator_command(
             command_template,
+            command_argv=command_argv,
             candidate_csv=batch_path,
             result_csv=result_path,
             generation=generation,
@@ -176,6 +181,11 @@ def run_simulation_step(
             )
 
         combined = pd.concat(all_imported, ignore_index=True)
+        invocation["result_validation_status"] = "passed"
+        (output_dir / "simulator_invocation.json").write_text(
+            json.dumps(invocation, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
         return combined, {
             "status": "results_imported",
             "mode": "external_command",

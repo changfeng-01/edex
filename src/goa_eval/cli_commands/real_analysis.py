@@ -39,6 +39,7 @@ def register_real_evaluation_commands(subparsers: argparse._SubParsersAction) ->
     real.add_argument("--topology")
     real.add_argument("--circuit-profile")
     real.add_argument("--profile-file")
+    real.add_argument("--strict-output-coverage", action="store_true")
     real.set_defaults(handler=handle_evaluate_real)
 
     recommend = subparsers.add_parser("recommend")
@@ -130,6 +131,7 @@ def handle_evaluate_real(args: argparse.Namespace) -> int:
         topology=args.topology,
         circuit_profile=args.circuit_profile,
         profile_file=Path(args.profile_file) if args.profile_file else None,
+        strict_output_coverage=args.strict_output_coverage,
     )
     return 0
 

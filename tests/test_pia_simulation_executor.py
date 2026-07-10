@@ -193,6 +193,49 @@ def test_external_command_records_invocation_and_output() -> None:
         assert (output_dir / "simulator_stderr.txt").exists()
 
 
+def test_external_command_argv_runs_without_shell_and_records_provenance() -> None:
+    batch = _make_simulation_batch()
+
+    with tempfile.TemporaryDirectory(prefix="pia argv ") as tmpdir:
+        output_dir = Path(tmpdir)
+        script = output_dir / "write results.py"
+        script.write_text(
+            "import pandas as pd, sys\n"
+            "batch = pd.read_csv(sys.argv[1])\n"
+            "pd.DataFrame({'candidate_id': batch['candidate_id'], 'overall_score': [88.0] * len(batch), 'hard_constraint_passed': [True] * len(batch)}).to_csv(sys.argv[2], index=False)\n",
+            encoding="utf-8",
+        )
+        config = {
+            "simulation_executor": {
+                "mode": "external_command",
+                "external_command_argv": [sys.executable, str(script), "{candidate_csv}", "{result_csv}"],
+                "result_glob": "simulation_results.csv",
+            }
+        }
+
+        imported, _status = run_simulation_step(batch, output_dir, config, generation=1)
+
+        assert len(imported) == 2
+        invocation = json.loads((output_dir / "simulator_invocation.json").read_text(encoding="utf-8"))
+        assert invocation["legacy_shell_command"] is False
+        assert invocation["executable"] == sys.executable
+        assert invocation["working_directory"] == str(output_dir)
+        assert invocation["result_validation_status"] == "passed"
+
+
+def test_external_shell_command_can_be_rejected_for_formal_runs(tmp_path: Path) -> None:
+    config = {
+        "simulation_executor": {
+            "mode": "external_command",
+            "external_command": "echo unsafe",
+            "allow_shell_command": False,
+        }
+    }
+
+    with pytest.raises(ValueError, match="legacy shell command"):
+        run_simulation_step(_make_simulation_batch(), tmp_path, config, generation=1)
+
+
 def test_external_command_mismatched_candidate_ids_are_rejected() -> None:
     """External result CSV with mismatched ids fails closed."""
     batch = _make_simulation_batch()

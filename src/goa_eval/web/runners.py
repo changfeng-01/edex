@@ -61,6 +61,7 @@ def run_uploaded_case(case_dir: Path, config: UploadedCaseConfig) -> CaseRunResu
             output_node_pattern=config.output_node_pattern,
             topology=config.topology,
             circuit_profile=config.circuit_profile,
+            strict_output_coverage=config.stage_count is not None,
             evidence_metadata=evidence_metadata,
         )
         paths = _pipeline_paths(analysis_dir)
