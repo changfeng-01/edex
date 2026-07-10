@@ -46,6 +46,7 @@ def run_real_waveform_evaluation(
     profile_file: Path | None = None,
     analysis_metrics: dict | None = None,
     evidence_metadata: dict | None = None,
+    strict_output_coverage: bool = False,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     figure_dir = output_dir / "figures"
@@ -69,6 +70,18 @@ def run_real_waveform_evaluation(
     else:
         waveform = read_real_waveform(waveform_path, required_nodes=output_nodes)
         node_selection_note = f"使用调用方显式指定的 {len(output_nodes)} 个输出节点。"
+    configured_nodes = build_output_nodes(spec)
+    expected_nodes = configured_nodes if stage_count is not None or output_nodes is None else list(output_nodes)
+    missing_output_nodes = [node for node in expected_nodes if node not in output_nodes]
+    expected_stage_count = len(expected_nodes)
+    observed_stage_count = len(output_nodes)
+    coverage_ratio = observed_stage_count / expected_stage_count if expected_stage_count else 1.0
+    coverage_status = "complete" if not missing_output_nodes else "partial"
+    if strict_output_coverage and missing_output_nodes:
+        raise ValueError(
+            f"output coverage is partial: observed {observed_stage_count} of {expected_stage_count}; "
+            f"missing {', '.join(missing_output_nodes[:10])}"
+        )
     config = RealEvalConfig(
         high_threshold=spec["high_threshold"],
         low_threshold=spec["low_threshold"],
@@ -86,7 +99,21 @@ def run_real_waveform_evaluation(
         ripple_mode=spec["ripple_mode"],
     )
     evaluation = evaluate_waveform_metrics(waveform.frame, config, output_nodes=output_nodes)
+    evaluation.summary.update(
+        {
+            "expected_stage_count": expected_stage_count,
+            "observed_stage_count": observed_stage_count,
+            "output_coverage_ratio": coverage_ratio,
+            "coverage_status": coverage_status,
+            "missing_output_nodes": missing_output_nodes,
+            "full_cascade_claim_allowed": coverage_status == "complete",
+        }
+    )
     evaluation.notes.append(node_selection_note)
+    if missing_output_nodes:
+        evaluation.notes.append(
+            f"输出覆盖率为 {observed_stage_count}/{expected_stage_count}，当前结果不得作为完整级联通过结论。"
+        )
     metrics_frame = pd.DataFrame(evaluation.stage_rows)
 
     generated_figures: list[str] = []
@@ -212,6 +239,11 @@ def run_real_waveform_evaluation(
             "frame_hold_time": summary.get("frame_hold_time"),
             "cascade": cascade,
             "resolved_output_node_count": len(output_nodes),
+            "expected_stage_count": expected_stage_count,
+            "observed_stage_count": observed_stage_count,
+            "output_coverage_ratio": coverage_ratio,
+            "coverage_status": coverage_status,
+            "missing_output_nodes": missing_output_nodes,
             "selected_center_ratio": config.selected_center_ratio,
             "edge_buffer_ratio": config.edge_buffer_ratio,
             "min_pulse_width": config.min_pulse_width,

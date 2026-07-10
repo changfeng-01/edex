@@ -34,6 +34,7 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
   const [config, setConfig] = useState<RunConfig>(initialConfig);
   const [status, setStatus] = useState<"idle" | "running" | "completed" | "failed">("idle");
   const [message, setMessage] = useState("");
+  const [writeApiKey, setWriteApiKey] = useState(() => window.sessionStorage.getItem("circuitpilot_write_api_key") ?? "");
   const [inputPreview, setInputPreview] = useState<InputPreview | null>(null);
   const [previewEvidenceBoundary, setPreviewEvidenceBoundary] = useState<Record<string, unknown> | undefined>();
 
@@ -41,7 +42,7 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
     setStatus("running");
     setMessage("正在运行内置 examples/sample_waveform.csv 和 examples/sample_params.yaml 演示...");
     try {
-      const response = await fetch(`${apiBaseUrl}/api/demo/sample-case`, { method: "POST" });
+      const response = await fetch(`${apiBaseUrl}/api/demo/sample-case`, writeRequestInit("POST", writeApiKey));
       const payload = await response.json();
       if (!response.ok || payload.status === "failed") {
         throw new Error(payload.detail || payload.error || `API returned ${response.status}`);
@@ -64,7 +65,7 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
     const form = buildUploadForm(files, config);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/api/cases`, { method: "POST", body: form });
+      const response = await fetch(`${apiBaseUrl}/api/cases`, writeRequestInit("POST", writeApiKey, form));
       const payload = await response.json();
       if (!response.ok || payload.status === "failed") {
         throw new Error(payload.detail || payload.error || `API returned ${response.status}`);
@@ -87,7 +88,7 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
     const form = buildUploadForm(files, config);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/api/cases/preview`, { method: "POST", body: form });
+      const response = await fetch(`${apiBaseUrl}/api/cases/preview`, writeRequestInit("POST", writeApiKey, form));
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.detail || payload.error || `API returned ${response.status}`);
@@ -96,10 +97,6 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
       setMessage(payload.preview?.ready_for_analysis ? "Input preview is ready. Run Analysis remains available." : "Input preview found issues. Run Analysis remains available for compatibility.");
       setInputPreview(payload.preview);
       setPreviewEvidenceBoundary(payload.evidence_boundary);
-      if (payload.case_id) {
-        setConfig((current) => ({ ...current, caseId: payload.case_id }));
-        window.history.pushState(null, "", `?case_id=${encodeURIComponent(payload.case_id)}`);
-      }
     } catch (error) {
       setStatus("failed");
       setMessage(`Input preview failed: ${String(error)}`);
@@ -132,6 +129,22 @@ export function UploadWorkspace({ apiBaseUrl, onCaseCreated }: UploadWorkspacePr
           </div>
           <div className="grid content-start gap-5">
             <RunConfigPanel config={config} onChange={setConfig} />
+            <label className="block rounded-lg border border-white/10 bg-slate-950/55 p-3 text-sm text-slate-300">
+              <span className="mb-2 block font-medium">Write API key</span>
+              <input
+                aria-label="Write API key"
+                autoComplete="off"
+                className="w-full rounded-md border border-white/10 bg-slate-950/70 px-3 py-2 text-slate-100 outline-none focus:border-cyan-200/60"
+                type="password"
+                value={writeApiKey}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setWriteApiKey(value);
+                  if (value) window.sessionStorage.setItem("circuitpilot_write_api_key", value);
+                  else window.sessionStorage.removeItem("circuitpilot_write_api_key");
+                }}
+              />
+            </label>
             <div className="grid gap-3 sm:grid-cols-3">
               <button
                 className="flex items-center justify-center gap-2 rounded-lg border border-cyan-200/30 bg-cyan-300/15 px-4 py-3 text-sm font-semibold text-cyan-50 transition hover:bg-cyan-300/20 disabled:cursor-not-allowed disabled:opacity-60"
@@ -222,4 +235,9 @@ function appendIfPresent(form: FormData, key: string, value: string) {
   if (trimmed) {
     form.append(key, trimmed);
   }
+}
+
+function writeRequestInit(method: string, apiKey: string, body?: FormData): RequestInit {
+  const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
+  return { method, ...(headers ? { headers } : {}), ...(body ? { body } : {}) };
 }

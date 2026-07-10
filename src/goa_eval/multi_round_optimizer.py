@@ -21,6 +21,7 @@ from goa_eval.multi_round_strategy import (
     uses_model_ranking,
     uses_physics_prior,
 )
+from goa_eval.multi_round_decisions import should_stop_optimization, target_metric_status
 from goa_eval.physics_engine import rank_physics_guided_points
 from goa_eval.sky130_sweep import run_sky130_sweep
 
@@ -192,36 +193,6 @@ def composite_objective(row: pd.Series | dict) -> float:
     return -10000.0 * hard_failures + 100.0 * score - 100.0 * not_evaluable + profile_score + analysis_bonus
 
 
-def target_metric_status(row: pd.Series | dict, *, metric: str, threshold: float) -> dict[str, object]:
-    metric_value = _as_float(row.get(metric))
-    stage_count = _as_float(row.get("stage_count"))
-    status = str(row.get("status", "") or "").lower()
-    if metric == "Max_overlap_ratio" and (stage_count is None or stage_count < 2):
-        return {
-            "target_metric": metric,
-            "target_threshold": threshold,
-            "target_value": metric_value,
-            "target_passed": "",
-            "target_status": "not_evaluable",
-        }
-    if status != "evaluated" or metric_value is None:
-        return {
-            "target_metric": metric,
-            "target_threshold": threshold,
-            "target_value": metric_value,
-            "target_passed": "",
-            "target_status": "not_evaluable",
-        }
-    passed = metric_value < threshold
-    return {
-        "target_metric": metric,
-        "target_threshold": threshold,
-        "target_value": metric_value,
-        "target_passed": bool(passed),
-        "target_status": "passed" if passed else "failed",
-    }
-
-
 def encode_parameter_points(points: list[dict[str, object]], parameters: dict[str, Any]) -> np.ndarray:
     columns: list[list[float]] = []
     for point in points:
@@ -232,25 +203,6 @@ def encode_parameter_points(points: list[dict[str, object]], parameters: dict[st
             row.append(float(lookup.get(str(point.get(name)), 0)))
         columns.append(row)
     return np.asarray(columns, dtype=float)
-
-
-def should_stop_optimization(rounds: list[dict], *, patience: int, min_improvement: float) -> str:
-    if len(rounds) <= 1 or patience <= 0:
-        return ""
-    best = _as_float(rounds[0].get("best_score"))
-    stale = 0
-    for item in rounds[1:]:
-        score = _as_float(item.get("best_score"))
-        if score is None:
-            stale += 1
-        elif best is None or score >= best + min_improvement:
-            best = score
-            stale = 0
-        else:
-            stale += 1
-        if stale >= patience:
-            return f"no improvement for {patience} round(s)"
-    return ""
 
 
 def run_multi_round_optimization(

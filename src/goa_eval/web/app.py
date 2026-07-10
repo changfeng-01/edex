@@ -15,11 +15,13 @@ from goa_eval.product_demo.schemas import DIRECTORIES
 from goa_eval.web.input_inspector import inspect_uploaded_case_input
 from goa_eval.web_api.loaders import load_bundle
 from goa_eval.web.runners import run_uploaded_case
+from goa_eval.web.security import require_write_access
 from goa_eval.web.schemas import UploadedCaseConfig, WebApiSettings, evidence_boundary
 from goa_eval.web.storage import (
     build_config,
     copy_sample_inputs,
     generate_demo_case_id,
+    generate_case_id,
     prepare_case_dir,
     read_status,
     resolve_asset,
@@ -38,6 +40,8 @@ from goa_eval.web.vercel_blob import (
 
 def create_app(settings: WebApiSettings | None = None) -> FastAPI:
     settings = settings or WebApiSettings.from_env()
+    if settings.require_write_auth and not settings.write_api_key:
+        raise ValueError("CIRCUITPILOT_WRITE_API_KEY is required when write authentication is enabled")
     blob_store = VercelBlobStore.from_env() if settings.blob_storage_enabled else VercelBlobStore()
     app = FastAPI(title="CircuitPilot Upload API", version="0.1.0")
     app.add_middleware(
@@ -54,6 +58,7 @@ def create_app(settings: WebApiSettings | None = None) -> FastAPI:
 
     @app.post("/api/cases")
     async def create_case(request: Request) -> dict[str, Any]:
+        require_write_access(request, settings)
         form = await request.form()
         fields = _form_fields(form)
         config = build_config(fields)
@@ -65,14 +70,16 @@ def create_app(settings: WebApiSettings | None = None) -> FastAPI:
 
     @app.post("/api/cases/preview")
     async def preview_case(request: Request) -> dict[str, Any]:
+        require_write_access(request, settings)
         form = await request.form()
         fields = _form_fields(form)
         config = build_config(fields)
+        config = config.model_copy(update={"case_id": generate_case_id()})
         uploads = _form_uploads(form)
         if not uploads:
             raise HTTPException(status_code=400, detail="waveform.csv is required")
         case_dir = prepare_case_dir(settings.web_cases_root, config.case_id)
-        await save_uploads(case_dir, uploads)
+        await save_uploads(case_dir, uploads, settings)
         preview = inspect_uploaded_case_input(case_dir, config)
         status = "preview_ready" if preview.get("ready_for_analysis") else "preview_failed"
         payload = {
@@ -86,7 +93,8 @@ def create_app(settings: WebApiSettings | None = None) -> FastAPI:
         return payload
 
     @app.post("/api/demo/sample-case")
-    def create_sample_case() -> dict[str, Any]:
+    def create_sample_case(request: Request) -> dict[str, Any]:
+        require_write_access(request, settings)
         case_id = generate_demo_case_id()
         case_dir = prepare_case_dir(settings.web_cases_root, case_id)
         copy_sample_inputs(case_dir, Path("examples/sample_waveform.csv"), Path("examples/sample_params.yaml"))
@@ -96,7 +104,7 @@ def create_app(settings: WebApiSettings | None = None) -> FastAPI:
 
     async def _run_case_from_uploads(settings: WebApiSettings, config: UploadedCaseConfig, uploads: list[UploadFile]):
         case_dir = prepare_case_dir(settings.web_cases_root, config.case_id)
-        await save_uploads(case_dir, uploads)
+        await save_uploads(case_dir, uploads, settings)
         result = run_uploaded_case(case_dir, config)
         persist_case_dir_to_blob(blob_store, case_dir, config.case_id)
         return result

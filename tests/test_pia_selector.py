@@ -4,7 +4,13 @@ import json
 
 import pandas as pd
 
-from goa_eval.pia_ca_llso.selector import select_candidates
+from goa_eval.pia_ca_llso.selector import _history_pass_rate, select_candidates
+
+
+def test_history_pass_rate_parses_false_string() -> None:
+    history = pd.DataFrame({"hard_constraint_passed": ["false", "no", "0"]})
+
+    assert _history_pass_rate(history) == 0.0
 
 
 def test_selector_returns_top_k_with_candidate_roles() -> None:

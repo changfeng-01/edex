@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - run: python -m pip install -e ".[test,dev]" -c constraints/py310.txt
+      - run: python -m ruff check src tests
+      - run: python -m pytest -q --junitxml=test-results/python.xml --cov=goa_eval --cov-report=xml:coverage.xml
+        env:
+          PYTHONPATH: src
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-test-and-coverage
+          path: |
+            test-results/python.xml
+            coverage.xml
+
+  windows-critical:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - run: python -m pip install -e ".[test,dev]" -c constraints/py310.txt
+      - run: python -m pytest tests -q -k "pia or web or waveform"
+        env:
+          PYTHONPATH: src
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm test -- --run
+      - run: npm run build

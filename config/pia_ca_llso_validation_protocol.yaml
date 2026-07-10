@@ -57,6 +57,12 @@ scenarios:
     config: config/pia_ca_llso_goa_profile.yaml
     source_type: local_fixture
     claim_boundary: CI fixture for closed-loop behavior only
+  - scenario_id: transistor_level_goa_fixture
+    history_csv: examples/transistor_level_goa/sample_history.csv
+    candidate_csv: examples/transistor_level_goa/sample_candidates_pre_sim.csv
+    config: config/pia_ca_llso_transistor_profile.yaml
+    source_type: local_fixture
+    claim_boundary: transistor-level next-run simulation suggestion fixture only
 boundary:
   data_source: real_simulation_csv
   engineering_validity: simulation_only

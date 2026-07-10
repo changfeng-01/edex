@@ -1,0 +1,3 @@
+candidate_id,overall_score,hard_constraint_passed,delay_s,rise_time_s,fall_time_s,power_w,voh_min_v,constraint_violation
+tc1,91,true,1.0e-6,1.5e-6,0.9e-6,0.082,12.8,0.00
+tc2,82,true,1.3e-6,1.9e-6,1.2e-6,0.076,12.0,0.04

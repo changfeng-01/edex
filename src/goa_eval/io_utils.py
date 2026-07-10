@@ -127,8 +127,8 @@ def gt(value: Any, limit: Any) -> bool:
     metrics.py:_gt()、diagnosis.py:_greater()。
     """
     v = finite_float(value)
-    l = finite_float(limit)
-    return v is not None and l is not None and v > l
+    threshold = finite_float(limit)
+    return v is not None and threshold is not None and v > threshold
 
 
 def json_number(value: Any) -> float | None:

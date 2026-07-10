@@ -25,6 +25,7 @@ def test_validation_protocol_loads_required_methods_and_ablation_settings() -> N
     assert "pia_evolve_full" in protocol["methods"]
     assert "active_uncertainty_diversity" in protocol["methods"]
     assert "active_influence_on_demand" in protocol["methods"]
+    assert "transistor_level_goa_fixture" in {scenario["scenario_id"] for scenario in protocol["scenarios"]}
     assert "no_capm_barrier" in protocol["ablations"]
     assert "no_influence_graph" in protocol["ablations"]
     assert "no_llso_offspring" in protocol["ablations"]

@@ -44,6 +44,41 @@ def test_compute_pulse_width():
     assert result.stage_rows[0]["pulse_width"] == pytest.approx(3e-6)
 
 
+def test_real_evaluation_marks_partial_output_coverage(tmp_path: Path) -> None:
+    waveform = tmp_path / "waveform.csv"
+    waveform.write_text("XVAL,v(o1),v(o2)\n0,0,0\n0.000001,6,0\n0.000002,0,6\n", encoding="utf-8")
+
+    summary = run_real_waveform_evaluation(
+        waveform_path=waveform,
+        internal_waveform_path=None,
+        output_dir=tmp_path / "out",
+        stage_count=3,
+        spec_path=None,
+    )
+
+    assert summary["expected_stage_count"] == 3
+    assert summary["observed_stage_count"] == 2
+    assert summary["output_coverage_ratio"] == pytest.approx(2 / 3)
+    assert summary["coverage_status"] == "partial"
+    assert summary["missing_output_nodes"] == ["o3"]
+    assert summary["full_cascade_claim_allowed"] is False
+
+
+def test_real_evaluation_strict_output_coverage_fails_closed(tmp_path: Path) -> None:
+    waveform = tmp_path / "waveform.csv"
+    waveform.write_text("XVAL,v(o1),v(o2)\n0,0,0\n0.000001,6,0\n0.000002,0,6\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="output coverage"):
+        run_real_waveform_evaluation(
+            waveform_path=waveform,
+            internal_waveform_path=None,
+            output_dir=tmp_path / "out",
+            stage_count=3,
+            strict_output_coverage=True,
+            spec_path=None,
+        )
+
+
 def test_sequence_pass():
     time = np.arange(0, 10, dtype=float) * 1e-6
     frame = pd.DataFrame(

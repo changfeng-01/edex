@@ -13,7 +13,7 @@ from goa_eval.pia_ca_llso.case_pack import (
     export_case_pack_template,
     load_case_pack,
 )
-from goa_eval.pia_ca_llso.case_pack_validation import validate_case_pack
+from goa_eval.pia_ca_llso.case_pack_validation import run_case_pack_validation, validate_case_pack
 
 
 def _write_case_pack(
@@ -227,3 +227,54 @@ def test_case_pack_report_preserves_boundary_labels(tmp_path: Path) -> None:
     assert "data_source = real_simulation_csv" in checklist
     assert "engineering_validity = simulation_only" in checklist
     assert "must_resimulate = true" in checklist
+
+
+def test_case_pack_statistics_sort_budget_before_target_and_curve(tmp_path: Path) -> None:
+    pack = _write_case_pack(tmp_path)
+    pd.DataFrame(
+        [
+            {"candidate_id": "c1", "method": "pia_full", "seed": 1, "budget_index": 3, "overall_score": 90.0, "hard_constraint_passed": True},
+            {"candidate_id": "c2", "method": "pia_full", "seed": 1, "budget_index": 1, "overall_score": 85.0, "hard_constraint_passed": True},
+            {"candidate_id": "c1", "method": "pia_full", "seed": 1, "budget_index": 2, "overall_score": 70.0, "hard_constraint_passed": True},
+            {"candidate_id": "c2", "method": "pia_no_repair", "seed": 1, "budget_index": 1, "overall_score": 70.0, "hard_constraint_passed": True},
+        ]
+    ).to_csv(pack / "simulation_results.csv", index=False)
+    output_dir = tmp_path / "out"
+
+    run_case_pack_validation(pack, None, output_dir, strict_evidence=False)
+
+    summary = pd.read_csv(output_dir / "publication_summary.csv")
+    row = summary[summary["method"] == "pia_full"].iloc[0]
+    assert row["target_hit_rate"] == 1.0
+    assert row["simulations_to_target"] == 1.0
+
+
+def test_case_pack_win_rates_do_not_count_missing_methods_as_losses(tmp_path: Path) -> None:
+    first = _write_case_pack(tmp_path, scenario_id="case_a")
+    second = _write_case_pack(tmp_path, scenario_id="case_b")
+    pd.DataFrame(
+        [
+            {"candidate_id": "c1", "method": "pia_full", "seed": 1, "budget_index": 1, "overall_score": 91.0, "hard_constraint_passed": True},
+        ]
+    ).to_csv(second / "simulation_results.csv", index=False)
+    output_dir = tmp_path / "out"
+
+    run_case_pack_validation(None, tmp_path, output_dir, strict_evidence=False)
+
+    win_rates = pd.read_csv(output_dir / "publication_win_rates.csv")
+    missing = win_rates[win_rates["method"] == "pia_no_repair"].iloc[0]
+    assert missing["scenario_comparisons"] == 1
+
+
+def test_strict_case_pack_rejects_duplicate_budget_for_method_seed(tmp_path: Path) -> None:
+    pack = _write_case_pack(tmp_path)
+    pd.DataFrame(
+        [
+            {"candidate_id": "c1", "method": "pia_full", "seed": 1, "budget_index": 1, "overall_score": 91.0, "hard_constraint_passed": True},
+            {"candidate_id": "c2", "method": "pia_full", "seed": 1, "budget_index": 1, "overall_score": 92.0, "hard_constraint_passed": True},
+            {"candidate_id": "c2", "method": "pia_no_repair", "seed": 1, "budget_index": 1, "overall_score": 70.0, "hard_constraint_passed": True},
+        ]
+    ).to_csv(pack / "simulation_results.csv", index=False)
+
+    with pytest.raises(ValueError, match="duplicate budget_index"):
+        validate_case_pack(pack, strict_evidence=True)

@@ -221,7 +221,7 @@ def test_evidence_missing_scenarios_are_excluded_from_statistical_claims(tmp_pat
     run_multi_scenario_validation(_protocol(tmp_path, direct_history, direct_candidates, action_history, action_candidates), tmp_path / "out")
     summary = pd.read_csv(tmp_path / "out" / "multi_scenario_summary.csv")
     action_rows = summary[summary["scenario_id"] == "action_missing"]
-    claim_rows = summary[summary["included_in_statistical_claim"] == True]
+    claim_rows = summary[summary["included_in_statistical_claim"]]
 
     assert action_rows["included_in_statistical_claim"].eq(False).all()
     assert set(claim_rows["scenario_id"]) == {"direct_evidence"}

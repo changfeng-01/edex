@@ -1,0 +1,7 @@
+candidate_id,M_pullup_W,M_pullup_L,M_pulldown_W,M_pulldown_L,M_reset_W,M_reset_L,M_bootstrap_W,M_bootstrap_L,C_load,C_boot,VDD,VSS,VGH,VGL,Vth_shift,CLK_rise_time,CLK_fall_time,sim_success,source,p_l1,p_hard_pass,predicted_score,uncertainty
+tc1,430,5,215,5,160,5,120,5,1.0,2.3,5,0,15,-5,1.2,0.10,0.10,true,imported,0.88,0.92,90,0.20
+tc2,370,5,225,5,150,5,110,5,1.1,1.7,5,0,15,-5,1.5,0.12,0.11,true,imported,0.70,0.85,82,0.35
+tc3,300,5,260,5,130,5,95,5,1.3,1.2,5,0,14,-5,2.0,0.18,0.18,true,imported,0.35,0.45,62,0.70
+tc4,450,5,180,5,170,5,130,5,1.0,2.5,5,0,15,-5,1.1,0.09,0.10,true,imported,0.82,0.90,88,0.25
+tc5,220,5,310,5,100,5,80,5,1.8,0.8,5,0,13,-4,3.1,0.28,0.30,false,imported,0.10,0.15,30,0.90
+tc6,400,5,205,5,155,5,118,5,1.0,2.1,5,0,15,-5,1.3,0.11,0.10,true,imported,0.80,0.88,86,0.30

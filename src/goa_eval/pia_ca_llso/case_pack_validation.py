@@ -12,6 +12,7 @@ import pandas as pd
 
 from goa_eval.io_utils import sha256_file, write_json
 from goa_eval.pia_ca_llso.case_pack import BOUNDARY, CasePack, case_pack_to_protocol, load_case_pack, load_case_pack_root
+from goa_eval.pia_ca_llso.value_coercion import finite_float, strict_bool
 
 
 LEAKAGE_COLUMNS = {
@@ -55,6 +56,7 @@ def validate_loaded_case_pack(pack: CasePack, strict_evidence: bool = False) -> 
     if pack.results is not None:
         _require_candidate_id("simulation_results.csv", pack.results)
         _validate_result_alignment(pack)
+        _validate_result_values(pack, strict_evidence=strict_evidence)
         evidence_available = _has_usable_evidence(pack.results)
     if strict_evidence and not evidence_available:
         raise ValueError(f"case pack {pack.scenario_id} requires simulation_results.csv evidence in strict mode")
@@ -164,8 +166,14 @@ def _selection_only_summary(pack: CasePack, method: str) -> dict[str, Any]:
 
 
 def _method_summary(pack: CasePack, method: str, seed: int, group: pd.DataFrame) -> dict[str, Any]:
+    group = group.copy()
+    if "budget_index" in group.columns:
+        group["budget_index"] = pd.to_numeric(group["budget_index"], errors="coerce")
+        group = group.sort_values("budget_index", kind="mergesort")
     scores = pd.to_numeric(group.get("overall_score", pd.Series(dtype=float)), errors="coerce")
-    hard = group.get("hard_constraint_passed", pd.Series(True, index=group.index)).map(_truthy)
+    hard = group.get("hard_constraint_passed", pd.Series(True, index=group.index)).map(
+        lambda value: strict_bool(value, field="hard_constraint_passed")
+    )
     feasible_scores = scores.where(hard, other=np.nan)
     hits = (scores >= pack.target_score) & hard
     if "budget_index" in group.columns:
@@ -179,7 +187,7 @@ def _method_summary(pack: CasePack, method: str, seed: int, group: pd.DataFrame)
         "method": method,
         "seed": int(seed),
         "budget": pack.top_k,
-        "target_hit_rate": float(hits.mean()) if len(group) else 0.0,
+        "target_hit_rate": float(hits.any()) if len(group) else 0.0,
         "simulations_to_target": float(hit_budgets.iloc[0]) if not hit_budgets.empty else np.nan,
         "convergence_auc": float(curve.mean()) if not curve.empty else np.nan,
         "best_evidence_score": float(feasible_scores.max()) if feasible_scores.notna().any() else np.nan,
@@ -211,7 +219,8 @@ def _publication_win_rates(summary: pd.DataFrame) -> pd.DataFrame:
         ranked = group.sort_values(["target_hit_rate", "convergence_auc"], ascending=[False, False])
         if ranked.empty:
             continue
-        for method in methods:
+        present_methods = set(group["method"].dropna().astype(str))
+        for method in present_methods:
             totals[method] += 1
         top = ranked.iloc[0]
         ties = ranked[
@@ -386,6 +395,44 @@ def _validate_result_alignment(pack: CasePack) -> None:
     missing = sorted(result_ids - candidate_ids)
     if missing:
         raise ValueError(f"simulation_results.csv contains candidate_id values missing from candidate_pool.csv: {', '.join(missing)}")
+
+
+def _validate_result_values(pack: CasePack, *, strict_evidence: bool) -> None:
+    if pack.results is None or pack.results.empty:
+        return
+    results = pack.results
+    required = {"candidate_id", "overall_score", "hard_constraint_passed"}
+    missing = sorted(required - set(results.columns))
+    if missing:
+        raise ValueError(f"simulation_results.csv missing required columns: {', '.join(missing)}")
+    candidate_ids = results["candidate_id"].astype("string")
+    if (candidate_ids.isna() | candidate_ids.str.strip().eq("")).any():
+        raise ValueError("simulation_results.csv candidate_id must not be empty")
+    results["candidate_id"] = candidate_ids.str.strip().astype(str)
+    results["overall_score"] = [finite_float(value, field="overall_score") for value in results["overall_score"]]
+    results["hard_constraint_passed"] = [
+        strict_bool(value, field="hard_constraint_passed") for value in results["hard_constraint_passed"]
+    ]
+    if not strict_evidence:
+        return
+    strict_columns = {"method", "seed", "budget_index"}
+    missing_strict = sorted(strict_columns - set(results.columns))
+    if missing_strict:
+        raise ValueError(f"strict evidence results missing columns: {', '.join(missing_strict)}")
+    results["budget_index"] = pd.to_numeric(results["budget_index"], errors="coerce")
+    if results["budget_index"].isna().any():
+        raise ValueError("budget_index must be numeric in strict evidence mode")
+    duplicate_budget = results.duplicated(["method", "seed", "budget_index"], keep=False)
+    if duplicate_budget.any():
+        raise ValueError("duplicate budget_index for method and seed in strict evidence mode")
+    invalid_budget = (results["budget_index"] < 1) | (results["budget_index"] > pack.top_k)
+    if invalid_budget.any():
+        raise ValueError(f"budget_index must be between 1 and top_k={pack.top_k}")
+    present = set(zip(results["method"].astype(str), pd.to_numeric(results["seed"], errors="coerce")))
+    expected = {(method, seed) for method in pack.methods for seed in pack.seeds}
+    missing_pairs = sorted(expected - present)
+    if missing_pairs:
+        raise ValueError(f"strict evidence missing method/seed results: {missing_pairs}")
 
 
 def _has_usable_evidence(results: pd.DataFrame) -> bool:

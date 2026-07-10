@@ -40,6 +40,10 @@ def inspect_uploaded_case_input(case_dir: Path, config: UploadedCaseConfig | Non
         "detected_output_node_count": 0,
         "sample_output_nodes": [],
         "missing_configured_nodes": [],
+        "expected_stage_count": None,
+        "observed_stage_count": 0,
+        "output_coverage_ratio": None,
+        "coverage_status": "unknown",
         "warnings": warnings,
         "errors": errors,
         "suggestions": suggestions,
@@ -74,6 +78,7 @@ def inspect_uploaded_case_input(case_dir: Path, config: UploadedCaseConfig | Non
     preview["normalized_columns"] = normalized_columns
     preview["detected_output_nodes"] = [node for _, node in output_pairs]
     preview["detected_output_node_count"] = len(output_pairs)
+    preview["observed_stage_count"] = len(output_pairs)
     preview["sample_output_nodes"] = [node for _, node in output_pairs[:8]]
 
     if time_index is None:
@@ -108,6 +113,10 @@ def inspect_uploaded_case_input(case_dir: Path, config: UploadedCaseConfig | Non
 
     missing_configured_nodes = _missing_configured_nodes(config, [node for _, node in output_pairs])
     preview["missing_configured_nodes"] = missing_configured_nodes
+    if config is not None and config.stage_count:
+        preview["expected_stage_count"] = int(config.stage_count)
+        preview["output_coverage_ratio"] = len(output_pairs) / int(config.stage_count)
+        preview["coverage_status"] = "complete" if not missing_configured_nodes else "partial"
     if missing_configured_nodes:
         warnings.append("Some configured output nodes were not found in waveform.csv.")
 

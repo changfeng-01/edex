@@ -19,41 +19,17 @@ from goa_eval.pia_ca_llso.paper_baselines import PAPER_BASELINE_STRATEGIES, sele
 from goa_eval.pia_ca_llso.raw_distance import select_by_raw_distance
 from goa_eval.pia_ca_llso.schema import SelectionResult
 from goa_eval.pia_ca_llso.sklearn_baseline import predict_candidates, train_baseline_models
+from goa_eval.pia_ca_llso.value_coercion import strict_bool
+from goa_eval.pia_ca_llso.selector_weights import (
+    ACTIVE_INFLUENCE_ON_DEMAND_WEIGHTS,
+    ACTIVE_UNCERTAINTY_DIVERSITY_WEIGHTS,
+    CAPM_ACQUISITION_WEIGHTS,
+    CLASSIFIER_HYBRID_WEIGHTS,
+    LITERATURE_ENSEMBLE_WEIGHTS,
+)
 
 
 ROLES = ["exploitation_best", "l1_center", "boundary_learning", "diversity_exploration"]
-
-CAPM_ACQUISITION_WEIGHTS = {
-    "distance": 0.45,
-    "diversity": 0.25,
-    "hard_mask": 0.25,
-    "missing_feature_confidence": 0.05,
-}
-
-CLASSIFIER_HYBRID_WEIGHTS = {
-    "p_l1": 0.30,
-    "p_hard_pass": 0.20,
-    "predicted_score": 0.20,
-    "capm_distance": 0.15,
-    "capm_hard_risk_passed": 0.10,
-    "diversity_score": 0.05,
-}
-
-ACTIVE_UNCERTAINTY_DIVERSITY_WEIGHTS = {
-    "base_score": 0.45,
-    "uncertainty": 0.25,
-    "batch_diversity": 0.20,
-    "hard_gate": 0.10,
-}
-
-ACTIVE_INFLUENCE_ON_DEMAND_WEIGHTS = {
-    "active_base": 0.30,
-    "influence_gain": 0.22,
-    "constraint_urgency": 0.18,
-    "uncertainty": 0.15,
-    "transfer_trust": 0.10,
-    "batch_diversity": 0.05,
-}
 
 LITERATURE_ENSEMBLE_STRATEGIES = {
     "literature_ensemble_hybrid",
@@ -68,14 +44,6 @@ CLASSIFIER_REQUIRED_STRATEGIES = {
     ACTIVE_ACQUISITION_STRATEGY,
     ACTIVE_INFLUENCE_ON_DEMAND_STRATEGY,
     *LITERATURE_ENSEMBLE_STRATEGIES,
-}
-
-LITERATURE_ENSEMBLE_WEIGHTS = {
-    "deaoe": 0.22,
-    "hrcea": 0.22,
-    "aiea": 0.18,
-    "cesaea": 0.20,
-    "eccoea_asaa": 0.18,
 }
 
 
@@ -824,7 +792,7 @@ def _learn_adaptive_capm_weights(
     if len(history) < min_rows:
         return base
     hard_col = "hard_constraint_passed" if "hard_constraint_passed" in history.columns else "hard_pass"
-    hard_values = history[hard_col].astype(bool) if hard_col in history.columns else pd.Series(True, index=history.index)
+    hard_values = _strict_bool_series(history[hard_col], field=hard_col) if hard_col in history.columns else pd.Series(True, index=history.index)
     score_values = pd.to_numeric(history.get("overall_score", pd.Series(dtype="float64")), errors="coerce")
     learned: dict[str, float] = {}
     for col in feature_cols:
@@ -853,7 +821,7 @@ def _adaptive_acquisition_weights(history: pd.DataFrame, config: Mapping[str, An
     weights = dict(CAPM_ACQUISITION_WEIGHTS)
     hard_col = "hard_constraint_passed" if "hard_constraint_passed" in history.columns else "hard_pass"
     if hard_col in history.columns and not history.empty:
-        pass_rate = float(history[hard_col].astype(bool).mean())
+        pass_rate = float(_strict_bool_series(history[hard_col], field=hard_col).mean())
         if pass_rate < 0.5:
             weights.update({"distance": 0.35, "diversity": 0.20, "hard_mask": 0.40, "missing_feature_confidence": 0.05})
     if "level_label" in history.columns and int((history["level_label"] == "L1").sum()) >= int(adaptive_config.get("l1_distance_boost_min_count", 2)):
@@ -876,7 +844,11 @@ def _history_pass_rate(history: pd.DataFrame) -> float:
     hard_col = "hard_constraint_passed" if "hard_constraint_passed" in history.columns else "hard_pass"
     if hard_col not in history.columns or history.empty:
         return 0.5
-    return float(history[hard_col].astype(bool).mean())
+    return float(_strict_bool_series(history[hard_col], field=hard_col).mean())
+
+
+def _strict_bool_series(values: pd.Series, *, field: str) -> pd.Series:
+    return values.map(lambda value: strict_bool(value, field=field)).astype(bool)
 
 
 def _feature_heterogeneity(history: pd.DataFrame, feature_cols: Sequence[str]) -> float:

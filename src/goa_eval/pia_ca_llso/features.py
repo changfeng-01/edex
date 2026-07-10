@@ -34,6 +34,15 @@ def _series(frame: pd.DataFrame, name: str, missing: set[str], default: float = 
     return pd.Series(default, index=frame.index, dtype="float64")
 
 
+def _first_series(frame: pd.DataFrame, names: Iterable[str], missing: set[str], default: float = 0.0) -> pd.Series:
+    for name in names:
+        if name in frame.columns:
+            return pd.to_numeric(frame[name], errors="coerce").fillna(default)
+    for name in names:
+        missing.add(name)
+    return pd.Series(default, index=frame.index, dtype="float64")
+
+
 def extract_physics_features(frame: pd.DataFrame, profile_config: dict[str, Any] | None = None) -> tuple[pd.DataFrame, dict[str, Any]]:
     config = profile_config or {}
     profile = config.get("profile", "generic")
@@ -79,6 +88,40 @@ def extract_physics_features(frame: pd.DataFrame, profile_config: dict[str, Any]
         features["vgh_vth_margin"] = vgh - vth
         features["vgl_off_margin"] = np.abs(vgl) - np.abs(vth)
         features["holding_droop_proxy"] = _safe_div(c_load, c_boot + c_load)
+
+    if profile == "transistor_level":
+        pu_w = _first_series(frame, ["M_pullup_W", "TFT_pullup_W"], missing)
+        pu_l = _first_series(frame, ["M_pullup_L", "TFT_pullup_L"], missing, 1.0)
+        pd_w = _first_series(frame, ["M_pulldown_W", "TFT_pulldown_W"], missing)
+        pd_l = _first_series(frame, ["M_pulldown_L", "TFT_pulldown_L"], missing, 1.0)
+        rst_w = _first_series(frame, ["M_reset_W", "TFT_reset_W"], missing)
+        rst_l = _first_series(frame, ["M_reset_L", "TFT_reset_L"], missing, 1.0)
+        boot_w = _first_series(frame, ["M_bootstrap_W", "TFT_bootstrap_W"], missing)
+        boot_l = _first_series(frame, ["M_bootstrap_L", "TFT_bootstrap_L"], missing, 1.0)
+        vdd = _series(frame, "VDD", missing)
+        vss = _series(frame, "VSS", missing)
+        clk_rise = _series(frame, "CLK_rise_time", missing)
+        clk_fall = _series(frame, "CLK_fall_time", missing)
+        pullup_w_l = _safe_div(pu_w, pu_l)
+        pulldown_w_l = _safe_div(pd_w, pd_l)
+        reset_w_l = _safe_div(rst_w, rst_l)
+        bootstrap_w_l = _safe_div(boot_w, boot_l)
+        total_w = pu_w + pd_w + rst_w + boot_w
+        features["pullup_w_l"] = pullup_w_l
+        features["pulldown_w_l"] = pulldown_w_l
+        features["reset_w_l"] = reset_w_l
+        features["bootstrap_w_l"] = bootstrap_w_l
+        features["pullup_pulldown_ratio"] = _safe_div(pullup_w_l, pd.Series(pulldown_w_l, index=frame.index).replace(0, np.nan))
+        features["drive_to_load_ratio"] = _safe_div(pullup_w_l + pulldown_w_l, c_load.replace(0, np.nan))
+        features["cboot_cload_ratio"] = _safe_div(c_boot, c_load)
+        features["ron_pullup_cload_proxy"] = _safe_div(c_load, pd.Series(pullup_w_l, index=frame.index).replace(0, np.nan))
+        features["ron_pulldown_cload_proxy"] = _safe_div(c_load, pd.Series(pulldown_w_l, index=frame.index).replace(0, np.nan))
+        features["clk_slew_proxy"] = clk_rise + clk_fall
+        features["vgh_vth_margin"] = vgh - vth
+        features["vgl_off_margin"] = np.abs(vgl) - np.abs(vth)
+        features["supply_swing"] = vdd - vss
+        features["holding_droop_proxy"] = _safe_div(c_load, c_boot + c_load)
+        features["area_proxy"] = total_w * (pu_l + pd_l + rst_l + boot_l) / 4.0
 
     features = features.replace([np.inf, -np.inf], 0.0).fillna(0.0)
     forbidden = config.get("forbidden_metric_names", DEFAULT_FORBIDDEN_METRIC_NAMES)

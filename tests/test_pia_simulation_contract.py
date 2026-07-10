@@ -184,7 +184,7 @@ def test_import_simulation_results_appends_generation_metadata() -> None:
         assert all(imported["source"] == "simulation_result")
         assert all(imported["data_source"] == "real_simulation_csv")
         assert all(imported["engineering_validity"] == "simulation_only")
-        assert all(imported["must_resimulate"] == False)
+        assert not imported["must_resimulate"].any()
 
 
 def test_validate_simulation_results_rejects_duplicate_candidate_ids() -> None:
@@ -210,6 +210,61 @@ def test_validate_simulation_results_rejects_non_numeric_score() -> None:
     })
 
     with pytest.raises(ValueError, match="overall_score"):
+        validate_simulation_results(results, batch, config)
+
+
+def test_validate_simulation_results_normalizes_false_string() -> None:
+    batch = _make_simulation_batch()
+    config = _make_config()
+    results = pd.DataFrame({
+        "candidate_id": ["c0"],
+        "overall_score": [85.0],
+        "hard_constraint_passed": ["false"],
+    })
+
+    cleaned, _report = validate_simulation_results(results, batch, config)
+
+    assert cleaned.loc[0, "hard_constraint_passed"] is False
+
+
+@pytest.mark.parametrize("value", ["", "unknown", 2, np.nan])
+def test_validate_simulation_results_rejects_ambiguous_hard_constraint(value) -> None:
+    batch = _make_simulation_batch()
+    config = _make_config()
+    results = pd.DataFrame({
+        "candidate_id": ["c0"],
+        "overall_score": [85.0],
+        "hard_constraint_passed": [value],
+    })
+
+    with pytest.raises(ValueError, match="hard_constraint_passed"):
+        validate_simulation_results(results, batch, config)
+
+
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
+def test_validate_simulation_results_rejects_non_finite_score(value: float) -> None:
+    batch = _make_simulation_batch()
+    config = _make_config()
+    results = pd.DataFrame({
+        "candidate_id": ["c0"],
+        "overall_score": [value],
+        "hard_constraint_passed": [True],
+    })
+
+    with pytest.raises(ValueError, match="overall_score"):
+        validate_simulation_results(results, batch, config)
+
+
+def test_validate_simulation_results_rejects_empty_candidate_id() -> None:
+    batch = _make_simulation_batch()
+    config = _make_config()
+    results = pd.DataFrame({
+        "candidate_id": ["  "],
+        "overall_score": [85.0],
+        "hard_constraint_passed": [True],
+    })
+
+    with pytest.raises(ValueError, match="candidate_id"):
         validate_simulation_results(results, batch, config)
 
 

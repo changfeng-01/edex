@@ -3,13 +3,13 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 import json
-import math
 import random
 from typing import Any
 
 import pandas as pd
 
 from goa_eval.io_utils import as_float as _as_float, json_number as _json_number, write_json
+from goa_eval.goa_hybrid_candidates import candidate_counts as _candidate_counts
 from goa_eval.optimizer import load_param_space
 from goa_eval.param_space import parse_engineering_value
 from goa_eval.pareto import DEFAULT_OBJECTIVES, pareto_rank, select_knee_points
@@ -582,24 +582,6 @@ def _mutation_strength(base: dict[str, Any], params: dict[str, Any]) -> float:
     if not params:
         return 0.0
     return len(_changed_parameters(base, params)) / len(params)
-
-
-def _candidate_counts(max_candidates: int, mix: dict[str, float]) -> dict[str, int]:
-    max_candidates = max(0, int(max_candidates))
-    if max_candidates == 0:
-        return {"surrogate": 0, "repair": 0, "exploration": 0}
-    counts = {key: int(math.floor(max_candidates * float(mix.get(key, 0.0)))) for key in ["surrogate", "repair", "exploration"]}
-    for key in ["surrogate", "repair", "exploration"]:
-        if max_candidates >= 3 and counts[key] == 0:
-            counts[key] = 1
-    while sum(counts.values()) < max_candidates:
-        counts["surrogate"] += 1
-    while sum(counts.values()) > max_candidates:
-        for key in ["exploration", "repair", "surrogate"]:
-            if counts[key] > 1:
-                counts[key] -= 1
-                break
-    return counts
 
 
 def _ensure_source_coverage(

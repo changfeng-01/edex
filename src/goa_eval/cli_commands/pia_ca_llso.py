@@ -18,6 +18,7 @@ from goa_eval.pia_ca_llso.multi_scenario_validation import run_multi_scenario_va
 from goa_eval.pia_ca_llso.paper_reproduction import DEFAULT_REPRODUCTION_METHODS, run_paper_reproduction_benchmark
 from goa_eval.pia_ca_llso.report import render_candidate_report
 from goa_eval.pia_ca_llso.training_data import build_training_data_from_db
+from goa_eval.pia_ca_llso.transistor_level_adapter import build_transistor_level_netlists
 from goa_eval.pia_ca_llso.validation_protocol import ValidationRunSpec
 
 
@@ -55,6 +56,13 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     contract = subparsers.add_parser("pia-export-contract")
     contract.add_argument("--output-dir", required=True)
     contract.set_defaults(handler=handle_pia_export_contract)
+
+    render_transistor = subparsers.add_parser("pia-render-transistor-netlists")
+    render_transistor.add_argument("--simulation-batch", required=True)
+    render_transistor.add_argument("--template", required=True)
+    render_transistor.add_argument("--config", default="config/pia_ca_llso_transistor_profile.yaml")
+    render_transistor.add_argument("--output-dir", required=True)
+    render_transistor.set_defaults(handler=handle_pia_render_transistor_netlists)
 
     train = subparsers.add_parser("pia-train-from-db")
     train.add_argument("--paper-db", type=Path, default=Path("data/paper_database"))
@@ -167,6 +175,21 @@ def handle_pia_export_contract(args: argparse.Namespace) -> int:
     write_json(output_dir / "pia_history_schema.json", {"required": ["sample_id", "overall_score", "hard_constraint_passed"]})
     write_json(output_dir / "pia_candidate_schema.json", {"required": ["candidate_id"], "recommended": ["parameter columns"]})
     write_json(output_dir / "pia_output_schema.json", {"required": ["candidate_id", "selected_rank", "candidate_role"]})
+    return 0
+
+
+def handle_pia_render_transistor_netlists(args: argparse.Namespace) -> int:
+    output_dir = ensure_output_dir(args.output_dir)
+    config = read_config(args.config)
+    simulation_batch = pd.read_csv(args.simulation_batch)
+    netlists, manifest = build_transistor_level_netlists(
+        simulation_batch,
+        template_path=args.template,
+        output_dir=output_dir,
+        parameter_columns=config.get("parameter_columns", []),
+    )
+    netlists.to_csv(output_dir / "transistor_level_netlists.csv", index=False)
+    write_json(output_dir / "transistor_level_netlist_manifest.json", manifest)
     return 0
 
 
