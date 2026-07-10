@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+import numpy as np
 import pandas as pd
+
+from goa_eval.pia_ca_llso.value_coercion import strict_bool
 
 
 def validate_simulation_results(
@@ -38,6 +41,12 @@ def validate_simulation_results(
     if "candidate_id" not in simulation_batch.columns:
         raise ValueError("simulation_batch is missing candidate_id")
 
+    candidate_ids = cleaned["candidate_id"].astype("string")
+    empty_ids = candidate_ids.isna() | candidate_ids.str.strip().eq("")
+    if empty_ids.any():
+        raise ValueError("candidate_id must not be empty")
+    cleaned["candidate_id"] = candidate_ids.str.strip().astype(str)
+
     allow_duplicates = bool(exec_cfg.get("allow_duplicate_candidate_ids", False))
     duplicate_mask = cleaned["candidate_id"].duplicated(keep=False)
     if duplicate_mask.any() and not allow_duplicates:
@@ -51,10 +60,16 @@ def validate_simulation_results(
         raise ValueError(f"result candidate_id values are not in simulation batch: {unknown_ids}")
 
     scores = pd.to_numeric(cleaned["overall_score"], errors="coerce")
-    if scores.isna().any():
-        bad_ids = cleaned.loc[scores.isna(), "candidate_id"].astype(str).tolist()
-        raise ValueError(f"overall_score must be numeric for candidate_id values: {bad_ids}")
+    non_finite = scores.isna() | ~np.isfinite(scores)
+    if non_finite.any():
+        bad_ids = cleaned.loc[non_finite, "candidate_id"].astype(str).tolist()
+        raise ValueError(f"overall_score must be numeric and finite for candidate_id values: {bad_ids}")
     cleaned["overall_score"] = scores
+    cleaned["hard_constraint_passed"] = pd.Series(
+        [strict_bool(value, field="hard_constraint_passed") for value in cleaned["hard_constraint_passed"]],
+        index=cleaned.index,
+        dtype=object,
+    )
 
     batch_by_id = simulation_batch.set_index(simulation_batch["candidate_id"].astype(str), drop=False)
     parameter_columns = list(config.get("parameter_columns", []))

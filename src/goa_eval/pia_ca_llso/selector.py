@@ -19,6 +19,7 @@ from goa_eval.pia_ca_llso.paper_baselines import PAPER_BASELINE_STRATEGIES, sele
 from goa_eval.pia_ca_llso.raw_distance import select_by_raw_distance
 from goa_eval.pia_ca_llso.schema import SelectionResult
 from goa_eval.pia_ca_llso.sklearn_baseline import predict_candidates, train_baseline_models
+from goa_eval.pia_ca_llso.value_coercion import strict_bool
 
 
 ROLES = ["exploitation_best", "l1_center", "boundary_learning", "diversity_exploration"]
@@ -824,7 +825,7 @@ def _learn_adaptive_capm_weights(
     if len(history) < min_rows:
         return base
     hard_col = "hard_constraint_passed" if "hard_constraint_passed" in history.columns else "hard_pass"
-    hard_values = history[hard_col].astype(bool) if hard_col in history.columns else pd.Series(True, index=history.index)
+    hard_values = _strict_bool_series(history[hard_col], field=hard_col) if hard_col in history.columns else pd.Series(True, index=history.index)
     score_values = pd.to_numeric(history.get("overall_score", pd.Series(dtype="float64")), errors="coerce")
     learned: dict[str, float] = {}
     for col in feature_cols:
@@ -853,7 +854,7 @@ def _adaptive_acquisition_weights(history: pd.DataFrame, config: Mapping[str, An
     weights = dict(CAPM_ACQUISITION_WEIGHTS)
     hard_col = "hard_constraint_passed" if "hard_constraint_passed" in history.columns else "hard_pass"
     if hard_col in history.columns and not history.empty:
-        pass_rate = float(history[hard_col].astype(bool).mean())
+        pass_rate = float(_strict_bool_series(history[hard_col], field=hard_col).mean())
         if pass_rate < 0.5:
             weights.update({"distance": 0.35, "diversity": 0.20, "hard_mask": 0.40, "missing_feature_confidence": 0.05})
     if "level_label" in history.columns and int((history["level_label"] == "L1").sum()) >= int(adaptive_config.get("l1_distance_boost_min_count", 2)):
@@ -876,7 +877,11 @@ def _history_pass_rate(history: pd.DataFrame) -> float:
     hard_col = "hard_constraint_passed" if "hard_constraint_passed" in history.columns else "hard_pass"
     if hard_col not in history.columns or history.empty:
         return 0.5
-    return float(history[hard_col].astype(bool).mean())
+    return float(_strict_bool_series(history[hard_col], field=hard_col).mean())
+
+
+def _strict_bool_series(values: pd.Series, *, field: str) -> pd.Series:
+    return values.map(lambda value: strict_bool(value, field=field)).astype(bool)
 
 
 def _feature_heterogeneity(history: pd.DataFrame, feature_cols: Sequence[str]) -> float:
