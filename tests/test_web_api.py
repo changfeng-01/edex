@@ -7,8 +7,8 @@ from goa_eval.web.app import create_app
 from goa_eval.web.schemas import WebApiSettings
 
 
-def client_for(root: Path) -> TestClient:
-    app = create_app(WebApiSettings(web_cases_root=root))
+def client_for(root: Path, **settings) -> TestClient:
+    app = create_app(WebApiSettings(web_cases_root=root, **settings))
     return TestClient(app)
 
 
@@ -132,7 +132,7 @@ def test_preview_upload_returns_input_preview_and_evidence_boundary(tmp_path: Pa
     with Path("examples/sample_waveform.csv").open("rb") as waveform, Path("examples/sample_params.yaml").open("rb") as params:
         response = client.post(
             "/api/cases/preview",
-            data={"case_id": "preview_case", "output_node_pattern": "o{index}"},
+            data={"case_id": "preview_case", "stage_count": "4", "output_node_pattern": "o{index}"},
             files={
                 "waveform": ("waveform.csv", waveform, "text/csv"),
                 "params": ("params.yaml", params, "application/x-yaml"),
@@ -141,7 +141,8 @@ def test_preview_upload_returns_input_preview_and_evidence_boundary(tmp_path: Pa
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["case_id"] == "preview_case"
+    case_id = payload["case_id"]
+    assert case_id.startswith("case_")
     assert payload["status"] == "preview_ready"
     assert payload["evidence_boundary"] == {
         "data_source": "real_simulation_csv",
@@ -157,13 +158,17 @@ def test_preview_upload_returns_input_preview_and_evidence_boundary(tmp_path: Pa
     assert preview["time_column_normalized"] == "time"
     assert preview["detected_output_nodes"][:3] == ["o1", "o2", "o3"]
     assert preview["detected_output_node_count"] == 3
+    assert preview["expected_stage_count"] == 4
+    assert preview["observed_stage_count"] == 3
+    assert preview["output_coverage_ratio"] == 0.75
+    assert preview["coverage_status"] == "partial"
     assert preview["params_summary"]["has_param_space"] is True
     assert preview["params_summary"]["parameter_count"] == 8
     assert "capacitance" in preview["params_summary"]["parameter_names"]
 
-    get_response = client.get("/api/cases/preview_case/input-preview")
+    get_response = client.get(f"/api/cases/{case_id}/input-preview")
     assert get_response.status_code == 200
-    assert get_response.json()["case_id"] == "preview_case"
+    assert get_response.json()["case_id"] == case_id
     assert get_response.json()["preview"]["time_column_original"] == "XVAL"
 
 
@@ -257,3 +262,72 @@ def test_asset_path_escape_is_rejected(tmp_path: Path):
     response = client.get("/api/cases/sample_case/assets/../../secret.csv")
 
     assert response.status_code in {400, 404}
+
+
+def test_required_write_auth_rejects_missing_and_wrong_key(tmp_path: Path) -> None:
+    client = client_for(
+        tmp_path / "web_cases",
+        write_api_key="secret-key",
+        require_write_auth=True,
+    )
+
+    assert client.post("/api/cases").status_code == 401
+    assert client.post("/api/cases", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    authorized = client.post("/api/cases", headers={"Authorization": "Bearer secret-key"})
+    assert authorized.status_code == 400
+    assert "waveform.csv is required" in authorized.json()["detail"]
+
+
+def test_required_write_auth_without_key_fails_at_startup(tmp_path: Path) -> None:
+    try:
+        create_app(WebApiSettings(web_cases_root=tmp_path, require_write_auth=True))
+    except ValueError as exc:
+        assert "CIRCUITPILOT_WRITE_API_KEY" in str(exc)
+    else:
+        raise AssertionError("create_app should reject missing required write key")
+
+
+def test_existing_case_returns_conflict_without_deleting_files(tmp_path: Path) -> None:
+    root = tmp_path / "web_cases"
+    existing = root / "same_case"
+    existing.mkdir(parents=True)
+    sentinel = existing / "keep.txt"
+    sentinel.write_text("preserve", encoding="utf-8")
+    client = client_for(root)
+
+    with Path("examples/sample_waveform.csv").open("rb") as waveform:
+        response = client.post(
+            "/api/cases",
+            data={"case_id": "same_case"},
+            files={"waveform": ("waveform.csv", waveform, "text/csv")},
+        )
+
+    assert response.status_code == 409
+    assert sentinel.read_text(encoding="utf-8") == "preserve"
+
+
+def test_preview_uses_generated_case_id_instead_of_client_id(tmp_path: Path) -> None:
+    client = client_for(tmp_path / "web_cases")
+
+    with Path("examples/sample_waveform.csv").open("rb") as waveform:
+        response = client.post(
+            "/api/cases/preview",
+            data={"case_id": "requested_preview"},
+            files={"waveform": ("waveform.csv", waveform, "text/csv")},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["case_id"].startswith("case_")
+    assert response.json()["case_id"] != "requested_preview"
+
+
+def test_waveform_upload_over_limit_returns_413(tmp_path: Path) -> None:
+    client = client_for(tmp_path / "web_cases", max_waveform_bytes=4, max_request_bytes=8)
+
+    response = client.post(
+        "/api/cases",
+        files={"waveform": ("waveform.csv", b"XVAL,v(o1)\n0,0\n", "text/csv")},
+    )
+
+    assert response.status_code == 413
+    assert "waveform" in response.json()["detail"]

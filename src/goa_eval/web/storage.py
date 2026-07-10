@@ -5,12 +5,15 @@ import shutil
 import uuid
 import datetime as dt
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException, UploadFile
 
 from goa_eval.io_utils import write_json
 from goa_eval.web.schemas import UploadedCaseConfig, evidence_boundary
+
+if TYPE_CHECKING:
+    from goa_eval.web.schemas import WebApiSettings
 
 
 CASE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -66,28 +69,64 @@ def prepare_case_dir(root: Path, case_id: str) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     case_dir = resolve_under(root, validate_case_id(case_id))
     if case_dir.exists():
-        shutil.rmtree(case_dir)
+        raise HTTPException(status_code=409, detail=f"case_id already exists: {case_id}")
     (case_dir / "input").mkdir(parents=True, exist_ok=True)
     (case_dir / "analysis").mkdir(parents=True, exist_ok=True)
     (case_dir / "product_demo").mkdir(parents=True, exist_ok=True)
     return case_dir
 
 
-async def save_uploads(case_dir: Path, files: list[UploadFile]) -> dict[str, Path]:
+async def save_uploads(
+    case_dir: Path,
+    files: list[UploadFile],
+    settings: "WebApiSettings | None" = None,
+) -> dict[str, Path]:
+    from goa_eval.web.schemas import WebApiSettings
+
+    settings = settings or WebApiSettings()
     input_dir = case_dir / "input"
     saved: dict[str, Path] = {}
     attachments_dir = input_dir / "attachments"
+    total_bytes = 0
+    attachment_count = 0
     for upload in files:
         filename = validate_filename(upload.filename or "")
         target_name = _target_name(upload, filename, saved)
         if target_name.startswith("attachments/"):
+            attachment_count += 1
+            if attachment_count > settings.max_attachments:
+                raise HTTPException(status_code=413, detail=f"attachment count exceeds {settings.max_attachments}")
             attachments_dir.mkdir(parents=True, exist_ok=True)
         target = resolve_under(input_dir, *target_name.split("/"))
-        target.write_bytes(await upload.read())
+        file_limit = _upload_limit(target_name, settings)
+        file_bytes = 0
+        try:
+            with target.open("wb") as handle:
+                while chunk := await upload.read(1024 * 1024):
+                    file_bytes += len(chunk)
+                    total_bytes += len(chunk)
+                    if file_bytes > file_limit:
+                        raise HTTPException(status_code=413, detail=f"{target_name} exceeds upload limit")
+                    if total_bytes > settings.max_request_bytes:
+                        raise HTTPException(status_code=413, detail="upload request exceeds total limit")
+                    handle.write(chunk)
+        except Exception:
+            target.unlink(missing_ok=True)
+            raise
         saved[target_name] = target
     if "waveform.csv" not in saved:
         raise HTTPException(status_code=400, detail="waveform.csv is required")
     return saved
+
+
+def _upload_limit(target_name: str, settings: "WebApiSettings") -> int:
+    if target_name == "waveform.csv":
+        return settings.max_waveform_bytes
+    if target_name == "params.yaml":
+        return settings.max_param_bytes
+    if target_name.startswith("attachments/"):
+        return settings.max_image_bytes
+    return settings.max_netlist_bytes
 
 
 def copy_sample_inputs(case_dir: Path, waveform_path: Path, params_path: Path | None = None) -> dict[str, Path]:

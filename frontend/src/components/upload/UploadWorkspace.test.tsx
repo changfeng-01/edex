@@ -7,6 +7,7 @@ describe("UploadWorkspace", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    window.sessionStorage.clear();
     window.history.replaceState(null, "", "/");
   });
 
@@ -75,10 +76,10 @@ describe("UploadWorkspace", () => {
     expect(screen.getByText(/params.yaml could not be parsed/)).toBeInTheDocument();
     expect(screen.getByText(/Use output columns such as v\(o1\)/)).toBeInTheDocument();
     expect(screen.getAllByText(/data_source = real_simulation_csv/).length).toBeGreaterThan(0);
-    expect(window.location.search).toBe("?case_id=previewed_case");
+    expect(window.location.search).toBe("");
   });
 
-  it("uses the preview case_id for the later analysis request", async () => {
+  it("does not reuse the preview case_id for the later analysis request", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
@@ -91,9 +92,9 @@ describe("UploadWorkspace", () => {
       )
       .mockResolvedValueOnce(
         jsonResponse({
-          case_id: "generated_preview_case",
+          case_id: "completed_case",
           status: "completed",
-          bundle_url: "/api/cases/generated_preview_case/bundle",
+          bundle_url: "/api/cases/completed_case/bundle",
         }),
       );
     render(<UploadWorkspace apiBaseUrl="https://api.example.test" />);
@@ -107,9 +108,29 @@ describe("UploadWorkspace", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     const analysisBody = fetchMock.mock.calls[1][1]?.body as FormData;
-    expect(analysisBody.get("case_id")).toBe("generated_preview_case");
+    expect(analysisBody.get("case_id")).toBeNull();
     await waitFor(() => {
-      expect(window.location.search).toBe("?case_id=generated_preview_case");
+      expect(window.location.search).toBe("?case_id=completed_case");
+    });
+  });
+
+  it("sends a session-only bearer key on write requests", async () => {
+    window.sessionStorage.setItem("circuitpilot_write_api_key", "session-secret");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ case_id: "demo_secure", status: "completed" }),
+    );
+    render(<UploadWorkspace apiBaseUrl="https://api.example.test" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Run Built-in Demo/ }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://api.example.test/api/demo/sample-case",
+        expect.objectContaining({
+          method: "POST",
+          headers: { Authorization: "Bearer session-secret" },
+        }),
+      );
     });
   });
 

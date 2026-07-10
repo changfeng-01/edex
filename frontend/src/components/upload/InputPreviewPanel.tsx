@@ -40,6 +40,10 @@ export type InputPreview = {
   detected_output_node_count?: number;
   sample_output_nodes?: string[];
   missing_configured_nodes?: string[];
+  expected_stage_count?: number | null;
+  observed_stage_count?: number;
+  output_coverage_ratio?: number | null;
+  coverage_status?: "complete" | "partial" | "unknown" | string;
   params_summary?: ParamsSummary;
   netlist_summary?: NetlistSummary;
   attachments_summary?: AttachmentsSummary;
@@ -83,6 +87,10 @@ export function InputPreviewPanel({ preview, evidenceBoundary }: InputPreviewPan
             ["Time span", formatValue(preview.time_span)],
             ["Guessed unit", preview.guessed_time_unit || "unknown"],
             ["Voltage range", `${formatValue(preview.voltage_min)} to ${formatValue(preview.voltage_max)}`],
+            ["Coverage", preview.coverage_status || "unknown"],
+            ["Expected stages", formatValue(preview.expected_stage_count)],
+            ["Observed stages", formatValue(preview.observed_stage_count)],
+            ["Coverage ratio", formatValue(preview.output_coverage_ratio)],
           ]}
         />
 
