@@ -122,7 +122,7 @@ def test_transistor_level_adapter_renders_netlists_and_imports_external_results(
     assert list(imported["candidate_id"]) == ["tc1", "tc2"]
     assert all(imported["data_source"] == "real_simulation_csv")
     assert all(imported["engineering_validity"] == "simulation_only")
-    assert all(imported["must_resimulate"] == False)
+    assert not imported["must_resimulate"].any()
     assert "M_pullup_W" in imported.columns
 
 
