@@ -164,15 +164,24 @@ def run_simulation_step(
             )
 
         all_imported = []
-        for rf in result_files:
-            imported = import_simulation_results(
-                result_csv=rf,
-                simulation_batch=simulation_batch,
-                config=config,
-                generation=generation,
+        try:
+            for rf in result_files:
+                imported = import_simulation_results(
+                    result_csv=rf,
+                    simulation_batch=simulation_batch,
+                    config=config,
+                    generation=generation,
+                )
+                if len(imported) > 0:
+                    all_imported.append(imported)
+        except Exception as exc:
+            invocation["result_validation_status"] = "failed"
+            invocation["result_validation_error"] = str(exc)
+            (output_dir / "simulator_invocation.json").write_text(
+                json.dumps(invocation, indent=2, ensure_ascii=False),
+                encoding="utf-8",
             )
-            if len(imported) > 0:
-                all_imported.append(imported)
+            raise
 
         if not all_imported:
             raise RuntimeError(

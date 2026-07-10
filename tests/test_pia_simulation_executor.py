@@ -262,3 +262,6 @@ def test_external_command_mismatched_candidate_ids_are_rejected() -> None:
 
         with pytest.raises(ValueError, match="candidate_id"):
             run_simulation_step(batch, output_dir, config, generation=1)
+        invocation = json.loads((output_dir / "simulator_invocation.json").read_text(encoding="utf-8"))
+        assert invocation["result_validation_status"] == "failed"
+        assert "candidate_id" in invocation["result_validation_error"]
