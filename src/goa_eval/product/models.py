@@ -143,6 +143,18 @@ class AuditEventRecord:
 
 
 @dataclass(frozen=True)
+class ProjectOverview:
+    project: ProjectRecord
+    design_versions: tuple[DesignVersionRecord, ...]
+    version_count: int
+    analysis_count: int
+    latest_analysis_run: AnalysisRunRecord | None
+    latest_analysis_status: AnalysisStatus | None
+    evidence_count: int
+    evidence_types: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class OptimizationExperimentRecord:
     experiment_id: str
     project_id: str
