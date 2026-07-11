@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from goa_eval.product.artifact_store import ArtifactRef
+
 from goa_eval.product_demo.schemas import default_evidence_boundary
 
 
@@ -123,6 +125,19 @@ class AnalysisRunRecord:
     evidence_boundary: EvidenceBoundary = field(default_factory=EvidenceBoundary)
     started_at: str | None = None
     completed_at: str | None = None
+
+
+@dataclass(frozen=True)
+class AnalysisExecutionResult:
+    analysis_run_id: str
+    status: AnalysisStatus
+    boundary: EvidenceBoundary
+    artifact_bundle_ref: ArtifactRef | None = None
+    dashboard_bundle_ref: ArtifactRef | None = None
+    issue_manifest_ref: ArtifactRef | None = None
+    evidence_ids: tuple[str, ...] = ()
+    missing_evidence: tuple[str, ...] = ()
+    error: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
