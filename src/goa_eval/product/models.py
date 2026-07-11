@@ -132,6 +132,17 @@ class EvidenceRecord:
 
 
 @dataclass(frozen=True)
+class AuditEventRecord:
+    event_id: str
+    actor_id: str
+    action: str
+    subject_type: str
+    subject_id: str
+    details: dict[str, Any] = field(default_factory=dict)
+    created_at: str = field(default_factory=utc_now_iso)
+
+
+@dataclass(frozen=True)
 class OptimizationExperimentRecord:
     experiment_id: str
     project_id: str
