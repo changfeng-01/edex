@@ -19,6 +19,12 @@ class AnalysisStatus(str, Enum):
     EVIDENCE_INCOMPLETE = "evidence_incomplete"
 
 
+class InputPreviewStatus(str, Enum):
+    READY = "preview_ready"
+    READY_WITH_WARNINGS = "preview_ready_with_warnings"
+    FAILED = "preview_failed"
+
+
 class CandidateStatus(str, Enum):
     PROPOSED = "proposed"
     APPROVED = "approved"
