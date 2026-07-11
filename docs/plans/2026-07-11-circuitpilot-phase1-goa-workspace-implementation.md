@@ -895,4 +895,3 @@ Confirm the branch contains only Phase 1 source, tests, dependency lock updates 
 - Frontend tests and build pass.
 - Desktop, tablet and mobile visual checks pass.
 - Product UI meets the approved Evidence Cockpit design.
-
