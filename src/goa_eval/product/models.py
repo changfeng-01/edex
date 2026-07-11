@@ -19,6 +19,12 @@ class AnalysisStatus(str, Enum):
     EVIDENCE_INCOMPLETE = "evidence_incomplete"
 
 
+class InputPreviewStatus(str, Enum):
+    READY = "preview_ready"
+    READY_WITH_WARNINGS = "preview_ready_with_warnings"
+    FAILED = "preview_failed"
+
+
 class CandidateStatus(str, Enum):
     PROPOSED = "proposed"
     APPROVED = "approved"
@@ -140,6 +146,18 @@ class AuditEventRecord:
     subject_id: str
     details: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=utc_now_iso)
+
+
+@dataclass(frozen=True)
+class ProjectOverview:
+    project: ProjectRecord
+    design_versions: tuple[DesignVersionRecord, ...]
+    version_count: int
+    analysis_count: int
+    latest_analysis_run: AnalysisRunRecord | None
+    latest_analysis_status: AnalysisStatus | None
+    evidence_count: int
+    evidence_types: tuple[str, ...]
 
 
 @dataclass(frozen=True)

@@ -33,6 +33,18 @@ class SqlAlchemyProductRepository:
         with self._sessions.begin() as session:
             session.add(WorkspaceORM(**asdict(record)))
 
+    def get_workspace(self, workspace_id: str) -> WorkspaceRecord | None:
+        with self._sessions() as session:
+            row = session.get(WorkspaceORM, workspace_id)
+            return _workspace_record(row) if row else None
+
+    def list_workspaces(self) -> list[WorkspaceRecord]:
+        with self._sessions() as session:
+            rows = session.scalars(
+                select(WorkspaceORM).order_by(WorkspaceORM.created_at, WorkspaceORM.workspace_id)
+            ).all()
+            return [_workspace_record(row) for row in rows]
+
     def add_project(self, record: ProjectRecord) -> None:
         with self._sessions.begin() as session:
             session.add(ProjectORM(**asdict(record)))
@@ -60,6 +72,15 @@ class SqlAlchemyProductRepository:
             row = session.get(DesignVersionORM, version_id)
             return _design_version_record(row) if row else None
 
+    def list_design_versions(self, project_id: str) -> list[DesignVersionRecord]:
+        with self._sessions() as session:
+            rows = session.scalars(
+                select(DesignVersionORM)
+                .where(DesignVersionORM.project_id == project_id)
+                .order_by(DesignVersionORM.created_at, DesignVersionORM.design_version_id)
+            ).all()
+            return [_design_version_record(row) for row in rows]
+
     def add_analysis_run(self, record: AnalysisRunRecord) -> None:
         payload = asdict(record)
         payload["status"] = record.status.value
@@ -84,6 +105,42 @@ class SqlAlchemyProductRepository:
     def get_analysis_run(self, run_id: str) -> AnalysisRunRecord | None:
         with self._sessions() as session:
             row = session.get(AnalysisRunORM, run_id)
+            return _analysis_run_record(row) if row else None
+
+    def list_analysis_runs(
+        self,
+        *,
+        project_id: str | None = None,
+        design_version_id: str | None = None,
+    ) -> list[AnalysisRunRecord]:
+        if (project_id is None) == (design_version_id is None):
+            raise ValueError("exactly one analysis run scope is required")
+
+        query = select(AnalysisRunORM)
+        if project_id is not None:
+            query = query.join(
+                DesignVersionORM,
+                AnalysisRunORM.design_version_id == DesignVersionORM.design_version_id,
+            ).where(DesignVersionORM.project_id == project_id)
+        else:
+            query = query.where(AnalysisRunORM.design_version_id == design_version_id)
+        query = query.order_by(AnalysisRunORM.started_at, AnalysisRunORM.analysis_run_id)
+
+        with self._sessions() as session:
+            return [_analysis_run_record(row) for row in session.scalars(query).all()]
+
+    def get_latest_analysis_run(self, project_id: str) -> AnalysisRunRecord | None:
+        with self._sessions() as session:
+            row = session.scalar(
+                select(AnalysisRunORM)
+                .join(
+                    DesignVersionORM,
+                    AnalysisRunORM.design_version_id == DesignVersionORM.design_version_id,
+                )
+                .where(DesignVersionORM.project_id == project_id)
+                .order_by(AnalysisRunORM.started_at.desc(), AnalysisRunORM.analysis_run_id.desc())
+                .limit(1)
+            )
             return _analysis_run_record(row) if row else None
 
     def add_evidence(self, record: EvidenceRecord) -> None:
@@ -126,6 +183,15 @@ def _project_record(row: ProjectORM) -> ProjectRecord:
         spec_revision_id=row.spec_revision_id,
         status=row.status,
         created_at=row.created_at,
+    )
+
+
+def _workspace_record(row: WorkspaceORM) -> WorkspaceRecord:
+    return WorkspaceRecord(
+        workspace_id=row.workspace_id,
+        name=row.name,
+        created_at=row.created_at,
+        schema_version=row.schema_version,
     )
 
 
