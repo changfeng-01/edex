@@ -7,7 +7,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Callable
 
+import pandas as pd
+
 from goa_eval.product.artifact_store import ArtifactRef, ArtifactStore
+from goa_eval.product.evidence_service import EvidenceService
+from goa_eval.product.issue_service import IssueService
 from goa_eval.product.models import (
     AnalysisExecutionResult,
     AnalysisRunRecord,
@@ -26,6 +30,7 @@ REQUIRED_ANALYSIS_FILES = (
     "analysis/score_summary.json",
     "analysis/real_metrics.csv",
     "analysis/recommendations.md",
+    "issues.json",
 )
 
 
@@ -74,19 +79,20 @@ class AnalysisService:
                 analysis_dir = run_dir / "analysis"
                 product_demo_root = run_dir / "product_demo"
                 self._copy_snapshot_inputs(input_manifest_ref, input_dir)
-                self._pipeline(
+                pipeline_result = self._pipeline(
                     input_dir=input_dir,
                     analysis_dir=analysis_dir,
                     product_demo_root=product_demo_root,
                     case_id=config.case_id,
                     config=config,
                 )
-                missing = tuple(relative for relative in REQUIRED_ANALYSIS_FILES if not (run_dir / relative).exists())
-                self._write_run_manifest(run_dir, running, input_manifest_ref, missing, config)
                 prefix = (
                     f"workspaces/{project.workspace_id}/projects/{project.project_id}/"
                     f"design_versions/{design_version_id}/analysis_runs/{run.analysis_run_id}"
                 )
+                self._write_issues(run_dir, prefix, run.analysis_run_id, pipeline_result)
+                missing = tuple(relative for relative in REQUIRED_ANALYSIS_FILES if not (run_dir / relative).exists())
+                self._write_run_manifest(run_dir, running, input_manifest_ref, missing, config)
                 refs = self._artifact_store.publish_directory(prefix, run_dir)
             refs_by_relative = {
                 ref.key.removeprefix(f"{prefix}/"): ref
@@ -96,7 +102,14 @@ class AnalysisService:
             dashboard_ref = refs_by_relative.get(
                 f"product_demo/{config.case_id}/06_dashboard_data/dashboard_summary.json"
             )
-            final_status = AnalysisStatus.EVIDENCE_INCOMPLETE if missing else AnalysisStatus.COMPLETED
+            issue_ref = refs_by_relative.get("issues.json")
+            evidence = EvidenceService(self._repository).index_analysis_artifacts(
+                run.analysis_run_id,
+                refs,
+                pipeline_result.summary,
+            )
+            all_missing = tuple(dict.fromkeys((*missing, *evidence.missing_required)))
+            final_status = AnalysisStatus.EVIDENCE_INCOMPLETE if all_missing else AnalysisStatus.COMPLETED
             final = replace(
                 running,
                 status=final_status,
@@ -110,7 +123,9 @@ class AnalysisService:
                 boundary=final.evidence_boundary,
                 artifact_bundle_ref=bundle_ref,
                 dashboard_bundle_ref=dashboard_ref,
-                missing_evidence=missing,
+                issue_manifest_ref=issue_ref,
+                evidence_ids=evidence.evidence_ids,
+                missing_evidence=all_missing,
             )
         except Exception as exc:
             failed = replace(running, status=AnalysisStatus.FAILED, completed_at=utc_now_iso())
@@ -170,6 +185,38 @@ class AnalysisService:
             "missing_evidence": list(missing),
         }
         (run_dir / "run_manifest.json").write_text(
+            json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _write_issues(
+        run_dir: Path,
+        prefix: str,
+        run_id: str,
+        pipeline_result: PipelineResult,
+    ) -> None:
+        metrics_path = run_dir / "analysis/real_metrics.csv"
+        metrics = pd.read_csv(metrics_path).to_dict(orient="records") if metrics_path.exists() else []
+        diagnosis_relative = "analysis/diagnosis_report.md"
+        diagnosis_ref = (
+            f"artifact://{prefix}/{diagnosis_relative}"
+            if (run_dir / diagnosis_relative).exists()
+            else None
+        )
+        issues = IssueService().build_issues(
+            pipeline_result.score,
+            pipeline_result.summary,
+            metrics,
+            diagnosis_ref,
+        )
+        payload = {
+            "schema_version": "1.0",
+            "analysis_run_id": run_id,
+            "evidence_boundary": asdict(EvidenceBoundary()),
+            "issues": [asdict(issue) for issue in issues],
+        }
+        (run_dir / "issues.json").write_text(
             json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n",
             encoding="utf-8",
         )

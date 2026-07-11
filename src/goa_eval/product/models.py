@@ -141,6 +141,29 @@ class AnalysisExecutionResult:
 
 
 @dataclass(frozen=True)
+class IssueRecord:
+    issue_id: str
+    constraint_key: str
+    category: str
+    severity: str
+    affected_nodes: tuple[str, ...] = ()
+    metric_refs: tuple[str, ...] = ()
+    possible_causes: tuple[str, ...] = ()
+    recommended_actions: tuple[str, ...] = ()
+    evidence_refs: tuple[str, ...] = ()
+    classification: str = "known"
+
+
+@dataclass(frozen=True)
+class EvidenceIndexSummary:
+    run_id: str
+    completeness: str
+    evidence_ids: tuple[str, ...] = ()
+    missing_required: tuple[str, ...] = ()
+    invalid_reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class EvidenceRecord:
     evidence_id: str
     subject_type: str
