@@ -22,6 +22,7 @@ describe("product workspace routes", () => {
 
   it.each([
     ["/workspaces/default/projects", "Projects"],
+    ["/upload", "Upload analysis"],
     ["/projects/new", "Create GOA project"],
     ["/projects/project_1/overview", "Project overview"],
     ["/projects/project_1/versions/version_1", "Design version"],
