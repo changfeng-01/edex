@@ -9,7 +9,7 @@ from goa_eval.web.storage import write_status
 
 
 def run_uploaded_case(case_dir: Path, config: UploadedCaseConfig) -> CaseRunResult:
-    started_at = dt.datetime.now(dt.UTC).isoformat()
+    started_at = dt.datetime.now(dt.timezone.utc).isoformat()
     input_dir = case_dir / "input"
     analysis_dir = case_dir / "analysis"
     product_demo_root = case_dir / "product_demo"
@@ -62,7 +62,7 @@ def run_uploaded_case(case_dir: Path, config: UploadedCaseConfig) -> CaseRunResu
             error=str(exc),
             evidence_boundary=boundary,
         )
-    finished_at = dt.datetime.now(dt.UTC).isoformat()
+    finished_at = dt.datetime.now(dt.timezone.utc).isoformat()
     payload = result.model_dump()
     payload["started_at"] = started_at
     payload["finished_at"] = finished_at

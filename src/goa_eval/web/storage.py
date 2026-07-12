@@ -30,7 +30,7 @@ def generate_case_id() -> str:
 
 
 def generate_demo_case_id() -> str:
-    timestamp = dt.datetime.now(dt.UTC).strftime("%Y%m%d_%H%M%S")
+    timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
     return f"demo_{timestamp}_{uuid.uuid4().hex[:6]}"
 
 
