@@ -16,6 +16,11 @@ def create_workspace(payload: WorkspaceCreate, container: ProductContainer = Dep
         raise translate_domain_error(exc) from exc
 
 
+@router.get("/workspaces")
+def list_workspaces(container: ProductContainer = Depends(get_container)):
+    return success(container.repository.list_workspaces())
+
+
 @router.get("/workspaces/{workspace_id}/projects")
 def list_projects(workspace_id: str, container: ProductContainer = Depends(get_container)):
     if container.repository.get_workspace(workspace_id) is None:

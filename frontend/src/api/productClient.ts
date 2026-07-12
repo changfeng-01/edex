@@ -1,13 +1,17 @@
 import type {
   AnalysisRun,
+  AnalysisRunCreatePayload,
   ArtifactRef,
   DesignVersion,
+  DesignVersionCreatePayload,
   EvidenceBoundary,
   EvidenceRecord,
   InputSnapshot,
   IssueRecord,
   ProductErrorPayload,
+  ProjectCreatePayload,
   ProductProject,
+  Workspace,
 } from "../types/product";
 
 const configuredBaseUrl = String(import.meta.env.VITE_PRODUCT_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
@@ -41,15 +45,23 @@ export function createProductClient(baseUrl = configuredBaseUrl) {
   };
 
   return {
+    listWorkspaces: () => request<Workspace[]>("/api/v1/workspaces"),
+    createWorkspace: (name: string) =>
+      request<Workspace>("/api/v1/workspaces", { method: "POST", body: JSON.stringify({ name }) }),
     listProjects: (workspaceId: string) => request<ProductProject[]>(`/api/v1/workspaces/${workspaceId}/projects`),
-    createProject: (payload: { workspace_id: string; name: string; circuit_profile_id: string; spec_revision_id: string }) =>
+    createProject: (payload: ProjectCreatePayload) =>
       request<ProductProject>("/api/v1/projects", { method: "POST", body: JSON.stringify(payload) }),
     getProject: (projectId: string) => request<ProductProject>(`/api/v1/projects/${projectId}`),
     getProjectOverview: (projectId: string) => request<Record<string, unknown>>(`/api/v1/projects/${projectId}/overview`),
+    createDesignVersion: (projectId: string, payload: DesignVersionCreatePayload) =>
+      request<DesignVersion>(`/api/v1/projects/${projectId}/design-versions`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
     getDesignVersion: (versionId: string) => request<DesignVersion>(`/api/v1/design-versions/${versionId}`),
     previewInput: (versionId: string, form: FormData) =>
       request<InputSnapshot>(`/api/v1/design-versions/${versionId}/inputs/preview`, { method: "POST", body: form }),
-    createAnalysis: (versionId: string, payload: { input_manifest_ref: ArtifactRef; case_id: string }) =>
+    createAnalysis: (versionId: string, payload: AnalysisRunCreatePayload) =>
       request<AnalysisRun>(`/api/v1/design-versions/${versionId}/analysis-runs`, { method: "POST", body: JSON.stringify(payload) }),
     getAnalysis: (runId: string) => request<AnalysisRun>(`/api/v1/analysis-runs/${runId}`),
     getAnalysisBundle: (runId: string) => request<{ artifacts: string[] }>(`/api/v1/analysis-runs/${runId}/bundle`),

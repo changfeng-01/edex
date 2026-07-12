@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { createProductClient } from "../api/productClient";
-import { ErrorState } from "../components/product/ErrorState";
 import { EvidenceSummary } from "../components/product/EvidenceSummary";
 import { PageHeader } from "../components/product/PageHeader";
 import { SectionPanel } from "../components/product/SectionPanel";
-import type { InputSnapshot } from "../types/product";
-export function DesignVersionPage(){const {versionId=""}=useParams();const [label,setLabel]=useState(versionId);const [file,setFile]=useState<File>();const [snapshot,setSnapshot]=useState<InputSnapshot>();const [previewError,setPreviewError]=useState<unknown>();const [result,setResult]=useState("");const client=createProductClient();useEffect(()=>{client.getDesignVersion(versionId).then(v=>setLabel(v.label)).catch(()=>{})},[versionId]);async function preview(){if(!file)return;const form=new FormData();form.append("waveform",file);setPreviewError(undefined);try{setSnapshot(await client.previewInput(versionId,form))}catch(e){setPreviewError(e);setSnapshot(undefined)}}async function run(){if(!snapshot)return;const value=await client.createAnalysis(versionId,{input_manifest_ref:snapshot.manifest_ref,case_id:`product_${versionId}`});setResult(`Analysis ${value.status}: ${value.analysis_run_id}`)}return <><PageHeader eyebrow="Design version" title="Design version" description={`${label} / ${versionId}`}/><EvidenceSummary/><SectionPanel title="Simulation input" description="Preview validates shape and indexes a manifest before analysis."><div className="upload-line"><label className="file-input">Waveform CSV<input aria-label="Waveform CSV" type="file" accept=".csv" onChange={e=>setFile(e.target.files?.[0])}/></label><span>{file?`${file.name} selected`:"No file selected"}</span><button className="button" disabled={!file} onClick={preview}>Preview input</button></div>{snapshot?.preview_status.includes("warnings")?<div className="warning"><strong>Preview warning</strong>{snapshot.preview.warnings?.map(x=><p key={x}>{x}</p>)}</div>:null}{previewError?<div><h3>Preview failed</h3><ErrorState error={previewError} compact/></div>:null}<button className="button button--primary" disabled={!snapshot} onClick={run}>Run analysis</button>{result?<p className="success-message">{result}</p>:null}</SectionPanel></>}
+import { SimulationInputPanel } from "../components/product/SimulationInputPanel";
+
+export function DesignVersionPage() {
+  const { versionId = "" } = useParams();
+  const navigate = useNavigate();
+  const [label, setLabel] = useState(versionId);
+  const client = createProductClient();
+  useEffect(() => { client.getDesignVersion(versionId).then((version) => setLabel(version.label)).catch(() => {}); }, [versionId]);
+  return <><PageHeader eyebrow="Design version" title="Design version" description={`${label} / ${versionId}`} /><EvidenceSummary /><SectionPanel title="Simulation input" description="Preview validates both waveform and parameter inputs before analysis."><SimulationInputPanel resolveContext={async () => ({ versionId })} onAnalysisCreated={(run) => navigate(`/analysis/${run.analysis_run_id}`)} /></SectionPanel></>;
+}

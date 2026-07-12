@@ -1,4 +1,4 @@
-import { Activity, FolderKanban, Menu, Radio, X } from "lucide-react";
+import { Activity, FolderKanban, Menu, Radio, UploadCloud, X } from "lucide-react";
 import { useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 
@@ -10,6 +10,7 @@ export function ProductShell() {
       <Link className="brand" to="/workspaces/default/projects"><Radio /><span>CircuitPilot<small>Evidence cockpit</small></span></Link>
       <nav aria-label="Product navigation">
         <NavLink to="/workspaces/default/projects" onClick={() => setOpen(false)}><FolderKanban />Projects</NavLink>
+        <NavLink to="/upload" onClick={() => setOpen(false)}><UploadCloud />Upload analysis</NavLink>
         <NavLink to="/demo" onClick={() => setOpen(false)}><Activity />Public demo</NavLink>
       </nav>
       <div className="sidebar-note"><span>Phase 1</span><p>Simulation evidence workspace</p></div>
