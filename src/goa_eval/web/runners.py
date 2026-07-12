@@ -1,28 +1,11 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
-import os
 from pathlib import Path
-from typing import Any
 
-import pandas as pd
-
-from goa_eval.io_utils import read_json as _read_json
-from goa_eval.llm_analysis import run_llm_parameter_analysis
-from goa_eval.evidence import default_external_csv_evidence
-from goa_eval.optimizer import constrained_random_candidates, load_param_space, write_candidate_outputs
-from goa_eval.product_demo.workflow import run_product_demo
-from goa_eval.real_waveform_eval import run_real_waveform_evaluation
-from goa_eval.recommendation import build_recommendations, write_recommendations_markdown
+from goa_eval.product.analysis_service import AnalysisService
 from goa_eval.web.schemas import CaseRunResult, UploadedCaseConfig, evidence_boundary
 from goa_eval.web.storage import write_status
-
-
-DEFAULT_MOCK_RESPONSE = (
-    "CircuitPilot upload analysis mock response. The current evidence is simulation_only, "
-    "derived from real_simulation_csv artifacts. Treat candidates as next-run simulation suggestions."
-)
 
 
 def run_uploaded_case(case_dir: Path, config: UploadedCaseConfig) -> CaseRunResult:
@@ -48,52 +31,14 @@ def run_uploaded_case(case_dir: Path, config: UploadedCaseConfig) -> CaseRunResu
     )
 
     try:
-        waveform_path = input_dir / "waveform.csv"
-        if not waveform_path.exists():
-            raise FileNotFoundError("waveform.csv is required")
-        evidence_metadata = default_external_csv_evidence()
-        evidence_metadata.update(boundary)
-        summary = run_real_waveform_evaluation(
-            waveform_path=waveform_path,
-            internal_waveform_path=None,
-            output_dir=analysis_dir,
-            stage_count=config.stage_count,
-            output_node_pattern=config.output_node_pattern,
-            topology=config.topology,
-            circuit_profile=config.circuit_profile,
-            strict_output_coverage=config.stage_count is not None,
-            evidence_metadata=evidence_metadata,
-        )
-        paths = _pipeline_paths(analysis_dir)
-        recommendations = write_recommendations_markdown(
-            summary_path=paths["summary"],
-            score_path=paths["score"],
-            metrics_path=paths["metrics"],
-            output_path=paths["recommendations"],
-        )
-        if config.generate_candidates and (input_dir / "params.yaml").exists():
-            score = _read_json(paths["score"])
-            metrics = pd.read_csv(paths["metrics"]) if paths["metrics"].exists() else pd.DataFrame()
-            recommendations = build_recommendations(summary, score, metrics)
-            candidates = constrained_random_candidates(load_param_space(input_dir / "params.yaml"), recommendations, max_candidates=10, seed=42)
-            write_candidate_outputs(candidates, csv_path=paths["candidates_csv"], markdown_path=paths["candidates_md"])
-        if config.run_llm_analysis:
-            run_llm_parameter_analysis(
-                summary_path=paths["summary"],
-                score_path=paths["score"],
-                metrics_path=paths["metrics"],
-                candidates_path=paths["candidates_csv"] if paths["candidates_csv"].exists() else None,
-                params_path=input_dir / "params.yaml" if (input_dir / "params.yaml").exists() else None,
-                mock_response=os.getenv("CIRCUITPILOT_LLM_MOCK_RESPONSE", DEFAULT_MOCK_RESPONSE),
-                output_md=paths["analysis_md"],
-                output_json=paths["analysis_json"],
-            )
-        product_demo_case_dir = run_product_demo(
-            input_dir=analysis_dir,
-            output_dir=product_demo_root,
+        pipeline_result = AnalysisService(None, None).execute_compatibility(
+            input_dir=input_dir,
+            analysis_dir=analysis_dir,
+            product_demo_root=product_demo_root,
             case_id=config.case_id,
-            evidence_boundary=boundary,
+            config=config,
         )
+        product_demo_case_dir = pipeline_result.product_demo_case_dir
         result = CaseRunResult(
             case_id=config.case_id,
             status="completed",
@@ -123,19 +68,6 @@ def run_uploaded_case(case_dir: Path, config: UploadedCaseConfig) -> CaseRunResu
     payload["finished_at"] = finished_at
     write_status(case_dir, payload)
     return result
-
-
-def _pipeline_paths(output_dir: Path) -> dict[str, Path]:
-    return {
-        "summary": output_dir / "real_summary.json",
-        "score": output_dir / "score_summary.json",
-        "metrics": output_dir / "real_metrics.csv",
-        "recommendations": output_dir / "recommendations.md",
-        "candidates_csv": output_dir / "next_candidates.csv",
-        "candidates_md": output_dir / "next_candidates.md",
-        "analysis_md": output_dir / "llm_parameter_analysis.md",
-        "analysis_json": output_dir / "llm_parameter_analysis.json",
-    }
 
 
 def _display_path(path: Path) -> str:
