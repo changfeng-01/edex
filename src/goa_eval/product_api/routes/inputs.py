@@ -19,14 +19,12 @@ router = APIRouter(prefix="/api/v1")
 async def preview_input(
     version_id: str,
     waveform: UploadFile = File(...),
-    params: UploadFile | None = File(default=None),
+    params: UploadFile = File(...),
     netlist: UploadFile | None = File(default=None),
     attachments: list[UploadFile] | None = File(default=None),
     container: ProductContainer = Depends(get_container),
 ):
-    uploads = [(waveform, "waveform.csv")]
-    if params is not None:
-        uploads.append((params, "params.yaml"))
+    uploads = [(waveform, "waveform.csv"), (params, "params.yaml")]
     if netlist is not None:
         suffix = Path(netlist.filename or "").suffix.lower()
         if suffix not in {".sp", ".spice", ".netlist"}:

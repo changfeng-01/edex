@@ -4,6 +4,20 @@ export interface EvidenceBoundary {
   must_resimulate: boolean;
 }
 
+export interface Workspace {
+  workspace_id: string;
+  name: string;
+  created_at: string;
+  schema_version?: string;
+}
+
+export interface ProjectCreatePayload {
+  workspace_id: string;
+  name: string;
+  circuit_profile_id: string;
+  spec_revision_id: string;
+}
+
 export interface ProductProject {
   project_id: string;
   workspace_id: string;
@@ -14,11 +28,22 @@ export interface ProductProject {
   created_at: string;
 }
 
+export interface DesignVersionCreatePayload {
+  label: string;
+  parameter_set_ref?: string | null;
+  netlist_ref?: string | null;
+  parent_version_id?: string | null;
+}
+
 export interface DesignVersion {
   design_version_id: string;
-  project_id?: string;
+  project_id: string;
   label: string;
-  created_at?: string;
+  parameter_set_ref?: string | null;
+  netlist_ref?: string | null;
+  parent_version_id?: string | null;
+  source_candidate_id?: string | null;
+  created_at: string;
 }
 
 export interface ArtifactRef {
@@ -44,6 +69,17 @@ export interface AnalysisRun {
   evidence_boundary?: EvidenceBoundary;
   artifact_bundle_ref?: ArtifactRef | string | null;
   missing_evidence?: string[];
+}
+
+export interface AnalysisRunCreatePayload {
+  input_manifest_ref: ArtifactRef;
+  case_id: string;
+  circuit_profile?: string | null;
+  topology?: string | null;
+  stage_count?: number | null;
+  output_node_pattern?: string;
+  generate_readonly_suggestions?: boolean;
+  run_llm_analysis?: boolean;
 }
 
 export interface IssueRecord {

@@ -112,6 +112,20 @@ def test_workspace_creation_returns_201_and_invalid_profile_has_stable_error(api
     }
 
 
+def test_workspace_list_returns_created_workspaces_in_creation_order(api_context):
+    client, _, _ = api_context
+    first = client.post("/api/v1/workspaces", json={"name": "First workspace"}).json()["data"]
+    second = client.post("/api/v1/workspaces", json={"name": "Second workspace"}).json()["data"]
+
+    response = client.get("/api/v1/workspaces")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "schema_version": "1.0",
+        "data": [first, second],
+    }
+
+
 def test_input_preview_publishes_snapshot_without_exposing_server_paths(api_context):
     client, _, tmp_path = api_context
     _, project = _create_project(client)
@@ -127,6 +141,22 @@ def test_input_preview_publishes_snapshot_without_exposing_server_paths(api_cont
     assert str(tmp_path.resolve()) not in response.text
 
 
+def test_input_preview_requires_parameter_yaml_with_stable_path_safe_error(api_context):
+    client, _, tmp_path = api_context
+    _, project = _create_project(client)
+    version = _create_version(client, project["project_id"])
+
+    with Path("examples/sample_waveform.csv").open("rb") as waveform:
+        response = client.post(
+            f"/api/v1/design-versions/{version['design_version_id']}/inputs/preview",
+            files={"waveform": ("waveform.csv", waveform, "text/csv")},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "INPUT_PREVIEW_FAILED"
+    assert str(tmp_path.resolve()) not in response.text
+
+
 def test_input_preview_accepts_optional_netlist_and_image(api_context, tmp_path: Path):
     client, _, _ = api_context
     _, project = _create_project(client)
@@ -136,11 +166,17 @@ def test_input_preview_accepts_optional_netlist_and_image(api_context, tmp_path:
     image = tmp_path / "plot.png"
     image.write_bytes(b"display-only")
 
-    with Path("examples/sample_waveform.csv").open("rb") as waveform, netlist.open("rb") as net, image.open("rb") as img:
+    with (
+        Path("examples/sample_waveform.csv").open("rb") as waveform,
+        Path("examples/sample_params.yaml").open("rb") as params,
+        netlist.open("rb") as net,
+        image.open("rb") as img,
+    ):
         response = client.post(
             f"/api/v1/design-versions/{version['design_version_id']}/inputs/preview",
             files=[
                 ("waveform", ("waveform.csv", waveform, "text/csv")),
+                ("params", ("params.yaml", params, "application/yaml")),
                 ("netlist", ("source_netlist.spice", net, "text/plain")),
                 ("attachments", ("plot.png", img, "image/png")),
             ],
@@ -158,10 +194,16 @@ def test_malformed_and_unsafe_inputs_return_stable_errors(api_context, tmp_path:
     malformed.write_text("unsupported\n1\n", encoding="utf-8")
 
     malformed_response = _preview(client, version["design_version_id"], malformed)
-    with Path("examples/sample_waveform.csv").open("rb") as waveform:
+    with (
+        Path("examples/sample_waveform.csv").open("rb") as waveform,
+        Path("examples/sample_params.yaml").open("rb") as params,
+    ):
         unsafe_response = client.post(
             f"/api/v1/design-versions/{version['design_version_id']}/inputs/preview",
-            files={"waveform": ("../waveform.csv", waveform, "text/csv")},
+            files={
+                "waveform": ("../waveform.csv", waveform, "text/csv"),
+                "params": ("params.yaml", params, "application/yaml"),
+            },
         )
 
     assert malformed_response.status_code == 422
