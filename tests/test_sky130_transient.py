@@ -118,10 +118,11 @@ def test_run_ngspice_reports_missing_binary(tmp_path):
 
 
 def test_resolve_ngspice_executable_prefers_windows_console_binary(tmp_path, monkeypatch):
-    (tmp_path / "ngspice.exe").write_text("", encoding="utf-8")
+    executable = tmp_path / "ngspice.exe"
+    executable.write_text("", encoding="utf-8")
     console = tmp_path / "ngspice_con.exe"
     console.write_text("", encoding="utf-8")
-    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr("goa_eval.sky130_transient.shutil.which", lambda _: str(executable))
 
     resolved = resolve_ngspice_executable("ngspice")
 
