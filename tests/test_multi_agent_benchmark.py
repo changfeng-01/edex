@@ -6,6 +6,9 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
+
+from goa_eval.multi_agent.availability import check_langgraph_availability
 
 
 def _write_case(case_dir: Path) -> None:
@@ -87,6 +90,7 @@ validity:
     (case_dir / "README.md").write_text("# benchmark case\n", encoding="utf-8")
 
 
+@pytest.mark.skipif(not check_langgraph_availability()["available"], reason="LangGraph not installed")
 def test_benchmark_run_cli_writes_summary_results_and_report(tmp_path: Path):
     suite = tmp_path / "suite"
     case_dir = suite / "sky130_case"

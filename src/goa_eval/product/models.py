@@ -61,7 +61,7 @@ class SimulationJobStatus(str, Enum):
 
 
 def utc_now_iso() -> str:
-    return dt.datetime.now(dt.UTC).isoformat()
+    return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
 def new_id(resource: str) -> str:

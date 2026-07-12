@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
+from goa_eval.multi_agent.availability import check_langgraph_availability
 from goa_eval.multi_agent.evidence_index import build_evidence_index, write_evidence_index
 from goa_eval.multi_agent.agents.optimization_agent import run_optimization_agent
 from goa_eval.multi_agent.graph_app import run_multi_agent_task
@@ -87,6 +89,7 @@ def test_build_evidence_index_discovers_artifact_dir_bundle(tmp_path: Path):
     assert json.loads(written.read_text(encoding="utf-8"))["schema_version"] == "1.0"
 
 
+@pytest.mark.skipif(not check_langgraph_availability()["available"], reason="LangGraph not installed")
 def test_multi_agent_run_accepts_artifact_dir_only_task(tmp_path: Path):
     artifacts = tmp_path / "artifacts"
     _write_artifact_bundle(artifacts)

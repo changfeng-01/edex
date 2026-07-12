@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -88,7 +88,7 @@ def write_formal_source_lock(
     command_args: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     lock = {
-        "created_at_utc": datetime.now(UTC).isoformat(),
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "git_commit": _git_commit(output_dir),
         "command_args": list(command_args or []),
         "protocol_hash": object_sha256(protocol),
