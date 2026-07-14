@@ -27,6 +27,9 @@ describe("product workspace routes", () => {
     ["/projects/project_1/overview", "Project overview"],
     ["/projects/project_1/versions/version_1", "Design version"],
     ["/analysis/run_1", "Analysis run"],
+    ["/experiments/experiment_1", "Optimization experiment"],
+    ["/simulation-jobs/job_1", "Manual simulation job"],
+    ["/comparisons/comparison_1", "Evaluated comparison"],
     ["/demo?case_id=public_demo", "Public demo"],
   ])("routes %s to its working surface", async (path, heading) => {
     render(<RouterProvider router={createAppRouter([path])} />);

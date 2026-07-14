@@ -89,4 +89,33 @@ describe("productClient", () => {
       }),
     );
   });
+
+  it("calls Phase 2 experiment, job, and comparison contracts", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify({ schema_version: "1.0", data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const client = createProductClient("http://api.test");
+    await client.approveCandidate("candidate_1", "reviewer");
+    await client.exportSimulationJob("job_1");
+    await client.getComparison("comparison_1");
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      "http://api.test/api/v1/candidates/candidate_1:approve",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "http://api.test/api/v1/simulation-jobs/job_1:export",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      "http://api.test/api/v1/comparisons/comparison_1",
+      expect.any(Object),
+    );
+  });
 });
