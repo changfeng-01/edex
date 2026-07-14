@@ -109,3 +109,63 @@ export interface ProductErrorPayload {
   retryable: boolean;
   artifact_refs: string[];
 }
+
+export interface OptimizationExperiment {
+  experiment_id: string;
+  project_id: string;
+  baseline_design_version_id: string;
+  strategy_config: Record<string, unknown>;
+  state: string;
+  created_at: string;
+}
+
+export interface OptimizationCandidate {
+  candidate_id: string;
+  experiment_id: string;
+  parent_design_version_id: string;
+  parameter_changes: Record<string, unknown>;
+  strategy: string;
+  reason_codes: string[];
+  selection_score?: number | null;
+  evaluated_score?: number | null;
+  status: string;
+  must_resimulate: boolean;
+  simulation_job_id?: string | null;
+  result_design_version_id?: string | null;
+}
+
+export interface SimulationJob {
+  simulation_job_id: string;
+  project_id?: string | null;
+  candidate_ids: string[];
+  adapter_type: string;
+  status: string;
+  export_attempt?: number;
+  import_attempt?: number;
+  batch_ref?: ArtifactRef | string | null;
+  result_ref?: ArtifactRef | string | null;
+  error_code?: string | null;
+  retryable?: boolean;
+}
+
+export interface SimulationImportPreview {
+  simulation_job_id: string;
+  manifest_sha256: string;
+  result_sha256: string;
+  row_count: number;
+  warnings: Array<{ type: string; [key: string]: unknown }>;
+}
+
+export interface EvaluatedComparison {
+  comparison_id: string;
+  project_id: string;
+  baseline_design_version_id: string;
+  result_design_version_id: string;
+  baseline_analysis_run_id?: string;
+  result_analysis_run_id?: string;
+  metric_deltas: Record<string, unknown>;
+  constraint_changes: Record<string, unknown>;
+  evidence_ids: string[];
+  verdict: "improved" | "regressed" | "neutral" | "evidence_insufficient" | string;
+  created_at: string;
+}

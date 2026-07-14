@@ -2,11 +2,13 @@ import json
 from pathlib import Path
 
 import pytest
+from sqlalchemy import func, select
 
 from goa_eval.product.artifact_store import ArtifactStoreError, LocalArtifactStore
 from goa_eval.product.database import create_schema, make_engine
 from goa_eval.product.input_service import InputFile, InputService
 from goa_eval.product.models import AnalysisStatus
+from goa_eval.product.orm import CandidateORM
 from goa_eval.product.project_service import ProjectService
 from goa_eval.product.repositories import SqlAlchemyProductRepository
 from goa_eval.web.schemas import UploadedCaseConfig
@@ -167,4 +169,5 @@ def test_readonly_suggestions_are_boundary_marked_without_candidate_records(anal
     assert "True" in candidates or "true" in candidates
     assert "confirmed_improvement" not in candidates.lower()
     assert manifest["readonly_suggestions"] is True
-    assert not hasattr(repository, "add_candidate")
+    with repository._sessions() as session:
+        assert session.scalar(select(func.count()).select_from(CandidateORM)) == 0

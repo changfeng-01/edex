@@ -13,7 +13,7 @@ export function ProductShell() {
         <NavLink to="/upload" onClick={() => setOpen(false)}><UploadCloud />Upload analysis</NavLink>
         <NavLink to="/demo" onClick={() => setOpen(false)}><Activity />Public demo</NavLink>
       </nav>
-      <div className="sidebar-note"><span>Phase 1</span><p>Simulation evidence workspace</p></div>
+      <div className="sidebar-note"><span>Phase 2</span><p>Manual simulation loop</p></div>
     </aside>
     {open ? <button className="nav-scrim" aria-label="Close navigation" onClick={() => setOpen(false)} /> : null}
     <div className="shell-main"><div className="context-bar"><span>GOA workspace</span><code>default</code></div><main className="product-content"><Outlet /></main></div>

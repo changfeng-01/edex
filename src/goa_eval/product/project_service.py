@@ -163,6 +163,7 @@ class ProjectService:
         parameter_set_ref: str | None = None,
         netlist_ref: str | None = None,
         parent_version_id: str | None = None,
+        source_candidate_id: str | None = None,
         actor_id: str = "user_local",
     ) -> DesignVersionRecord:
         if self._repository.get_project(project_id) is None:
@@ -184,6 +185,7 @@ class ProjectService:
             parameter_set_ref=parameter_set_ref,
             netlist_ref=netlist_ref,
             parent_version_id=parent_version_id,
+            source_candidate_id=source_candidate_id,
         )
         self._repository.add_design_version(version)
         self._repository.append_audit_event(

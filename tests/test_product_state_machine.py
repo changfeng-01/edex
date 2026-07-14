@@ -34,6 +34,14 @@ def test_candidate_cannot_skip_resimulation():
     assert exc_info.value.requested == CandidateStatus.CONFIRMED_IMPROVEMENT
 
 
+def test_approved_candidate_cannot_be_confirmed_without_evaluation():
+    with pytest.raises(InvalidTransition):
+        transition_candidate(
+            CandidateStatus.APPROVED,
+            CandidateStatus.CONFIRMED_IMPROVEMENT,
+        )
+
+
 def test_failed_analysis_cannot_be_marked_completed():
     with pytest.raises(InvalidTransition):
         transition_analysis(AnalysisStatus.FAILED, AnalysisStatus.COMPLETED)

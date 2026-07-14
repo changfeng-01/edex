@@ -9,9 +9,12 @@ from goa_eval.product.analysis_service import AnalysisService
 from goa_eval.product.artifact_store import ArtifactRef, LocalArtifactStore
 from goa_eval.product.database import create_schema, make_engine
 from goa_eval.product.input_service import InputService
+from goa_eval.product.comparison_service import ComparisonService
+from goa_eval.product.experiment_service import ExperimentService
 from goa_eval.product.project_service import ProjectService
 from goa_eval.product.repositories import SqlAlchemyProductRepository
 from goa_eval.product.settings import ProductSettings
+from goa_eval.product.simulation_job_service import SimulationJobService
 
 
 @dataclass
@@ -22,6 +25,9 @@ class ProductContainer:
     project_service: ProjectService
     input_service: InputService
     analysis_service: AnalysisService
+    experiment_service: ExperimentService
+    simulation_job_service: SimulationJobService
+    comparison_service: ComparisonService
 
     @classmethod
     def from_settings(
@@ -35,13 +41,17 @@ class ProductContainer:
             create_schema(engine)
         repository = SqlAlchemyProductRepository(engine)
         artifact_store = LocalArtifactStore(settings.artifact_root)
+        project_service = ProjectService(repository, artifact_store)
         return cls(
             settings=settings,
             repository=repository,
             artifact_store=artifact_store,
-            project_service=ProjectService(repository, artifact_store),
+            project_service=project_service,
             input_service=InputService(repository, artifact_store),
             analysis_service=AnalysisService(repository, artifact_store),
+            experiment_service=ExperimentService(repository),
+            simulation_job_service=SimulationJobService(repository, artifact_store, project_service),
+            comparison_service=ComparisonService(repository, artifact_store),
         )
 
     def ref_from_uri(self, uri: str, checksum: str) -> ArtifactRef:

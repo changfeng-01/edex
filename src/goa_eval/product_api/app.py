@@ -12,7 +12,7 @@ from goa_eval.product_api.errors import (
     unexpected_error_handler,
     validation_error_handler,
 )
-from goa_eval.product_api.routes import analyses, inputs, projects, workspaces
+from goa_eval.product_api.routes import analyses, comparisons, experiments, inputs, projects, simulation_jobs, workspaces
 
 
 def create_product_app(container: ProductContainer | None = None) -> FastAPI:
@@ -31,6 +31,9 @@ def create_product_app(container: ProductContainer | None = None) -> FastAPI:
     product_app.include_router(projects.router)
     product_app.include_router(inputs.router)
     product_app.include_router(analyses.router)
+    product_app.include_router(experiments.router)
+    product_app.include_router(simulation_jobs.router)
+    product_app.include_router(comparisons.router)
     return product_app
 
 

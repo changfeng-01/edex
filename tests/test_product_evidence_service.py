@@ -96,6 +96,36 @@ def test_readonly_suggestion_can_never_confirm_improvement(evidence_context):
     ) is False
 
 
+def test_confirm_gate_requires_evaluated_candidate_and_matching_provenance(evidence_context):
+    from goa_eval.product.evidence_service import EvidenceService
+
+    _, _, run = evidence_context
+    completed = AnalysisRunRecord(
+        analysis_run_id=run.analysis_run_id,
+        design_version_id="version_result",
+        input_manifest_ref=run.input_manifest_ref,
+        spec_revision_id=run.spec_revision_id,
+        profile_revision_id=run.profile_revision_id,
+        status=AnalysisStatus.COMPLETED,
+    )
+    candidate = {
+        "candidate_id": "candidate_1",
+        "status": "evaluated",
+        "result_design_version_id": "version_result",
+        "simulation_job_id": "job_1",
+    }
+    comparison = {"verdict": "improved", "result_analysis_run_id": completed.analysis_run_id}
+    provenance = {"candidate_id": "candidate_1", "simulation_job_id": "job_1"}
+
+    assert EvidenceService.can_confirm_improvement(candidate, completed, comparison, provenance) is True
+    assert EvidenceService.can_confirm_improvement(
+        candidate,
+        completed,
+        comparison,
+        {**provenance, "simulation_job_id": "job_wrong"},
+    ) is False
+
+
 def test_summary_separates_complete_incomplete_and_invalid(evidence_context, tmp_path: Path):
     from goa_eval.product.evidence_service import EvidenceService
 

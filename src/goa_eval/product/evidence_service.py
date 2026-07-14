@@ -6,6 +6,7 @@ from typing import Any, Iterable, Mapping
 from goa_eval.product.artifact_store import ArtifactRef
 from goa_eval.product.models import (
     AnalysisRunRecord,
+    AnalysisStatus,
     EvidenceBoundary,
     EvidenceIndexSummary,
     EvidenceRecord,
@@ -98,6 +99,24 @@ class EvidenceService:
         )
 
     @staticmethod
-    def can_confirm_improvement(candidate: Mapping[str, Any], result_run: AnalysisRunRecord) -> bool:
-        _ = candidate, result_run
-        return False
+    def can_confirm_improvement(
+        candidate: Mapping[str, Any],
+        result_run: AnalysisRunRecord,
+        comparison: Mapping[str, Any] | None = None,
+        provenance: Mapping[str, Any] | None = None,
+    ) -> bool:
+        if candidate.get("readonly") is True:
+            return False
+        if comparison is None or provenance is None:
+            return False
+        status = getattr(candidate.get("status"), "value", candidate.get("status"))
+        verdict = getattr(comparison.get("verdict"), "value", comparison.get("verdict"))
+        return bool(
+            status == "evaluated"
+            and result_run.status == AnalysisStatus.COMPLETED
+            and candidate.get("result_design_version_id") == result_run.design_version_id
+            and comparison.get("result_analysis_run_id") == result_run.analysis_run_id
+            and verdict == "improved"
+            and provenance.get("candidate_id") == candidate.get("candidate_id")
+            and provenance.get("simulation_job_id") == candidate.get("simulation_job_id")
+        )
