@@ -60,16 +60,18 @@ FORMULAS = {
     "simulation_evaluation": "F(x) = (m(x), S(x), H(x))",
     "primary_outcome": "tau_T = min { t | t <= B, S(x_t) >= T, H(x_t)=1 }",
     "physics_feature_map": "phi: X -> R^d",
+    "physics_normalization": "z_k(x) = clip(asinh((phi_k(x)-median_k)/scale_k), -8, 8)",
     "capm_tensor": (
-        "D_tensor(x,y) = sqrt(sum_k w_k (phi_k(x)-phi_k(y))^2 "
-        "+ sum_(a,b) rho_ab (phi_a(x)phi_b(x)-phi_a(y)phi_b(y))^2)"
+        "D_tensor(x,y) = sqrt(sum_k w_k (z_k(x)-z_k(y))^2 "
+        "+ gamma sum_(a,b) rho_ab (z_a(x)z_b(x)-z_a(y)z_b(y))^2)"
     ),
     "barrier": "B(phi(x)) = sum_j p_j(phi_j(x); theta_j)",
+    "path_risk": "R_path(x,y) = (B(phi(x)) + 4 B((phi(x)+phi(y))/2) + B(phi(y))) / 6",
     "capm_pair": (
-        "D_pair(x,y) = D_tensor(x,y) + lambda_barrier * max(B(phi(x)), B(phi(y))) "
-        "+ lambda_missing * M(x,y)"
+        "D_pair(x,y) = D_tensor(x,y) + lambda_barrier * R_path(x,y) "
+        "+ lambda_missing * M(x,y) + lambda_fallback * F(x,y)"
     ),
-    "l1_geodesic": "D_geodesic(x,L1) = min_{z in L1} shortest_path_G(x,z)",
+    "l1_geodesic": "D_geodesic(x,L1) = softmin_top_k { shortest_path_G_history(x,z) | z in L1 }",
     "capm_acquisition": (
         "A_capm(x) = alpha_d (1 - norm(D_geodesic(x,L1))) + alpha_v diversity(x) "
         "+ alpha_h I[B(phi(x))=0] + alpha_m (1 - M(x))"

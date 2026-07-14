@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass
 from heapq import heappop, heappush
 from typing import Any, Mapping, Sequence
 
@@ -17,6 +19,18 @@ GOA_DEFAULT_WEIGHTS = {
     "clk_slew_proxy": 1.2,
 }
 
+GOA_V2_WEIGHTS = {
+    "cboot_cload_ratio": 1.0,
+    "pullup_pulldown_ratio": 1.0,
+    "pullup_rc_delay_proxy_v2": 1.5,
+    "pulldown_rc_delay_proxy_v2": 1.5,
+    "bootstrap_coupling_factor": 1.2,
+    "bootstrap_voltage_proxy": 1.2,
+    "vgh_vth_margin": 1.5,
+    "vgl_off_margin": 1.5,
+    "clk_slew_proxy": 1.0,
+}
+
 CAPM_COUPLINGS = [
     {"left": "ron_pullup_cload_proxy", "right": "clk_slew_proxy", "weight": 0.25, "enabled": True},
     {"left": "ron_pulldown_cload_proxy", "right": "clk_slew_proxy", "weight": 0.25, "enabled": True},
@@ -29,10 +43,25 @@ CAPM_COUPLINGS = [
 ]
 
 CAPM_DEFAULT_CONFIG = {
+    "metric_version": "v2",
     "lambda_barrier": 1.0,
     "lambda_graph": 1.0,
     "lambda_missing": 1.0,
+    "lambda_fallback": 0.25,
     "k_neighbors": 4,
+    "normalization_enabled": True,
+    "normalization_min_history_rows": 4,
+    "normalization_floor_fraction": 0.05,
+    "normalization_clip": 8.0,
+    "coupling_enabled": True,
+    "coupling_budget": 0.25,
+    "barrier_enabled": True,
+    "geodesic_enabled": True,
+    "missing_penalty_enabled": True,
+    "l1_aggregation": "softmin",
+    "l1_top_k": 3,
+    "softmin_temperature": 0.25,
+    "l1_quality_weight": 0.25,
     "min_vgh_vth_margin": 0.2,
     "min_vgl_off_margin": 0.2,
     "min_cboot_cload_ratio": 0.35,
@@ -67,7 +96,28 @@ FORBIDDEN_DISTANCE_COLUMNS = {
     "overshoot",
     "undershoot",
     "holding_droop",
+    "physics_feature_status_json",
 }
+
+
+@dataclass(frozen=True)
+class CapmDistanceContext:
+    metric_version: str
+    feature_keys: tuple[str, ...]
+    centers: dict[str, float]
+    scales: dict[str, float]
+    weights: dict[str, float]
+    config: dict[str, Any]
+
+    def normalization_payload(self) -> dict[str, Any]:
+        return {
+            "metric_version": self.metric_version,
+            "feature_keys": list(self.feature_keys),
+            "centers": self.centers,
+            "scales": self.scales,
+            "weights": self.weights,
+            "normalization_enabled": bool(self.config.get("normalization_enabled", True)),
+        }
 
 def compute_physics_distance(phi_a: Mapping[str, Any], phi_b: Mapping[str, Any], weights: Mapping[str, float] | None = None) -> float:
     keys = sorted(set(phi_a.keys()) & set(phi_b.keys()))
@@ -88,6 +138,8 @@ def constraint_barrier_score(phi: Mapping[str, Any] | pd.Series, config: Mapping
     """
 
     cfg = _capm_config(config)
+    if cfg.get("barrier_enabled", True) is False:
+        return 0.0
     penalty_config = cfg.get("penalty_config", {})
     total = 0.0
     total += _apply_penalty(_numeric(phi.get("vgh_vth_margin")), float(cfg["min_vgh_vth_margin"]), "low", penalty_config, "vgh_vth_margin")
@@ -103,25 +155,150 @@ def constraint_barrier_score(phi: Mapping[str, Any] | pd.Series, config: Mapping
     return float(total)
 
 
+def build_capm_distance_context(
+    history_phi: pd.DataFrame,
+    weights: Mapping[str, float] | None = None,
+    config: Mapping[str, Any] | None = None,
+) -> CapmDistanceContext:
+    cfg = _capm_config(config)
+    version = str(cfg.get("metric_version", "v2")).lower()
+    explicit_weights = dict(weights or {})
+    if explicit_weights:
+        preferred_weights = explicit_weights
+    elif version == "legacy":
+        preferred_weights = dict(GOA_DEFAULT_WEIGHTS)
+    else:
+        preferred_weights = dict(GOA_V2_WEIGHTS)
+        if not any(column in history_phi.columns for column in {"pullup_rc_delay_proxy_v2", "pulldown_rc_delay_proxy_v2"}):
+            preferred_weights.update(
+                {
+                    "ron_pullup_cload_proxy": GOA_DEFAULT_WEIGHTS["ron_pullup_cload_proxy"],
+                    "ron_pulldown_cload_proxy": GOA_DEFAULT_WEIGHTS["ron_pulldown_cload_proxy"],
+                }
+            )
+    feature_keys = [
+        key
+        for key in preferred_weights
+        if key in history_phi.columns and key not in FORBIDDEN_DISTANCE_COLUMNS
+    ]
+    if not feature_keys:
+        feature_keys = [
+            key
+            for key in history_phi.columns
+            if key not in FORBIDDEN_DISTANCE_COLUMNS and pd.api.types.is_numeric_dtype(history_phi[key])
+        ]
+    active_weights = {key: max(float(preferred_weights.get(key, 1.0)), 0.0) for key in feature_keys}
+    weight_total = sum(active_weights.values()) or 1.0
+    normalized_weights = {key: value / weight_total for key, value in active_weights.items()}
+    centers: dict[str, float] = {}
+    scales: dict[str, float] = {}
+    epsilon = 1e-12
+    floor_fraction = max(float(cfg.get("normalization_floor_fraction", 0.05)), 0.0)
+    min_rows = max(int(cfg.get("normalization_min_history_rows", 4)), 1)
+    configured_scales = cfg.get("normalization_fallback_scales", {})
+    for key in feature_keys:
+        values = pd.to_numeric(history_phi[key], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+        median = float(values.median()) if not values.empty else 0.0
+        center = median if len(values) >= min_rows else 0.0
+        mad = float((values - median).abs().median()) if not values.empty else 0.0
+        robust_scale = 1.4826 * mad if len(values) >= min_rows else 0.0
+        floor = floor_fraction * abs(median)
+        fallback = float(configured_scales.get(key, abs(median) if abs(median) > epsilon else 1.0))
+        scale = max(robust_scale, floor, epsilon)
+        if robust_scale <= epsilon and floor <= epsilon:
+            scale = max(abs(fallback), epsilon)
+        centers[key] = center
+        scales[key] = scale
+    return CapmDistanceContext(
+        metric_version=version,
+        feature_keys=tuple(feature_keys),
+        centers=centers,
+        scales=scales,
+        weights=normalized_weights,
+        config=cfg,
+    )
+
+
 def compute_capm_distance(
     phi_a: Mapping[str, Any] | pd.Series,
     phi_b: Mapping[str, Any] | pd.Series,
     weights: Mapping[str, float] | None = None,
     config: Mapping[str, Any] | None = None,
+    context: CapmDistanceContext | None = None,
 ) -> dict[str, Any]:
     """Compute constraint-aware physics-manifold distance between two points."""
 
     cfg = _capm_config(config)
+    if str(cfg.get("metric_version", "v2")).lower() == "legacy":
+        return _compute_capm_distance_legacy(phi_a, phi_b, weights, cfg)
+    if context is None:
+        context = build_capm_distance_context(pd.DataFrame([dict(phi_a), dict(phi_b)]), weights, cfg)
+    feature_keys = list(context.feature_keys)
+    if not feature_keys:
+        return _unavailable_capm_result("v2")
+
+    transformed_a: dict[str, float] = {}
+    transformed_b: dict[str, float] = {}
+    missing_weight = 0.0
+    missing_count = 0
+    fallback_weight = 0.0
+    for key in feature_keys:
+        weight = float(context.weights.get(key, 0.0))
+        left = _numeric(phi_a.get(key))
+        right = _numeric(phi_b.get(key))
+        if left is None or right is None:
+            missing_weight += weight
+            missing_count += 1
+            continue
+        transformed_a[key] = _transform_feature(left, key, context)
+        transformed_b[key] = _transform_feature(right, key, context)
+        if "proxy_fallback" in {_feature_status(phi_a, key), _feature_status(phi_b, key)}:
+            fallback_weight += weight
+
+    tensor_total = sum(
+        float(context.weights.get(key, 0.0)) * (transformed_a[key] - transformed_b[key]) ** 2
+        for key in transformed_a.keys() & transformed_b.keys()
+    )
+    couplings = _resolve_couplings(cfg) if cfg.get("coupling_enabled", True) is not False else []
+    tensor_total += _normalized_coupling_distance(transformed_a, transformed_b, couplings, cfg)
+    similarity_distance = float(np.sqrt(max(tensor_total, 0.0)))
+    midpoint = _midpoint_features(phi_a, phi_b, feature_keys)
+    barrier_a = constraint_barrier_score(phi_a, cfg)
+    barrier_b = constraint_barrier_score(phi_b, cfg)
+    barrier_mid = constraint_barrier_score(midpoint, cfg)
+    barrier_cost = (barrier_a + 4.0 * barrier_mid + barrier_b) / 6.0
+    missing_penalty = missing_weight if cfg.get("missing_penalty_enabled", True) is not False else 0.0
+    proxy_fallback_penalty = fallback_weight if cfg.get("missing_penalty_enabled", True) is not False else 0.0
+    distance = (
+        similarity_distance
+        + float(cfg["lambda_barrier"]) * barrier_cost
+        + float(cfg["lambda_missing"]) * missing_penalty
+        + float(cfg.get("lambda_fallback", 0.25)) * proxy_fallback_penalty
+    )
+    return {
+        "status": "ok",
+        "distance": float(distance),
+        "tensor_distance": similarity_distance,
+        "similarity_distance": similarity_distance,
+        "barrier_cost": float(barrier_cost),
+        "path_risk_cost": float(barrier_cost),
+        "missing_penalty": float(missing_penalty),
+        "proxy_fallback_penalty": float(proxy_fallback_penalty),
+        "feature_count": int(len(feature_keys)),
+        "missing_feature_count": int(missing_count),
+        "metric_version": "v2",
+    }
+
+
+def _compute_capm_distance_legacy(
+    phi_a: Mapping[str, Any] | pd.Series,
+    phi_b: Mapping[str, Any] | pd.Series,
+    weights: Mapping[str, float] | None,
+    cfg: Mapping[str, Any],
+) -> dict[str, Any]:
     feature_keys = _capm_feature_keys(phi_a, phi_b, weights)
     if not feature_keys:
-        return {
-            "status": "unavailable",
-            "distance": None,
-            "tensor_distance": None,
-            "barrier_cost": 0.0,
-            "missing_penalty": 1.0,
-            "reason": "no_shared_physics_features",
-        }
+        return _unavailable_capm_result("legacy")
     tensor_total = 0.0
     missing_count = 0
     for key in feature_keys:
@@ -132,20 +309,39 @@ def compute_capm_distance(
             continue
         weight = float((weights or {}).get(key, GOA_DEFAULT_WEIGHTS.get(key, 1.0)))
         tensor_total += weight * (left - right) ** 2
-    couplings = _resolve_couplings(cfg)
+    couplings = _resolve_couplings(cfg) if cfg.get("coupling_enabled", True) is not False else []
     tensor_total += _coupling_distance(phi_a, phi_b, couplings)
     tensor_distance = float(np.sqrt(max(tensor_total, 0.0)))
     barrier_cost = max(constraint_barrier_score(phi_a, cfg), constraint_barrier_score(phi_b, cfg))
-    missing_penalty = missing_count / max(len(feature_keys), 1)
+    missing_penalty = missing_count / max(len(feature_keys), 1) if cfg.get("missing_penalty_enabled", True) is not False else 0.0
     distance = tensor_distance + float(cfg["lambda_barrier"]) * barrier_cost + float(cfg["lambda_missing"]) * missing_penalty
     return {
         "status": "ok",
         "distance": float(distance),
         "tensor_distance": tensor_distance,
+        "similarity_distance": tensor_distance,
         "barrier_cost": float(barrier_cost),
+        "path_risk_cost": float(barrier_cost),
         "missing_penalty": float(missing_penalty),
+        "proxy_fallback_penalty": 0.0,
         "feature_count": int(len(feature_keys)),
         "missing_feature_count": int(missing_count),
+        "metric_version": "legacy",
+    }
+
+
+def _unavailable_capm_result(metric_version: str) -> dict[str, Any]:
+    return {
+        "status": "unavailable",
+        "distance": None,
+        "tensor_distance": None,
+        "similarity_distance": None,
+        "barrier_cost": 0.0,
+        "path_risk_cost": 0.0,
+        "missing_penalty": 1.0,
+        "proxy_fallback_penalty": 0.0,
+        "metric_version": metric_version,
+        "reason": "no_shared_physics_features",
     }
 
 
@@ -154,6 +350,7 @@ def physics_geodesic_distance_to_l1(
     history_phi: pd.DataFrame,
     weights: Mapping[str, float] | None = None,
     config: Mapping[str, Any] | None = None,
+    context: CapmDistanceContext | None = None,
 ) -> pd.DataFrame:
     """Attach CAPM direct and kNN-graph distances from candidates to L1 samples."""
 
@@ -161,15 +358,80 @@ def physics_geodesic_distance_to_l1(
     if output.empty:
         return output
     cfg = _capm_config(config)
+    version = str(cfg.get("metric_version", "v2")).lower()
     l1 = history_phi[history_phi.get("level_label", "") == "L1"] if "level_label" in history_phi.columns else history_phi.iloc[0:0]
     if l1.empty:
         output["capm_distance_to_l1"] = float("inf")
         output["capm_geodesic_distance_to_l1"] = float("inf")
+        output["capm_similarity_distance_to_l1"] = float("inf")
         output["capm_barrier_score"] = [constraint_barrier_score(row, cfg) for _, row in output.iterrows()]
+        output["capm_path_risk_cost"] = output["capm_barrier_score"]
         output["capm_missing_penalty"] = 1.0
+        output["capm_proxy_fallback_penalty"] = 0.0
+        output["capm_metric_version"] = version
+        output["capm_l1_aggregation_status"] = "unavailable:no_l1_samples"
+        output["capm_normalization_json"] = "{}"
         output["capm_status"] = "unavailable:no_l1_samples"
         return output
 
+    if version == "legacy":
+        return _legacy_geodesic_distance_to_l1(output, history_phi, l1, weights, cfg)
+
+    context = context or build_capm_distance_context(history_phi, weights, cfg)
+    candidate_records = output.to_dict("records")
+    history_records = history_phi.to_dict("records")
+    l1_indices = [index for index, row in enumerate(history_records) if str(row.get("level_label", "")) == "L1"]
+    history_graph = _capm_graph(history_records, weights, cfg, context=context)
+    normalization_json = json.dumps(context.normalization_payload(), ensure_ascii=True, sort_keys=True)
+    rows: list[dict[str, Any]] = []
+    for row in candidate_records:
+        direct_results = [
+            compute_capm_distance(row, history_records[index], weights, cfg, context)
+            for index in l1_indices
+        ]
+        direct = _aggregate_l1_results(direct_results, [history_records[index] for index in l1_indices], cfg)
+        geodesic_values = _candidate_geodesic_distances(
+            row,
+            history_records,
+            history_graph,
+            l1_indices,
+            weights,
+            cfg,
+            context,
+        )
+        geodesic_distance, aggregation_status = _aggregate_l1_values(
+            geodesic_values,
+            [history_records[index] for index in l1_indices],
+            cfg,
+        )
+        if cfg.get("geodesic_enabled", True) is False or not np.isfinite(geodesic_distance):
+            geodesic_distance = float(direct["distance"])
+            aggregation_status = f"direct:{direct['aggregation_status']}"
+        rows.append(
+            {
+                "capm_distance_to_l1": direct["distance"],
+                "capm_geodesic_distance_to_l1": geodesic_distance,
+                "capm_similarity_distance_to_l1": direct["similarity_distance"],
+                "capm_barrier_score": constraint_barrier_score(row, cfg),
+                "capm_path_risk_cost": direct["barrier_cost"],
+                "capm_missing_penalty": direct["missing_penalty"],
+                "capm_proxy_fallback_penalty": direct["proxy_fallback_penalty"],
+                "capm_metric_version": "v2",
+                "capm_l1_aggregation_status": aggregation_status,
+                "capm_normalization_json": normalization_json,
+                "capm_status": direct["status"],
+            }
+        )
+    return pd.concat([output.reset_index(drop=True), pd.DataFrame(rows)], axis=1)
+
+
+def _legacy_geodesic_distance_to_l1(
+    output: pd.DataFrame,
+    history_phi: pd.DataFrame,
+    l1: pd.DataFrame,
+    weights: Mapping[str, float] | None,
+    cfg: Mapping[str, Any],
+) -> pd.DataFrame:
     candidate_records = output.to_dict("records")
     history_records = history_phi.to_dict("records")
     all_records = candidate_records + history_records
@@ -179,13 +441,19 @@ def physics_geodesic_distance_to_l1(
     for index, row in enumerate(candidate_records):
         direct = _nearest_l1_capm(row, l1, weights, cfg)
         geodesic = _shortest_distance_to_targets(graph, index, l1_offsets)
-        geodesic_distance = geodesic if np.isfinite(geodesic) else direct["distance"]
+        geodesic_distance = geodesic if np.isfinite(geodesic) and cfg.get("geodesic_enabled", True) is not False else direct["distance"]
         rows.append(
             {
                 "capm_distance_to_l1": direct["distance"],
                 "capm_geodesic_distance_to_l1": geodesic_distance,
+                "capm_similarity_distance_to_l1": direct.get("similarity_distance", direct["distance"]),
                 "capm_barrier_score": constraint_barrier_score(row, cfg),
+                "capm_path_risk_cost": direct.get("barrier_cost", 0.0),
                 "capm_missing_penalty": direct["missing_penalty"],
+                "capm_proxy_fallback_penalty": 0.0,
+                "capm_metric_version": "legacy",
+                "capm_l1_aggregation_status": "nearest:legacy",
+                "capm_normalization_json": "{}",
                 "capm_status": direct["status"],
             }
         )
@@ -271,6 +539,71 @@ def _numeric(value: Any) -> float | None:
     return numeric
 
 
+def _transform_feature(value: float, key: str, context: CapmDistanceContext) -> float:
+    if context.config.get("normalization_enabled", True) is False:
+        return float(value)
+    center = float(context.centers.get(key, 0.0))
+    scale = max(float(context.scales.get(key, 1.0)), 1e-12)
+    clip = max(float(context.config.get("normalization_clip", 8.0)), 0.0)
+    transformed = float(np.arcsinh((value - center) / scale))
+    return float(np.clip(transformed, -clip, clip)) if clip > 0 else transformed
+
+
+def _feature_status(row: Mapping[str, Any] | pd.Series, key: str) -> str:
+    raw = row.get("physics_feature_status_json")
+    if not isinstance(raw, str) or not raw:
+        return "unknown"
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return "unknown"
+    return str(payload.get(key, "unknown")) if isinstance(payload, Mapping) else "unknown"
+
+
+def _midpoint_features(
+    phi_a: Mapping[str, Any] | pd.Series,
+    phi_b: Mapping[str, Any] | pd.Series,
+    feature_keys: Sequence[str],
+) -> dict[str, float]:
+    midpoint: dict[str, float] = {}
+    keys = set(feature_keys) | set(phi_a.keys()) | set(phi_b.keys())
+    for key in keys:
+        if key in FORBIDDEN_DISTANCE_COLUMNS:
+            continue
+        left = _numeric(phi_a.get(key))
+        right = _numeric(phi_b.get(key))
+        if left is not None and right is not None:
+            midpoint[key] = (left + right) / 2.0
+    return midpoint
+
+
+def _normalized_coupling_distance(
+    transformed_a: Mapping[str, float],
+    transformed_b: Mapping[str, float],
+    couplings: Sequence[Mapping[str, Any]],
+    config: Mapping[str, Any],
+) -> float:
+    available = [
+        entry
+        for entry in couplings
+        if entry["left"] in transformed_a
+        and entry["right"] in transformed_a
+        and entry["left"] in transformed_b
+        and entry["right"] in transformed_b
+    ]
+    total_weight = sum(max(float(entry.get("weight", 0.0)), 0.0) for entry in available)
+    if total_weight <= 0.0:
+        return 0.0
+    raw = 0.0
+    for entry in available:
+        left_key = str(entry["left"])
+        right_key = str(entry["right"])
+        weight = max(float(entry.get("weight", 0.0)), 0.0)
+        delta = transformed_a[left_key] * transformed_a[right_key] - transformed_b[left_key] * transformed_b[right_key]
+        raw += weight * delta**2
+    return float(max(float(config.get("coupling_budget", 0.25)), 0.0) * raw)
+
+
 def _linear_penalty(delta: float, threshold: float) -> float:
     """Linear penalty: |delta| / threshold."""
     if threshold <= 0:
@@ -289,7 +622,8 @@ def _exponential_penalty(delta: float, threshold: float, alpha: float = 2.0) -> 
     """Exponential penalty: exp(alpha * |delta| / threshold) - 1."""
     if threshold <= 0:
         return 0.0
-    return float(np.exp(alpha * abs(delta) / threshold) - 1.0)
+    exponent = min(alpha * abs(delta) / threshold, 60.0)
+    return float(np.exp(exponent) - 1.0)
 
 
 PENALTY_FUNCTIONS = {
@@ -426,17 +760,116 @@ def _nearest_l1_capm(
     return min(ok, key=lambda item: float(item["distance"]))
 
 
+def _aggregate_l1_results(
+    results: Sequence[Mapping[str, Any]],
+    l1_records: Sequence[Mapping[str, Any]],
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
+    distances = [float(result["distance"]) if result.get("distance") is not None else float("inf") for result in results]
+    distance, status = _aggregate_l1_values(distances, l1_records, config)
+    similarities = [
+        float(result["similarity_distance"])
+        if result.get("similarity_distance") is not None
+        else float("inf")
+        for result in results
+    ]
+    similarity, _ = _aggregate_l1_values(similarities, l1_records, config)
+    finite_results = [result for result in results if result.get("distance") is not None and np.isfinite(float(result["distance"]))]
+    if not finite_results:
+        return {
+            "status": "unavailable",
+            "distance": float("inf"),
+            "similarity_distance": float("inf"),
+            "barrier_cost": 0.0,
+            "missing_penalty": 1.0,
+            "proxy_fallback_penalty": 0.0,
+            "aggregation_status": status,
+        }
+    nearest = min(finite_results, key=lambda result: float(result["distance"]))
+    return {
+        "status": "ok",
+        "distance": distance,
+        "similarity_distance": similarity,
+        "barrier_cost": float(nearest.get("barrier_cost", 0.0)),
+        "missing_penalty": float(nearest.get("missing_penalty", 0.0)),
+        "proxy_fallback_penalty": float(nearest.get("proxy_fallback_penalty", 0.0)),
+        "aggregation_status": status,
+    }
+
+
+def _aggregate_l1_values(
+    values: Sequence[float],
+    l1_records: Sequence[Mapping[str, Any]],
+    config: Mapping[str, Any],
+) -> tuple[float, str]:
+    finite = [
+        (float(value), record)
+        for value, record in zip(values, l1_records)
+        if np.isfinite(float(value))
+    ]
+    if not finite:
+        return float("inf"), "unavailable"
+    finite.sort(key=lambda item: item[0])
+    top_k = max(int(config.get("l1_top_k", 3)), 1)
+    selected = finite[:top_k]
+    if str(config.get("l1_aggregation", "softmin")).lower() != "softmin" or len(selected) == 1:
+        return selected[0][0], "nearest"
+    scores = np.asarray([_numeric(record.get("overall_score")) or 0.0 for _, record in selected], dtype=float)
+    if np.ptp(scores) > 0:
+        normalized_scores = (scores - scores.min()) / np.ptp(scores)
+    else:
+        normalized_scores = np.zeros_like(scores)
+    quality_weight = max(float(config.get("l1_quality_weight", 0.25)), 0.0)
+    quality = 1.0 + quality_weight * normalized_scores
+    distances = np.asarray([value for value, _ in selected], dtype=float)
+    temperature = max(float(config.get("softmin_temperature", 0.25)), 1e-9)
+    minimum = float(distances.min())
+    mean_exp = float(np.sum(quality * np.exp(-(distances - minimum) / temperature)) / np.sum(quality))
+    aggregated = minimum - temperature * np.log(max(mean_exp, 1e-300))
+    return float(aggregated), f"softmin:{len(selected)}"
+
+
+def _candidate_geodesic_distances(
+    candidate: Mapping[str, Any],
+    history_records: Sequence[Mapping[str, Any]],
+    history_graph: list[list[tuple[int, float]]],
+    l1_indices: Sequence[int],
+    weights: Mapping[str, float] | None,
+    config: Mapping[str, Any],
+    context: CapmDistanceContext,
+) -> list[float]:
+    if config.get("geodesic_enabled", True) is False:
+        return [float("inf") for _ in l1_indices]
+    pair_distances: list[tuple[float, int]] = []
+    for index, record in enumerate(history_records):
+        result = compute_capm_distance(candidate, record, weights, config, context)
+        if result.get("distance") is not None and np.isfinite(float(result["distance"])):
+            pair_distances.append((float(result["distance"]), index))
+    graph = [list(edges) for edges in history_graph]
+    source = len(graph)
+    graph.append([])
+    k_neighbors = max(int(config.get("k_neighbors", 4)), 1)
+    lambda_graph = float(config.get("lambda_graph", 1.0))
+    for distance, target in sorted(pair_distances)[:k_neighbors]:
+        edge = lambda_graph * distance
+        graph[source].append((target, edge))
+        graph[target].append((source, edge))
+    target_distances = _shortest_distances_to_targets(graph, source, set(l1_indices))
+    return [target_distances.get(index, float("inf")) for index in l1_indices]
+
+
 def _capm_graph(
     records: list[dict[str, Any]],
     weights: Mapping[str, float] | None,
     config: Mapping[str, Any],
+    context: CapmDistanceContext | None = None,
 ) -> list[list[tuple[int, float]]]:
     k_neighbors = max(1, int(config.get("k_neighbors", 4)))
     graph: list[list[tuple[int, float]]] = [[] for _ in records]
     pair_distances: list[tuple[int, int, float]] = []
     for left in range(len(records)):
         for right in range(left + 1, len(records)):
-            result = compute_capm_distance(records[left], records[right], weights, config)
+            result = compute_capm_distance(records[left], records[right], weights, config, context)
             distance = float(result["distance"]) if result.get("distance") is not None else float("inf")
             if np.isfinite(distance):
                 pair_distances.append((left, right, distance))
@@ -468,3 +901,27 @@ def _shortest_distance_to_targets(graph: list[list[tuple[int, float]]], source: 
             if target not in seen:
                 heappush(queue, (distance + edge, target))
     return float("inf")
+
+
+def _shortest_distances_to_targets(
+    graph: list[list[tuple[int, float]]],
+    source: int,
+    targets: set[int],
+) -> dict[int, float]:
+    if not targets:
+        return {}
+    queue: list[tuple[float, int]] = [(0.0, source)]
+    best: dict[int, float] = {source: 0.0}
+    found: dict[int, float] = {}
+    while queue and len(found) < len(targets):
+        distance, node = heappop(queue)
+        if distance > best.get(node, float("inf")):
+            continue
+        if node in targets:
+            found[node] = distance
+        for target, edge in graph[node]:
+            candidate_distance = distance + edge
+            if candidate_distance < best.get(target, float("inf")):
+                best[target] = candidate_distance
+                heappush(queue, (candidate_distance, target))
+    return found

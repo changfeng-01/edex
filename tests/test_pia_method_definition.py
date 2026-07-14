@@ -48,6 +48,9 @@ def test_method_definition_separates_score_objective_acquisition_and_validation_
     assert layers["candidate_acquisition"]["column"] == ACQUISITION_SCORE_COLUMN
     assert layers["validation_outcome"]["column"] == PRIMARY_OUTCOME
     assert "not final validation evidence" in layers["candidate_acquisition"]["meaning"]
+    assert "asinh" in definition.formulas["physics_normalization"]
+    assert "R_path" in definition.formulas["capm_pair"]
+    assert "softmin" in definition.formulas["l1_geodesic"]
 
 
 def test_method_definition_forbidden_leakage_columns_cover_result_metrics() -> None:

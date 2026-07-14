@@ -17,6 +17,7 @@ from goa_eval.optimizer import constrained_random_candidates, load_baseline_para
 from goa_eval.parameter_semantics import load_parameter_semantics
 from goa_eval.real_waveform_eval import run_real_waveform_evaluation
 from goa_eval.recommendation import build_recommendations, write_recommendations_markdown
+from goa_eval.waveform_diagnostic_training import train_waveform_diagnostic_model
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -40,6 +41,16 @@ def register_real_evaluation_commands(subparsers: argparse._SubParsersAction) ->
     real.add_argument("--circuit-profile")
     real.add_argument("--profile-file")
     real.set_defaults(handler=handle_evaluate_real)
+
+    diagnostic = subparsers.add_parser("train-waveform-diagnostic")
+    diagnostic.add_argument("--waveform", required=True)
+    diagnostic.add_argument("--nominal-sp")
+    diagnostic.add_argument("--netlist")
+    diagnostic.add_argument("--model-card", action="append", default=[])
+    diagnostic.add_argument("--spec", default="config/spec.yaml")
+    diagnostic.add_argument("--output-dir", default="outputs/waveform_diagnostic")
+    diagnostic.add_argument("--random-state", type=int, default=42)
+    diagnostic.set_defaults(handler=handle_train_waveform_diagnostic)
 
     recommend = subparsers.add_parser("recommend")
     recommend.add_argument("--summary", required=True)
@@ -131,6 +142,21 @@ def handle_evaluate_real(args: argparse.Namespace) -> int:
         circuit_profile=args.circuit_profile,
         profile_file=Path(args.profile_file) if args.profile_file else None,
     )
+    return 0
+
+
+def handle_train_waveform_diagnostic(args: argparse.Namespace) -> int:
+    artifacts = train_waveform_diagnostic_model(
+        waveform_path=Path(args.waveform),
+        nominal_sp=Path(args.nominal_sp) if args.nominal_sp else None,
+        netlist=Path(args.netlist) if args.netlist else None,
+        model_cards=[Path(path) for path in args.model_card],
+        spec_path=Path(args.spec) if args.spec else None,
+        output_dir=Path(args.output_dir),
+        random_state=args.random_state,
+    )
+    print(artifacts.report.get("status"))
+    print(Path(args.output_dir) / "diagnostic_model_report.json")
     return 0
 
 

@@ -9,6 +9,7 @@ COMMAND_ARGV = {
     "evaluate": ["evaluate"],
     "all": ["all"],
     "evaluate-real": ["evaluate-real", "--waveform", "waveform.csv"],
+    "train-waveform-diagnostic": ["train-waveform-diagnostic", "--waveform", "waveform.csv"],
     "recommend": ["recommend", "--summary", "real_summary.json"],
     "product-demo": ["product-demo", "--input-dir", "case", "--case-id", "demo"],
     "demo": ["demo"],

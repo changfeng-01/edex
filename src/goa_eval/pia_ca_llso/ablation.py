@@ -53,6 +53,15 @@ def build_ablation_config(base_config: dict, ablation: str) -> tuple[dict, str]:
     if ablation == "no_missing_penalty":
         config.setdefault("capm_distance", {})["missing_penalty_enabled"] = False
         return config, strategy
+    if ablation == "no_capm_normalization":
+        config.setdefault("capm_distance", {})["normalization_enabled"] = False
+        return config, strategy
+    if ablation == "no_capm_softmin":
+        config.setdefault("capm_distance", {})["l1_aggregation"] = "nearest"
+        return config, strategy
+    if ablation == "no_capm_electrical_features":
+        config.setdefault("physics_features", {})["electrical_features_enabled"] = False
+        return config, strategy
     raise ValueError(f"Unknown PIA validation ablation: {ablation}")
 
 

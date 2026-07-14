@@ -41,8 +41,14 @@ When `--strategy pia_capm_distance` is used, the selected candidate CSV also inc
 
 - `capm_distance_to_l1`
 - `capm_geodesic_distance_to_l1`
+- `capm_similarity_distance_to_l1`
 - `capm_barrier_score`
+- `capm_path_risk_cost`
 - `capm_missing_penalty`
+- `capm_proxy_fallback_penalty`
+- `capm_metric_version`
+- `capm_l1_aggregation_status`
+- `capm_normalization_json`
 - `capm_hard_risk_passed`
 
 These fields are pre-simulation candidate-selection diagnostics. They are not final physical validation evidence, and every selected candidate keeps `must_resimulate = true`.

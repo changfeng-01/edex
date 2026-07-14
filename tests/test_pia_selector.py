@@ -71,6 +71,10 @@ def test_capm_selector_ranks_without_model_prediction_columns() -> None:
     assert result.model_report["strategy"] == "pia_capm_distance"
     assert result.explanation_report["claim_boundary"] == "next-run simulation suggestions"
     assert "capm_distance_to_l1" in result.all_candidates.columns
+    assert result.all_candidates["capm_metric_version"].eq("v2").all()
+    assert "capm_similarity_distance_to_l1" in result.all_candidates.columns
+    assert "capm_path_risk_cost" in result.all_candidates.columns
+    assert "capm_normalization_json" in result.all_candidates.columns
     assert "p_l1" not in result.all_candidates.columns
 
 

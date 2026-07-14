@@ -10,6 +10,7 @@ from goa_eval.pia_ca_llso.leakage import FORMAL_RESULT_LEAKAGE_COLUMNS
 from goa_eval.pia_ca_llso.physics_distance import (
     FORBIDDEN_DISTANCE_COLUMNS,
     GOA_DEFAULT_WEIGHTS,
+    build_capm_distance_context,
     compute_capm_distance,
     distance_to_l1_physics,
     normalize_distance,
@@ -215,18 +216,32 @@ def select_capm_distance(
 ) -> pd.DataFrame:
     output = candidates.copy()
     feature_cols = _shared_numeric_columns(output, history)
+    distance_context = build_capm_distance_context(history, weights=weights, config=config)
     scored = physics_geodesic_distance_to_l1(
         output[["candidate_id", *feature_cols]] if "candidate_id" in output else output[feature_cols],
         history[feature_cols + _history_label_columns(history)],
         weights=weights,
         config=config,
+        context=distance_context,
     )
-    for column in ["capm_distance_to_l1", "capm_geodesic_distance_to_l1", "capm_barrier_score", "capm_missing_penalty", "capm_status"]:
+    for column in [
+        "capm_distance_to_l1",
+        "capm_geodesic_distance_to_l1",
+        "capm_similarity_distance_to_l1",
+        "capm_barrier_score",
+        "capm_path_risk_cost",
+        "capm_missing_penalty",
+        "capm_proxy_fallback_penalty",
+        "capm_metric_version",
+        "capm_l1_aggregation_status",
+        "capm_normalization_json",
+        "capm_status",
+    ]:
         output[column] = scored[column].values
     output["capm_distance_to_l1_normalized"] = normalize_distance(output["capm_geodesic_distance_to_l1"].tolist())
     # Use CAPM distance for diversity to align with physics-manifold semantics
     def _capm_distance_fn(a: pd.Series, b: pd.Series) -> float:
-        result = compute_capm_distance(a, b, weights=weights, config=config)
+        result = compute_capm_distance(a, b, weights=weights, config=config, context=distance_context)
         return float(result.get("distance", float("inf")))
 
     output = _attach_diversity(output, feature_cols, distance_fn=_capm_distance_fn)
@@ -279,7 +294,8 @@ def select_adaptive_capm_distance(
     top_k: int = 4,
     config: Mapping[str, Any] | None = None,
 ) -> pd.DataFrame:
-    feature_cols = _shared_numeric_columns(candidates, history)
+    base_context = build_capm_distance_context(history, config=config)
+    feature_cols = list(base_context.feature_keys)
     weights = _learn_adaptive_capm_weights(history, feature_cols, config)
     acquisition_weights = _adaptive_acquisition_weights(history, config)
     return select_capm_distance(

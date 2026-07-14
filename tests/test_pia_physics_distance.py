@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from goa_eval.pia_ca_llso.physics_distance import (
     _exponential_penalty,
     _linear_penalty,
     _quadratic_penalty,
+    build_capm_distance_context,
     compute_capm_distance,
     compute_physics_distance,
     constraint_barrier_score,
@@ -235,3 +237,120 @@ def test_penalty_no_violation_returns_zero() -> None:
     phi = {"vgh_vth_margin": 3.0, "ron_pullup_cload_proxy": 0.5}
     score = constraint_barrier_score(phi)
     assert score == 0.0
+
+
+def _v2_history() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "sample_id": f"h{index}",
+                "level_label": "L1" if index >= 3 else "L2",
+                "overall_score": 70.0 + index * 5.0,
+                "hard_constraint_passed": True,
+                "cboot_cload_ratio": 0.8 + index * 0.1,
+                "pullup_pulldown_ratio": 0.9 + index * 0.05,
+                "ron_pullup_cload_proxy": 0.8 - index * 0.05,
+                "ron_pulldown_cload_proxy": 0.9 - index * 0.05,
+                "vgh_vth_margin": 1.5 + index * 0.2,
+                "vgl_off_margin": 1.2 + index * 0.2,
+                "clk_slew_proxy": 0.8 - index * 0.05,
+            }
+            for index in range(5)
+        ]
+    )
+
+
+def test_v2_similarity_is_zero_for_same_point_even_when_barrier_is_positive() -> None:
+    history = _v2_history()
+    context = build_capm_distance_context(history, config={"metric_version": "v2"})
+    risky = history.iloc[0].to_dict()
+    risky["vgh_vth_margin"] = 0.05
+
+    result = compute_capm_distance(risky, risky, config={"metric_version": "v2"}, context=context)
+
+    assert result["similarity_distance"] == 0.0
+    assert result["barrier_cost"] > 0.0
+    assert result["distance"] > 0.0
+    assert result["metric_version"] == "v2"
+
+
+def test_v2_history_normalization_is_invariant_to_consistent_unit_scaling() -> None:
+    history = _v2_history()
+    candidate = history.iloc[1].to_dict()
+    reference = history.iloc[4].to_dict()
+    scaled_history = history.copy()
+    scaled_candidate = dict(candidate)
+    scaled_reference = dict(reference)
+    for column in ["vgh_vth_margin", "vgl_off_margin", "clk_slew_proxy"]:
+        scaled_history[column] *= 1000.0
+        scaled_candidate[column] *= 1000.0
+        scaled_reference[column] *= 1000.0
+
+    context = build_capm_distance_context(history, config={"metric_version": "v2"})
+    scaled_context = build_capm_distance_context(scaled_history, config={"metric_version": "v2"})
+    original = compute_capm_distance(candidate, reference, config={"metric_version": "v2"}, context=context)
+    scaled = compute_capm_distance(
+        scaled_candidate,
+        scaled_reference,
+        config={"metric_version": "v2"},
+        context=scaled_context,
+    )
+
+    assert scaled["similarity_distance"] == pytest.approx(original["similarity_distance"])
+
+
+def test_v2_weighted_missing_and_proxy_fallback_penalties_are_reported() -> None:
+    history = _v2_history()
+    weights = {"vgh_vth_margin": 4.0, "clk_slew_proxy": 1.0}
+    context = build_capm_distance_context(history, weights=weights, config={"metric_version": "v2"})
+    complete = history.iloc[3].to_dict()
+    incomplete = dict(complete)
+    incomplete["vgh_vth_margin"] = None
+    incomplete["physics_feature_status_json"] = '{"clk_slew_proxy":"proxy_fallback"}'
+
+    result = compute_capm_distance(incomplete, complete, weights, {"metric_version": "v2"}, context)
+
+    assert result["missing_penalty"] == pytest.approx(0.8)
+    assert result["proxy_fallback_penalty"] == pytest.approx(0.2)
+
+
+def test_legacy_metric_preserves_previous_pair_formula() -> None:
+    safe = {
+        "cboot_cload_ratio": 1.2,
+        "pullup_pulldown_ratio": 1.0,
+        "ron_pullup_cload_proxy": 0.4,
+        "ron_pulldown_cload_proxy": 0.4,
+        "vgh_vth_margin": 2.5,
+        "vgl_off_margin": 2.0,
+        "clk_slew_proxy": 0.5,
+    }
+    modified = {**safe, "clk_slew_proxy": 0.7}
+
+    result = compute_capm_distance(
+        modified,
+        safe,
+        config={"metric_version": "legacy", "coupling_enabled": False},
+    )
+
+    assert result["tensor_distance"] == pytest.approx((1.2 * 0.2**2) ** 0.5)
+    assert result["metric_version"] == "legacy"
+
+
+def test_v2_geodesic_is_independent_of_unrelated_candidate_pool_members() -> None:
+    history = _v2_history()
+    candidate = pd.DataFrame([{"candidate_id": "target", **history.iloc[2].to_dict()}])
+    unrelated = pd.DataFrame(
+        [
+            {"candidate_id": "unrelated", **history.iloc[0].to_dict(), "vgh_vth_margin": 20.0},
+            *candidate.to_dict("records"),
+        ]
+    )
+
+    single = physics_geodesic_distance_to_l1(candidate, history, config={"metric_version": "v2"})
+    pooled = physics_geodesic_distance_to_l1(unrelated, history, config={"metric_version": "v2"})
+
+    pooled_target = pooled.loc[pooled["candidate_id"] == "target"].iloc[0]
+    assert pooled_target["capm_geodesic_distance_to_l1"] == pytest.approx(
+        single.loc[0, "capm_geodesic_distance_to_l1"]
+    )
+    assert pooled_target["capm_l1_aggregation_status"].startswith("softmin")
