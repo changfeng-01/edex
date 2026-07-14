@@ -54,10 +54,19 @@ class ExperimentStatus(str, Enum):
 class SimulationJobStatus(str, Enum):
     DRAFT = "draft"
     EXPORTED = "exported"
+    WAITING_FOR_RESULTS = "waiting_for_results"
+    VALIDATING = "validating"
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class ComparisonVerdict(str, Enum):
+    EVIDENCE_INSUFFICIENT = "evidence_insufficient"
+    IMPROVED = "improved"
+    REGRESSED = "regressed"
+    NEUTRAL = "neutral"
 
 
 def utc_now_iso() -> str:
@@ -222,15 +231,19 @@ class CandidateRecord:
     strategy: str
     reason_codes: tuple[str, ...] = ()
     selection_scores: dict[str, float] = field(default_factory=dict)
+    selection_score: float | None = None
+    evaluated_score: float | None = None
     status: CandidateStatus = CandidateStatus.PROPOSED
     must_resimulate: bool = True
     simulation_job_id: str | None = None
     result_design_version_id: str | None = None
+    created_at: str = field(default_factory=utc_now_iso)
 
 
 @dataclass(frozen=True)
 class SimulationJobRecord:
     simulation_job_id: str
+    project_id: str
     candidate_ids: tuple[str, ...]
     adapter_type: str
     status: SimulationJobStatus = SimulationJobStatus.DRAFT
@@ -239,4 +252,26 @@ class SimulationJobRecord:
     result_manifest_ref: str | None = None
     logs_ref: str | None = None
     attempt: int = 0
+    export_attempt: int = 0
+    import_attempt: int = 0
+    batch_ref: ArtifactRef | None = None
+    result_ref: ArtifactRef | None = None
+    result_sha256: str | None = None
+    error_code: str | None = None
+    retryable: bool = False
+    created_at: str = field(default_factory=utc_now_iso)
+
+
+@dataclass(frozen=True)
+class ComparisonRecord:
+    comparison_id: str
+    project_id: str
+    baseline_design_version_id: str
+    result_design_version_id: str
+    baseline_analysis_run_id: str | None
+    result_analysis_run_id: str | None
+    metric_deltas: dict[str, Any] = field(default_factory=dict)
+    constraint_changes: dict[str, Any] = field(default_factory=dict)
+    evidence_ids: tuple[str, ...] = ()
+    verdict: ComparisonVerdict = ComparisonVerdict.EVIDENCE_INSUFFICIENT
     created_at: str = field(default_factory=utc_now_iso)

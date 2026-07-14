@@ -84,7 +84,16 @@ EXPERIMENT_TRANSITIONS = {
 SIMULATION_JOB_TRANSITIONS = {
     SimulationJobStatus.DRAFT: {SimulationJobStatus.EXPORTED, SimulationJobStatus.QUEUED},
     SimulationJobStatus.EXPORTED: {
+        SimulationJobStatus.WAITING_FOR_RESULTS,
         SimulationJobStatus.QUEUED,
+        SimulationJobStatus.COMPLETED,
+        SimulationJobStatus.FAILED,
+    },
+    SimulationJobStatus.WAITING_FOR_RESULTS: {
+        SimulationJobStatus.VALIDATING,
+        SimulationJobStatus.FAILED,
+    },
+    SimulationJobStatus.VALIDATING: {
         SimulationJobStatus.COMPLETED,
         SimulationJobStatus.FAILED,
     },
