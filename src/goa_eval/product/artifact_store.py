@@ -119,6 +119,19 @@ class LocalArtifactStore:
             return False
         return True
 
+    def ref_from_uri(self, uri: str, expected_sha256: str | None = None) -> ArtifactRef:
+        prefix = "artifact://"
+        if not isinstance(uri, str) or not uri.startswith(prefix):
+            raise InvalidArtifactKey(f"invalid artifact URI: {uri!r}")
+        key = self._normalize_key(uri.removeprefix(prefix))
+        path = self._resolve_key(key)
+        if not path.is_file():
+            raise ArtifactSourceError(f"artifact does not exist: {key}")
+        ref = self._build_ref(key, path)
+        if expected_sha256 is not None and ref.sha256 != expected_sha256:
+            raise ArtifactIntegrityError(f"artifact checksum does not match evidence: {key}")
+        return ref
+
     def _publish_file(self, key: str, writer: Callable[[BinaryIO], object]) -> ArtifactRef:
         normalized = self._normalize_key(key)
         destination = self._resolve_key(normalized)
