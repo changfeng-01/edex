@@ -61,3 +61,13 @@ def test_ablation_capm_only_uses_pia_capm_distance_and_disables_adaptive_parts()
     assert config["adaptive_capm"]["enabled"] is False
     assert config["repair_candidates"]["enabled"] is False
     assert config["evaluation_scheduler"]["enabled"] is False
+
+
+def test_capm_v2_component_ablations_set_distance_flags() -> None:
+    normalization, _ = build_ablation_config(_base_config(), "no_capm_normalization")
+    softmin, _ = build_ablation_config(_base_config(), "no_capm_softmin")
+    electrical, _ = build_ablation_config(_base_config(), "no_capm_electrical_features")
+
+    assert normalization["capm_distance"]["normalization_enabled"] is False
+    assert softmin["capm_distance"]["l1_aggregation"] == "nearest"
+    assert electrical["physics_features"]["electrical_features_enabled"] is False

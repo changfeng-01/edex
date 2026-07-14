@@ -21,12 +21,28 @@ forbidden_leakage_columns:
   - hard_constraint_passed
 physics_features:
   profile: generic
+  electrical_features_enabled: true
 feature_weights: {}
 capm_distance:
+  metric_version: v2
   lambda_barrier: 1.0
   lambda_graph: 1.0
   lambda_missing: 1.0
+  lambda_fallback: 0.25
   k_neighbors: 4
+  normalization_enabled: true
+  normalization_min_history_rows: 4
+  normalization_floor_fraction: 0.05
+  normalization_clip: 8.0
+  coupling_enabled: true
+  coupling_budget: 0.25
+  barrier_enabled: true
+  geodesic_enabled: true
+  missing_penalty_enabled: true
+  l1_aggregation: softmin
+  l1_top_k: 3
+  softmin_temperature: 0.25
+  l1_quality_weight: 0.25
   couplings:
     - {left: ron_pullup_cload_proxy, right: clk_slew_proxy, weight: 0.25, enabled: true}
     - {left: ron_pulldown_cload_proxy, right: clk_slew_proxy, weight: 0.25, enabled: true}

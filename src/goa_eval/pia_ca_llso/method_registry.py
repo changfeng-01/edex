@@ -36,6 +36,9 @@ FORMAL_ABLATIONS = (
     "no_capm_geodesic",
     "no_capm_coupling",
     "no_missing_penalty",
+    "no_capm_normalization",
+    "no_capm_softmin",
+    "no_capm_electrical_features",
 )
 
 PAIRWISE_BASELINES = (

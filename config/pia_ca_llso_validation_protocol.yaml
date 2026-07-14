@@ -50,6 +50,9 @@ ablations:
   - no_capm_geodesic
   - no_capm_coupling
   - no_missing_penalty
+  - no_capm_normalization
+  - no_capm_softmin
+  - no_capm_electrical_features
 scenarios:
   - scenario_id: sample_goa
     history_csv: examples/pia_ca_llso/sample_history.csv

@@ -53,6 +53,7 @@ forbidden_leakage_columns:
   - hard_constraint_passed
 physics_features:
   profile: transistor_level
+  electrical_features_enabled: true
 feature_weights:
   cboot_cload_ratio: 2.0
   pullup_pulldown_ratio: 2.0
@@ -64,10 +65,25 @@ feature_weights:
   clk_slew_proxy: 1.2
   area_proxy: 0.8
 capm_distance:
+  metric_version: v2
   lambda_barrier: 1.0
   lambda_graph: 1.0
   lambda_missing: 1.0
+  lambda_fallback: 0.25
   k_neighbors: 4
+  normalization_enabled: true
+  normalization_min_history_rows: 4
+  normalization_floor_fraction: 0.05
+  normalization_clip: 8.0
+  coupling_enabled: true
+  coupling_budget: 0.25
+  barrier_enabled: true
+  geodesic_enabled: true
+  missing_penalty_enabled: true
+  l1_aggregation: softmin
+  l1_top_k: 3
+  softmin_temperature: 0.25
+  l1_quality_weight: 0.25
   min_vgh_vth_margin: 0.2
   min_vgl_off_margin: 0.2
   min_cboot_cload_ratio: 0.35

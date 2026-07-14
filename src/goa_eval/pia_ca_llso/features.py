@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Iterable, Any
 
 import numpy as np
@@ -41,6 +42,77 @@ def _first_series(frame: pd.DataFrame, names: Iterable[str], missing: set[str], 
     for name in names:
         missing.add(name)
     return pd.Series(default, index=frame.index, dtype="float64")
+
+
+def _optional_series(frame: pd.DataFrame, name: str) -> pd.Series:
+    if name not in frame.columns:
+        return pd.Series(np.nan, index=frame.index, dtype="float64")
+    return pd.to_numeric(frame[name], errors="coerce")
+
+
+def _attach_electrical_features(
+    features: pd.DataFrame,
+    frame: pd.DataFrame,
+    c_load: pd.Series,
+    c_boot: pd.Series,
+    pullup_w_l: pd.Series | np.ndarray,
+    pulldown_w_l: pd.Series | np.ndarray,
+    vgh_margin: pd.Series | np.ndarray,
+    vgl_margin: pd.Series | np.ndarray,
+) -> None:
+    epsilon = 1e-12
+    mu_pullup = _optional_series(frame, "mu_pullup_cm2_v_s")
+    mu_pulldown = _optional_series(frame, "mu_pulldown_cm2_v_s")
+    cox = _optional_series(frame, "cox_f_per_cm2")
+    c_parasitic = _optional_series(frame, "C_parasitic")
+    clk_amp = _optional_series(frame, "CLK_amp")
+
+    c_parasitic_effective = c_parasitic.fillna(0.0).clip(lower=0.0)
+    effective_load = c_load.astype(float) + c_parasitic_effective
+    pu_physical = mu_pullup.notna() & cox.notna()
+    pd_physical = mu_pulldown.notna() & cox.notna()
+    pu_factor = mu_pullup.where(pu_physical, 1.0) * cox.where(pu_physical, 1.0)
+    pd_factor = mu_pulldown.where(pd_physical, 1.0) * cox.where(pd_physical, 1.0)
+    pu_drive = (
+        pu_factor.to_numpy(dtype=float)
+        * np.asarray(pullup_w_l, dtype=float)
+        * np.maximum(np.asarray(vgh_margin, dtype=float), epsilon)
+    )
+    pd_drive = (
+        pd_factor.to_numpy(dtype=float)
+        * np.asarray(pulldown_w_l, dtype=float)
+        * np.maximum(np.asarray(vgl_margin, dtype=float), epsilon)
+    )
+    clk_effective = clk_amp.fillna(0.0).clip(lower=0.0)
+    bootstrap_denominator = c_boot.astype(float) + effective_load
+
+    features["effective_load_capacitance"] = effective_load
+    features["pullup_rc_delay_proxy_v2"] = _safe_div(effective_load, np.maximum(pu_drive, epsilon))
+    features["pulldown_rc_delay_proxy_v2"] = _safe_div(effective_load, np.maximum(pd_drive, epsilon))
+    features["bootstrap_charge_proxy"] = c_boot.astype(float) * clk_effective
+    features["bootstrap_coupling_factor"] = _safe_div(c_boot, bootstrap_denominator.replace(0, np.nan))
+    features["bootstrap_voltage_proxy"] = clk_effective * features["bootstrap_coupling_factor"]
+
+    statuses: list[str] = []
+    for index in frame.index:
+        load_status = "physical" if pd.notna(c_parasitic.loc[index]) else "proxy_fallback"
+        clock_status = "physical" if pd.notna(clk_amp.loc[index]) else "missing"
+        pu_status = "physical" if bool(pu_physical.loc[index]) and load_status == "physical" else "proxy_fallback"
+        pd_status = "physical" if bool(pd_physical.loc[index]) and load_status == "physical" else "proxy_fallback"
+        if clock_status == "missing":
+            bootstrap_voltage_status = "missing"
+        else:
+            bootstrap_voltage_status = "physical" if load_status == "physical" else "proxy_fallback"
+        status = {
+            "effective_load_capacitance": load_status,
+            "pullup_rc_delay_proxy_v2": pu_status,
+            "pulldown_rc_delay_proxy_v2": pd_status,
+            "bootstrap_charge_proxy": clock_status,
+            "bootstrap_coupling_factor": load_status,
+            "bootstrap_voltage_proxy": bootstrap_voltage_status,
+        }
+        statuses.append(json.dumps(status, ensure_ascii=True, sort_keys=True))
+    features["physics_feature_status_json"] = statuses
 
 
 def extract_physics_features(frame: pd.DataFrame, profile_config: dict[str, Any] | None = None) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -88,6 +160,17 @@ def extract_physics_features(frame: pd.DataFrame, profile_config: dict[str, Any]
         features["vgh_vth_margin"] = vgh - vth
         features["vgl_off_margin"] = np.abs(vgl) - np.abs(vth)
         features["holding_droop_proxy"] = _safe_div(c_load, c_boot + c_load)
+        if config.get("electrical_features_enabled", True) is not False:
+            _attach_electrical_features(
+                features,
+                frame,
+                c_load,
+                c_boot,
+                features["pullup_w_l"],
+                features["pulldown_w_l"],
+                features["vgh_vth_margin"],
+                features["vgl_off_margin"],
+            )
 
     if profile == "transistor_level":
         pu_w = _first_series(frame, ["M_pullup_W", "TFT_pullup_W"], missing)
@@ -122,12 +205,26 @@ def extract_physics_features(frame: pd.DataFrame, profile_config: dict[str, Any]
         features["supply_swing"] = vdd - vss
         features["holding_droop_proxy"] = _safe_div(c_load, c_boot + c_load)
         features["area_proxy"] = total_w * (pu_l + pd_l + rst_l + boot_l) / 4.0
+        if config.get("electrical_features_enabled", True) is not False:
+            _attach_electrical_features(
+                features,
+                frame,
+                c_load,
+                c_boot,
+                features["pullup_w_l"],
+                features["pulldown_w_l"],
+                features["vgh_vth_margin"],
+                features["vgl_off_margin"],
+            )
 
     features = features.replace([np.inf, -np.inf], 0.0).fillna(0.0)
     forbidden = config.get("forbidden_metric_names", DEFAULT_FORBIDDEN_METRIC_NAMES)
     leaked = validate_no_leakage(features.columns, forbidden)
     report = build_feature_report(features, missing)
     report["profile"] = profile
+    report["electrical_features_enabled"] = bool(
+        profile in {"goa", "transistor_level"} and config.get("electrical_features_enabled", True) is not False
+    )
     report["leakage_violations"] = leaked
     return features, report
 
