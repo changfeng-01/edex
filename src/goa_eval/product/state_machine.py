@@ -100,7 +100,10 @@ SIMULATION_JOB_TRANSITIONS = {
     SimulationJobStatus.QUEUED: {SimulationJobStatus.RUNNING, SimulationJobStatus.FAILED},
     SimulationJobStatus.RUNNING: {SimulationJobStatus.COMPLETED, SimulationJobStatus.FAILED},
     SimulationJobStatus.COMPLETED: set(),
-    SimulationJobStatus.FAILED: {SimulationJobStatus.QUEUED},
+    SimulationJobStatus.FAILED: {
+        SimulationJobStatus.QUEUED,
+        SimulationJobStatus.WAITING_FOR_RESULTS,
+    },
 }
 
 
