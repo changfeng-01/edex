@@ -9,7 +9,11 @@ from fastapi.responses import JSONResponse
 
 from goa_eval.product.artifact_store import ArtifactStoreError
 from goa_eval.product.input_service import InputPreviewFailed
+from goa_eval.product.comparison_service import ComparisonClaimError
+from goa_eval.product.experiment_service import ExperimentConflict, ExperimentNotFound
 from goa_eval.product.project_service import InvalidCircuitProfile, ProductNotFoundError
+from goa_eval.product.simulation_job_service import SimulationImportError, SimulationJobConflict
+from goa_eval.product.state_machine import InvalidTransition
 
 
 @dataclass
@@ -81,6 +85,18 @@ def translate_domain_error(exc: Exception) -> ProductApiError:
         if "project" in text:
             return ProductApiError("PROJECT_NOT_FOUND", "Project was not found.", 404)
         return ProductApiError("ARTIFACT_NOT_FOUND", "Artifact was not found.", 404)
+    if isinstance(exc, ExperimentNotFound):
+        return ProductApiError("EXPERIMENT_NOT_FOUND", "Experiment or candidate was not found.", 404)
+    if isinstance(exc, SimulationJobConflict):
+        if "not found" in str(exc).lower():
+            return ProductApiError("SIMULATION_JOB_NOT_FOUND", "Simulation job was not found.", 404)
+        return ProductApiError("EXPERIMENT_STATE_CONFLICT", "Experiment state does not allow this operation.", 409)
+    if isinstance(exc, (ExperimentConflict, InvalidTransition)):
+        return ProductApiError("EXPERIMENT_STATE_CONFLICT", "Experiment state does not allow this operation.", 409)
+    if isinstance(exc, SimulationImportError):
+        return ProductApiError("RESULT_CONTRACT_INVALID", "Simulation result contract is invalid.", 422, retryable=True)
+    if isinstance(exc, ComparisonClaimError):
+        return ProductApiError("EVIDENCE_INSUFFICIENT", "Evaluated evidence is insufficient.", 409)
     if isinstance(exc, (ArtifactStoreError, FileNotFoundError)):
         return ProductApiError("ARTIFACT_NOT_FOUND", "Artifact was not found.", 404)
     if isinstance(exc, ValueError):

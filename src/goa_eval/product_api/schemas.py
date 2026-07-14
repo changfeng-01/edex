@@ -42,6 +42,39 @@ class AnalysisRunCreate(BaseModel):
     run_llm_analysis: bool = False
 
 
+class ExperimentCreate(BaseModel):
+    baseline_design_version_id: str
+    strategy_config: dict[str, Any] = Field(default_factory=dict)
+
+
+class CandidateGenerate(BaseModel):
+    strategy: str
+    max_candidates: int = Field(ge=1, le=1000)
+    seed: int = 42
+
+
+class CandidateDecision(BaseModel):
+    actor_id: str
+    reason: str | None = None
+
+
+class SimulationJobCreate(BaseModel):
+    candidate_ids: list[str] = Field(min_length=1)
+    adapter_type: str = "manual"
+
+
+class ImportCommit(BaseModel):
+    manifest_sha256: str = Field(min_length=64, max_length=64)
+
+
+class ComparisonCreate(BaseModel):
+    project_id: str
+    baseline_design_version_id: str
+    result_design_version_id: str
+    baseline_analysis_run_id: str | None = None
+    result_analysis_run_id: str | None = None
+
+
 def success(data: Any, *, status_code: int = 200):
     from fastapi.responses import JSONResponse
 
