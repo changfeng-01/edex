@@ -36,9 +36,11 @@ class ExperimentService:
         repository: Any,
         *,
         generators: Mapping[str, CandidateGenerator] | None = None,
+        pia_adapter: Any | None = None,
     ) -> None:
         self._repository = repository
         self._generators = dict(generators or self._default_generators())
+        self._pia_adapter = pia_adapter
 
     def create_experiment(
         self,
@@ -140,6 +142,12 @@ class ExperimentService:
         self._repository.update_experiment(updated)
         self._audit("system", "experiment.resumed", "experiment", experiment_id, {})
         return updated
+
+    def run_pia_evolution(self, experiment_id: str, **kwargs: Any) -> Any:
+        self._require_experiment(experiment_id)
+        if self._pia_adapter is None:
+            raise ExperimentConflict("PIA evolution adapter is not configured")
+        return self._pia_adapter.run(experiment_id, **kwargs)
 
     def _require_experiment(self, experiment_id: str) -> OptimizationExperimentRecord:
         experiment = self._repository.get_experiment(experiment_id)
