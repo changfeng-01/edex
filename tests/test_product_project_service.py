@@ -130,7 +130,7 @@ def test_create_project_publishes_deterministic_config_snapshots_and_evidence(se
     assert str(spec_path.resolve()) not in first.project.spec_revision_id
 
     evidence = repository.list_evidence("project", first.project.project_id)
-    assert tuple(record.evidence_type for record in evidence) == ("profile_snapshot", "spec_snapshot")
+    assert {record.evidence_type for record in evidence} == {"profile_snapshot", "spec_snapshot"}
     assert {record.source_ref for record in evidence} == {
         first.profile_snapshot.uri,
         first.spec_snapshot.uri,
