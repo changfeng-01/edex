@@ -374,3 +374,47 @@ def test_product_api_maps_and_resumes_pia_output_from_immutable_artifact_refs(pi
         job["simulation_job_id"] for job in first.json()["data"]["jobs"]
     ]
     assert len(repository.list_simulation_jobs(experiment.project_id)) == 1
+
+    summary_path = output / "generation_000" / "generation_summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["status"] = {"status": "results_imported", "mode": "local_fixture"}
+    summary["must_resimulate"] = False
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    imported = pd.read_csv(output / "generation_000" / "simulation_batch.csv")
+    imported["must_resimulate"] = False
+    imported.to_csv(output / "generation_000" / "imported_results.csv", index=False)
+    evolution_path = output / "evolution_summary.json"
+    evolution = json.loads(evolution_path.read_text(encoding="utf-8"))
+    evolution["stop_reason"] = "max_generations"
+    evolution_path.write_text(json.dumps(evolution), encoding="utf-8")
+    completed_refs = store.publish_directory("phase3/test/pia-completed-source", output)
+    completed_prefix = "phase3/test/pia-completed-source/"
+    completed_payload = {
+        "parameter_columns": ["x1", "x2"],
+        "artifacts": [
+            {
+                "relative_path": ref.key.removeprefix(completed_prefix),
+                "artifact_ref": {
+                    "uri": ref.uri,
+                    "key": ref.key,
+                    "size_bytes": ref.size_bytes,
+                    "sha256": ref.sha256,
+                },
+            }
+            for ref in completed_refs
+        ],
+    }
+
+    completed = client.post(
+        f"/api/v1/experiments/{experiment.experiment_id}/pia-output:map",
+        json=completed_payload,
+    )
+
+    assert completed.status_code == 200
+    assert completed.json()["data"]["experiment"]["state"] == "completed"
+    assert completed.json()["data"]["jobs"][0]["simulation_job_id"] == first.json()["data"]["jobs"][0][
+        "simulation_job_id"
+    ]
+    assert completed.json()["data"]["jobs"][0]["status"] == "completed"
+    assert len(repository.list_candidates(experiment.experiment_id)) == 2
+    assert len(repository.list_simulation_jobs(experiment.project_id)) == 1

@@ -100,8 +100,8 @@ class PiaExperimentAdapter:
             raise ValueError("PIA output contains no generation directories")
 
         events = self._repository.list_audit_events("experiment", experiment_id)
-        mapped_generations = {
-            int(event.details["generation"])
+        mapped_snapshots = {
+            (int(event.details["generation"]), str(event.details.get("snapshot_id", "")))
             for event in events
             if event.action == "pia.generation.mapped" and "generation" in event.details
         }
@@ -122,7 +122,8 @@ class PiaExperimentAdapter:
                 generation_candidates[generation.generation].append(existing)
 
         artifact_files = self._validated_artifact_files(output)
-        artifacts = tuple(self._publish_files(experiment_id, output, artifact_files))
+        snapshot_id = self._snapshot_id(output, artifact_files)
+        artifacts = tuple(self._publish_files(experiment_id, output, artifact_files, snapshot_id))
         jobs_list: list[SimulationJobRecord] = []
         product_artifacts: list[ArtifactRef] = []
         for generation in generations:
@@ -145,7 +146,7 @@ class PiaExperimentAdapter:
                 or existing_job.adapter_type != job.adapter_type
             ):
                 raise ValueError(f"PIA simulation job identity collision: {job.simulation_job_id}")
-        metadata = self._mapping_metadata(generations, artifacts, output)
+        metadata = self._mapping_metadata(generations, artifacts, output, snapshot_id)
         config = dict(experiment.strategy_config)
         config["pia_evolution"] = metadata
         desired_state = self._desired_experiment_state(generations, output)
@@ -162,12 +163,12 @@ class PiaExperimentAdapter:
         artifact_uris = [ref.uri for ref in artifacts]
         new_events: list[AuditEventRecord] = []
         for generation in generations:
-            if generation.generation in mapped_generations:
+            if (generation.generation, snapshot_id) in mapped_snapshots:
                 continue
             generation_marker = f"generation_{generation.generation:03d}/"
             generation_refs = [uri for uri in artifact_uris if generation_marker in uri]
             event_identity = hashlib.sha256(
-                f"pia-generation:{experiment_id}:{generation.generation}".encode("utf-8")
+                f"pia-generation:{experiment_id}:{generation.generation}:{snapshot_id}".encode("utf-8")
             ).hexdigest()[:32]
             new_events.append(
                 AuditEventRecord(
@@ -178,6 +179,7 @@ class PiaExperimentAdapter:
                     subject_id=experiment_id,
                     details={
                         "generation": generation.generation,
+                        "snapshot_id": snapshot_id,
                         "state": desired_state.value,
                         "candidate_count": len(generation.rows),
                         "simulation_job_id": next(
@@ -243,10 +245,7 @@ class PiaExperimentAdapter:
                 "engineering_validity": ENGINEERING_VALIDITY,
                 "must_resimulate": False,
             }
-            key = (
-                f"phase3/experiments/{experiment.experiment_id}/pia/"
-                f"generation_{generation.generation:03d}/product_result_manifest.json"
-            )
+            key = manifest_ref.key.removesuffix("simulation_manifest.json") + "product_result_manifest.json"
             payload = (json.dumps(result_manifest, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n").encode(
                 "utf-8"
             )
@@ -384,9 +383,10 @@ class PiaExperimentAdapter:
         experiment_id: str,
         output: Path,
         files: Sequence[Path],
+        snapshot_id: str,
     ) -> list[ArtifactRef]:
         refs: list[ArtifactRef] = []
-        prefix = f"phase3/experiments/{experiment_id}/pia"
+        prefix = f"phase3/experiments/{experiment_id}/pia/snapshots/{snapshot_id}"
         for source in files:
             relative = source.relative_to(output).as_posix()
             key = f"{prefix}/{relative}"
@@ -399,6 +399,16 @@ class PiaExperimentAdapter:
                 raise ArtifactIntegrityError(f"published PIA artifact differs from source: {key}")
             refs.append(ref)
         return refs
+
+    @staticmethod
+    def _snapshot_id(output: Path, files: Sequence[Path]) -> str:
+        digest = hashlib.sha256()
+        for source in files:
+            digest.update(source.relative_to(output).as_posix().encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(_sha256(source).encode("ascii"))
+            digest.update(b"\n")
+        return digest.hexdigest()
 
     def _validated_artifact_files(self, output: Path) -> tuple[Path, ...]:
         root_names = {
@@ -485,6 +495,7 @@ class PiaExperimentAdapter:
         generations: Sequence[_GenerationInput],
         artifacts: Sequence[ArtifactRef],
         output: Path,
+        snapshot_id: str,
     ) -> dict[str, Any]:
         stop_reason = None
         summary_path = output / "evolution_summary.json"
@@ -492,6 +503,7 @@ class PiaExperimentAdapter:
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
             stop_reason = summary.get("stop_reason")
         return {
+            "snapshot_id": snapshot_id,
             "latest_generation": max(item.generation for item in generations),
             "stop_reason": stop_reason,
             "generations": [

@@ -144,7 +144,8 @@ class SimulationJobService:
             {
                 "simulation_job_id": job.simulation_job_id,
                 "adapter_type": adapter_type,
-                "adapter_input_manifest_ref": input_manifest_ref,
+                "adapter_input_manifest_ref": job.input_manifest_ref,
+                "source_input_manifest_ref": input_manifest_ref,
                 "batch_ref": batch_ref.uri,
                 "batch_sha256": batch_ref.sha256,
                 "parameter_columns": list(config["parameter_columns"]),
@@ -544,7 +545,11 @@ class SimulationJobService:
         files = source.get("files")
         if not isinstance(files, list):
             raise SimulationJobConflict("ngspice source input manifest requires files")
-        netlists = [entry for entry in files if entry.get("logical_name") in NETLIST_LOGICAL_NAMES]
+        netlists = [
+            entry
+            for entry in files
+            if isinstance(entry, dict) and entry.get("logical_name") in NETLIST_LOGICAL_NAMES
+        ]
         if len(netlists) != 1:
             raise SimulationJobConflict("ngspice source input snapshot requires exactly one supported netlist")
         entry = netlists[0]

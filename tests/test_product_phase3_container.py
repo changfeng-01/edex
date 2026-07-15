@@ -149,6 +149,12 @@ def test_phase3_execution_is_reachable_through_product_api_and_persists_outputs(
         },
     )
     job = created.json()["data"]
+    execution_contract = json.loads(
+        container.artifact_store.resolve(
+            container.artifact_store.ref_from_uri(job["command_manifest_ref"])
+        ).read_text(encoding="utf-8")
+    )
+    assert execution_contract["adapter_input_manifest_ref"] == job["input_manifest_ref"]
     queued = client.post(f"/api/v1/simulation-jobs/{job['simulation_job_id']}:queue")
     executed = client.post(f"/api/v1/simulation-jobs/{job['simulation_job_id']}:execute")
     persisted = container.repository.get_simulation_job(job["simulation_job_id"])
