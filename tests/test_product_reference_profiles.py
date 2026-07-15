@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,7 @@ from goa_eval.circuit_profiles import load_circuit_profiles, resolve_circuit_pro
 
 
 CASES = {
-    "ota": "ota_general",
+    "ota": "ota_general_v2",
     "comparator": "comparator_general",
     "oscillator": "oscillator_general",
 }
@@ -20,13 +21,23 @@ def test_reference_profile_runs_generalized_analysis_with_provenance(fixture_nam
     expected = json.loads((fixture / "expected_summary.json").read_text(encoding="utf-8"))
     profiles = load_circuit_profiles(Path("config/circuit_profiles.yaml"))
     profile = resolve_circuit_profile(profile_id, profiles)
+    metadata = json.loads((fixture / "simulation_metadata.json").read_text(encoding="utf-8"))
+    source_lock = json.loads((fixture / "source_lock.json").read_text(encoding="utf-8"))
 
     assert profile["name"] == profile_id
+    assert expected["profile_id"] == profile_id
     assert profile["boundary"] == {
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
         "must_resimulate": True,
     }
+    assert metadata["data_source"] == "synthetic_fixture_csv"
+    assert metadata["engineering_validity"] == "test_only"
+    assert metadata["must_resimulate"] is True
+    assert metadata["reportable_as_real_ngspice"] is False
+    assert source_lock["fixture_kind"] == "synthetic_contract_fixture"
+    for filename, expected_sha256 in source_lock["files"].items():
+        assert hashlib.sha256((fixture / filename).read_bytes()).hexdigest() == expected_sha256
     for analysis in profile["required_analyses"]:
         assert (fixture / f"{analysis}_metrics.csv").is_file()
 
@@ -43,6 +54,17 @@ def test_reference_profile_runs_generalized_analysis_with_provenance(fixture_nam
 
     assert "goa_benchmark_metrics" not in analysis
     assert not any("goa" in metric.lower() for metric in expected["metrics"])
+
+
+def test_reference_profile_missing_required_analysis_is_not_evaluable(tmp_path):
+    source = Path("examples/product_profiles/ota")
+    for path in source.glob("*.csv"):
+        if path.name != "ac_metrics.csv":
+            (tmp_path / path.name).write_bytes(path.read_bytes())
+
+    analysis = extract_analysis_metrics(tmp_path, topology_profile="ota_general_v2")
+
+    assert "ac_metrics" in analysis["not_evaluable"]
 
 
 def test_reference_profiles_do_not_modify_product_core_models():

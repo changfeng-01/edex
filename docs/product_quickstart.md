@@ -19,7 +19,7 @@ python scripts/build_product_demo.py `
   --database-url sqlite:///tmp/product_demo_v1.db
 ```
 
-The output contains `product_demo_manifest.json`, `evidence_package.json`, `product_report.md`, the accepted deterministic result CSV, and the immutable artifact store. The workflow creates a workspace and project, analyzes a baseline, proposes and approves a candidate, exports a manual simulation job, imports a deterministic result, evaluates the result version, compares the two versions, and confirms improvement only after evidence checks pass.
+The output contains `product_demo_manifest.json`, `evidence_package.json`, `product_report.md`, the accepted deterministic result CSV, and the immutable artifact store. The workflow creates a workspace and project, analyzes a baseline, proposes and approves a candidate, exports a manual simulation job, imports a provenance-locked repeat measurement, evaluates the result version, and compares the two versions. Because the repeat is neutral, the demo intentionally proves that confirmation remains blocked rather than fabricating an improvement.
 
 ## Product API
 
@@ -35,7 +35,11 @@ Profile discovery is read-only:
 - `GET /api/v1/profiles/{profile_id}`
 - `GET /api/v1/profiles:validate`
 
-Reference profiles are `ota_general`, `comparator_general`, and `oscillator_general`. Their public CSV fixtures are under `examples/product_profiles/`.
+Reference profiles are `ota_general_v2`, `comparator_general`, and `oscillator_general`. `ota_general` and its historical aliases remain on the Phase 3 metric contract. The public CSV fixtures under `examples/product_profiles/` are synthetic contract fixtures (`test_only`), not real simulator evidence.
+
+## Vercel frontend
+
+The repository-level Vercel configuration builds the Vite frontend and rewrites browser-history routes to `index.html`. It does not deploy the Python Product API. Set `VITE_PRODUCT_API_BASE_URL` to the separately deployed Product API origin at frontend build time; otherwise the frontend uses same-origin `/api/v1`, which is suitable only when a reverse proxy provides that backend.
 
 ## Evidence boundary
 

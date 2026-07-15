@@ -44,8 +44,10 @@ def test_product_demo_builder_completes_evaluated_closed_loop(tmp_path):
     assert manifest["workflow"]["confirmation_before_evaluation_rejected"] is True
     assert manifest["workflow"]["manual_job_status"] == "completed"
     assert manifest["workflow"]["result_analysis_status"] == "completed"
-    assert manifest["workflow"]["comparison_verdict"] == "improved"
-    assert manifest["workflow"]["candidate_final_status"] == "confirmed_improvement"
+    assert manifest["workflow"]["comparison_verdict"] == "neutral"
+    assert manifest["workflow"]["candidate_final_status"] == "evaluated"
+    assert manifest["workflow"]["confirmation_after_evaluation_rejected"] is True
+    assert manifest["workflow"]["confirmed_improvement"] is False
     assert len(manifest["design_version_ids"]) == 2
     assert evidence["boundary"] == BOUNDARY
     assert evidence["records"]
@@ -88,3 +90,6 @@ def test_vercel_build_targets_the_vite_frontend():
     assert config["installCommand"] == "npm ci --prefix frontend"
     assert config["buildCommand"] == "npm run build --prefix frontend"
     assert config["outputDirectory"] == "frontend/dist"
+    assert {"source": "/(.*)", "destination": "/index.html"} in config["rewrites"]
+    quickstart = Path("docs/product_quickstart.md").read_text(encoding="utf-8")
+    assert "VITE_PRODUCT_API_BASE_URL" in quickstart

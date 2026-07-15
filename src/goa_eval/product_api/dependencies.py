@@ -49,7 +49,8 @@ class ProductContainer:
             create_schema(engine)
         repository = SqlAlchemyProductRepository(engine)
         artifact_store = LocalArtifactStore(settings.artifact_root)
-        project_service = ProjectService(repository, artifact_store)
+        profile_service = ProfileService(artifact_store)
+        project_service = ProjectService(repository, artifact_store, profile_service=profile_service)
         simulator_registry = build_default_simulator_registry()
         pia_adapter = PiaExperimentAdapter(repository, artifact_store)
         return cls(
@@ -57,7 +58,7 @@ class ProductContainer:
             repository=repository,
             artifact_store=artifact_store,
             project_service=project_service,
-            profile_service=ProfileService(artifact_store),
+            profile_service=profile_service,
             input_service=InputService(repository, artifact_store),
             analysis_service=AnalysisService(repository, artifact_store),
             experiment_service=ExperimentService(repository, pia_adapter=pia_adapter),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,10 @@ from goa_eval.units import normalize_numeric_fields, parse_unit_value
 
 
 DEFAULT_CIRCUIT_PROFILE_PATH = Path("config/circuit_profiles.yaml")
+REGISTERED_ANALYSES = frozenset({"op", "ac", "dc", "tran"})
+ANALYSIS_METRIC_SOURCES = {analysis: f"{analysis}_metrics" for analysis in REGISTERED_ANALYSES}
+LEGACY_METRIC_SOURCES = frozenset({"goa_benchmark_metrics", "transistor_level_simulation_results"})
+IDENTIFIER_PATTERN = re.compile(r"^[a-z0-9_]+$")
 
 
 def load_circuit_profiles(path: Path = DEFAULT_CIRCUIT_PROFILE_PATH) -> dict[str, dict[str, Any]]:
@@ -78,14 +83,19 @@ def _validate_profile_collection(profiles: dict[str, dict[str, Any]]) -> None:
     aliases: dict[str, str] = {}
     errors: list[str] = []
     for profile_name, profile in profiles.items():
+        if not _is_identifier(profile_name):
+            errors.append(f"invalid circuit profile identifier: {profile_name!r}")
         for alias in (profile_name, *(profile.get("aliases", []) or [])):
             normalized_alias = _normalize(alias)
+            if not _is_identifier(normalized_alias):
+                errors.append(f"invalid circuit profile identifier: {alias!r}")
             owner = aliases.get(normalized_alias)
-            if owner is not None and owner != profile_name:
+            if owner is not None:
                 errors.append(
                     f"duplicate circuit profile alias {normalized_alias!r}: {owner} and {profile_name}"
                 )
-            aliases[normalized_alias] = profile_name
+            else:
+                aliases[normalized_alias] = profile_name
 
         supported_analyses = {
             _normalize(analysis)
@@ -94,12 +104,22 @@ def _validate_profile_collection(profiles: dict[str, dict[str, Any]]) -> None:
                 *(profile.get("optional_analyses", []) or []),
             ]
         }
+        for analysis in sorted(supported_analyses - REGISTERED_ANALYSES):
+            errors.append(f"{profile_name} references unregistered analysis: {analysis}")
         for metric_name, rule in (profile.get("metrics", {}) or {}).items():
             source_analysis = _normalize(rule.get("source_analysis"))
             if source_analysis and source_analysis not in supported_analyses:
                 errors.append(
                     f"{profile_name}.metrics.{metric_name} references unsupported analysis: {source_analysis}"
                 )
+            source = _normalize(rule.get("source"))
+            if source_analysis in ANALYSIS_METRIC_SOURCES and source != ANALYSIS_METRIC_SOURCES[source_analysis]:
+                errors.append(
+                    f"{profile_name}.metrics.{metric_name} must use source "
+                    f"{ANALYSIS_METRIC_SOURCES[source_analysis]} for analysis {source_analysis}"
+                )
+            if source and not source_analysis and source not in LEGACY_METRIC_SOURCES:
+                errors.append(f"{profile_name}.metrics.{metric_name} references unregistered source: {source}")
             unit = rule.get("unit")
             for field in ("minimum", "maximum", "target", "tolerance"):
                 raw_value = rule.get(field)
@@ -121,3 +141,7 @@ def _validate_profile_collection(profiles: dict[str, dict[str, Any]]) -> None:
 
 def _normalize(value: str | None) -> str:
     return str(value or "").strip().lower().replace("-", "_")
+
+
+def _is_identifier(value: object) -> bool:
+    return bool(IDENTIFIER_PATTERN.fullmatch(_normalize(str(value or ""))))

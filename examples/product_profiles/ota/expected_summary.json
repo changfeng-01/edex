@@ -1,5 +1,5 @@
 {
-  "profile_id": "ota_general",
+  "profile_id": "ota_general_v2",
   "metrics": {
     "dc_gain_db": {"source": "ac_metrics", "value": 70.0},
     "bandwidth_3db_hz": {"source": "ac_metrics", "value": 10000.0},

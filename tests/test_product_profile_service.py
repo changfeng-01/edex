@@ -2,9 +2,13 @@ import importlib
 import importlib.util
 import json
 
+import pytest
+
 from fastapi.testclient import TestClient
 
-from goa_eval.product.artifact_store import LocalArtifactStore
+from goa_eval.product.artifact_store import ArtifactIntegrityError, LocalArtifactStore
+from goa_eval.product.profile_service import ProfileService
+from goa_eval.product.project_service import ProjectService
 from goa_eval.product.settings import ProductSettings
 from goa_eval.product_api.app import create_product_app
 from goa_eval.product_api.dependencies import ProductContainer
@@ -106,3 +110,101 @@ def test_product_api_exposes_read_only_profile_routes(tmp_path):
     assert validated.json()["data"]["valid"] is True
     assert missing.status_code == 404
     assert missing.json()["error_code"] == "CIRCUIT_PROFILE_NOT_FOUND"
+
+
+def test_profile_service_rejects_noncanonical_boundary_instead_of_rewriting_it(tmp_path):
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        """
+profiles:
+  demo:
+    aliases: []
+    boundary:
+      data_source: synthetic_fixture_csv
+      engineering_validity: test_only
+      must_resimulate: false
+    metrics: {}
+""".strip(),
+        encoding="utf-8",
+    )
+    service = importlib.import_module("goa_eval.product.profile_service").ProfileService(
+        LocalArtifactStore(tmp_path / "artifacts"),
+        profile_path=profile_file,
+    )
+
+    with pytest.raises(ValueError, match="canonical evidence boundary"):
+        service.get_profile("demo")
+
+
+def test_profile_revision_collision_verifies_expected_payload_hash(tmp_path):
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        """
+profiles:
+  demo:
+    aliases: []
+    boundary:
+      data_source: real_simulation_csv
+      engineering_validity: simulation_only
+      must_resimulate: true
+    metrics: {}
+""".strip(),
+        encoding="utf-8",
+    )
+    module = importlib.import_module("goa_eval.product.profile_service")
+    clean_store = LocalArtifactStore(tmp_path / "clean")
+    clean_revision = module.ProfileService(clean_store, profile_path=profile_file).get_profile("demo")
+    key = clean_revision["snapshot_ref"]["key"]
+    tampered_store = LocalArtifactStore(tmp_path / "tampered")
+    tampered_store.put_bytes(key, b'{"tampered":true}\n')
+
+    with pytest.raises(ArtifactIntegrityError):
+        module.ProfileService(tampered_store, profile_path=profile_file).get_profile("demo")
+
+
+def test_project_api_rejects_profile_that_fails_semantics_validation(tmp_path):
+    settings = ProductSettings(
+        database_url=f"sqlite:///{tmp_path / 'product.db'}",
+        artifact_root=tmp_path / "artifacts",
+        job_execution_enabled=False,
+    )
+    container = ProductContainer.from_settings(settings, create_tables=True)
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        """
+profiles:
+  invalid:
+    aliases: []
+    boundary:
+      data_source: real_simulation_csv
+      engineering_validity: simulation_only
+      must_resimulate: true
+    metrics: {}
+    candidate_rules:
+      score:
+        - semantic_tags: [not_registered]
+          direction: increase
+""".strip(),
+        encoding="utf-8",
+    )
+    profile_service = ProfileService(container.artifact_store, profile_path=profile_file)
+    container.project_service = ProjectService(
+        container.repository,
+        container.artifact_store,
+        profile_service=profile_service,
+    )
+    client = TestClient(create_product_app(container))
+    workspace = client.post("/api/v1/workspaces", json={"name": "demo"}).json()["data"]
+
+    response = client.post(
+        "/api/v1/projects",
+        json={
+            "workspace_id": workspace["workspace_id"],
+            "name": "invalid",
+            "circuit_profile_id": "invalid",
+            "spec_revision_id": "spec_v1",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "CIRCUIT_PROFILE_INVALID"

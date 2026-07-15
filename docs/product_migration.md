@@ -15,13 +15,15 @@ No migration should copy scoring, recommendation, PIA, or simulator logic into t
 
 Existing projects retain the profile snapshot captured when they were created. New projects receive the current validated Profile revision; changing `config/circuit_profiles.yaml` does not rewrite old evidence. Existing product-demo bundles remain readable because `web_api` and the legacy `product-demo` CLI are unchanged.
 
-The former OTA boundary value `real_simulation_artifacts` is accepted only as historical data. New Profile API responses, fixtures, reports, and imported results use the canonical boundary below.
+The former OTA boundary value `real_simulation_artifacts` is historical data and is not silently rewritten. The stable `ota_general` aliases retain the Phase 3 metric contract; opt in to the measurable Phase 4 contract with `ota_general_v2` or `ota_v2`. New Profile API revisions and imported real-result records must declare the canonical boundary below exactly.
 
 ```text
 data_source = real_simulation_csv
 engineering_validity = simulation_only
 must_resimulate = true
 ```
+
+The CSVs under `examples/product_profiles/` are explicitly labelled `synthetic_fixture_csv / test_only`. They validate parsing and profile contracts only and cannot support an evaluated-improvement claim.
 
 ## Failure recovery
 

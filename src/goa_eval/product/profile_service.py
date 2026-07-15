@@ -13,7 +13,7 @@ from goa_eval.circuit_profiles import (
 )
 from goa_eval.parameter_semantics import DEFAULT_PARAMETER_SEMANTICS_PATH, load_parameter_semantics
 from goa_eval.product.artifact_store import ArtifactAlreadyExists, ArtifactStore
-from goa_eval.product_demo.schemas import normalize_evidence_boundary
+from goa_eval.product_demo.schemas import default_evidence_boundary
 
 
 class ProfileServiceError(ValueError):
@@ -88,7 +88,10 @@ class ProfileService:
         normalized_profile = _json_mapping(profile)
         normalized_profile.pop("profile_source", None)
         normalized_profile["name"] = profile_name
-        normalized_profile["boundary"] = normalize_evidence_boundary(normalized_profile.get("boundary"))
+        normalized_profile["boundary"] = _require_canonical_boundary(
+            normalized_profile.get("boundary"),
+            profile_name=profile_name,
+        )
         semantics = load_parameter_semantics(self._semantics_path)
         source_hash = _sha256_json(normalized_profile)
         semantics_hash = _sha256_json(semantics)
@@ -127,6 +130,7 @@ class ProfileService:
             "profile": normalized_profile,
         }
         payload = _canonical_json(frozen)
+        payload_hash = _sha256_bytes(payload)
         key = f"profiles/{profile_name}/{revision_id}.json"
         try:
             ref = self.artifact_store.put_bytes(key, payload)
@@ -134,7 +138,7 @@ class ProfileService:
             resolver = getattr(self.artifact_store, "ref_from_uri", None)
             if resolver is None:
                 raise
-            ref = resolver(f"artifact://{key}")
+            ref = resolver(f"artifact://{key}", payload_hash)
         return {
             **frozen,
             "snapshot_ref": {
@@ -166,3 +170,12 @@ def _sha256_bytes(value: bytes) -> str:
 
 def _normalize_identifier(value: object) -> str:
     return str(value or "").strip().lower().replace("-", "_")
+
+
+def _require_canonical_boundary(value: object, *, profile_name: str) -> dict[str, Any]:
+    expected = default_evidence_boundary()
+    if not isinstance(value, Mapping) or dict(value) != expected:
+        raise ProfileValidationError(
+            f"{profile_name} must declare the canonical evidence boundary exactly: {expected}"
+        )
+    return dict(expected)

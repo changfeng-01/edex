@@ -19,12 +19,8 @@ from goa_eval.product.comparison_service import ComparisonClaimError
 from goa_eval.product.experiment_service import ExperimentService
 from goa_eval.product.input_service import InputFile
 from goa_eval.product.models import (
-    AnalysisRunRecord,
     AnalysisStatus,
     CandidateStatus,
-    EvidenceRecord,
-    new_id,
-    utc_now_iso,
 )
 from goa_eval.product.settings import ProductSettings
 from goa_eval.product.state_machine import transition_candidate
@@ -108,7 +104,9 @@ def build_product_demo(*, output_dir: Path, database_url: str) -> dict[str, Any]
     job = container.simulation_job_service.create_manual_job([approved.candidate_id])
     exported = container.simulation_job_service.export_job(job.simulation_job_id)
     batch = pd.read_csv(store.resolve(exported.batch_ref))
-    result_score = baseline_score + max(1.0, abs(baseline_score) * 0.10)
+    # The public demo deliberately re-evaluates the checked-in simulator CSV unchanged.
+    # A neutral repeat proves the confirmation gate without inventing an improvement.
+    result_score = baseline_score
     result_path = output_dir / "deterministic_simulation_results.csv"
     pd.DataFrame(
         {
@@ -139,14 +137,25 @@ def build_product_demo(*, output_dir: Path, database_url: str) -> dict[str, Any]
         candidate.candidate_id,
         pre_evaluation_comparison.comparison_id,
     )
-    result_run = _record_imported_evaluation(
-        container,
+    result_snapshot = container.input_service.create_input_snapshot(
         design_version_id=resimulated.result_design_version_id,
-        profile_revision_id=baseline_run.profile_revision_id,
-        input_manifest_ref=completed_job.result_manifest_ref or "",
-        score=result_score,
-        baseline_constraints=baseline_score_payload.get("hard_constraints", {}),
+        files=[
+            InputFile("waveform.csv", REPO_ROOT / "examples" / "sample_waveform.csv"),
+            InputFile("params.yaml", REPO_ROOT / "examples" / "sample_params.yaml"),
+        ],
+        preview_config=UploadedCaseConfig(case_id="phase4_product_demo_result"),
     )
+    result_execution = container.analysis_service.run_analysis(
+        design_version_id=resimulated.result_design_version_id,
+        input_manifest_ref=result_snapshot.manifest_ref,
+        config=UploadedCaseConfig(case_id="phase4_product_demo_result"),
+    )
+    if result_execution.status != AnalysisStatus.COMPLETED:
+        raise RuntimeError(f"result analysis did not complete: {result_execution.status.value}")
+    result_run = repository.get_analysis_run(result_execution.analysis_run_id)
+    if result_run is None:
+        raise RuntimeError("result analysis record is missing")
+    result_score = float(_score_payload_for_run(container, result_run.analysis_run_id)["overall_score"])
     evaluated = replace(
         resimulated,
         status=transition_candidate(resimulated.status, CandidateStatus.EVALUATED),
@@ -160,10 +169,14 @@ def build_product_demo(*, output_dir: Path, database_url: str) -> dict[str, Any]
         baseline_run.analysis_run_id,
         result_run.analysis_run_id,
     )
-    confirmed = container.comparison_service.confirm_candidate(
+    confirmation_after_evaluation_rejected = _confirmation_rejected(
+        container,
         candidate.candidate_id,
         comparison.comparison_id,
     )
+    final_candidate = repository.get_candidate(candidate.candidate_id)
+    if final_candidate is None:
+        raise RuntimeError("evaluated candidate is missing")
 
     manifest = {
         "schema_version": "circuitpilot.product-demo.v1",
@@ -186,7 +199,9 @@ def build_product_demo(*, output_dir: Path, database_url: str) -> dict[str, Any]
             "manual_job_status": completed_job.status.value,
             "result_analysis_status": result_run.status.value,
             "comparison_verdict": comparison.verdict.value,
-            "candidate_final_status": confirmed.status.value,
+            "candidate_final_status": final_candidate.status.value,
+            "confirmation_after_evaluation_rejected": confirmation_after_evaluation_rejected,
+            "confirmed_improvement": final_candidate.status == CandidateStatus.CONFIRMED_IMPROVEMENT,
         },
     }
     evidence_records = [
@@ -245,61 +260,6 @@ def _issue_count(container: ProductContainer, ref: Any) -> int:
     return len(payload.get("issues", []))
 
 
-def _record_imported_evaluation(
-    container: ProductContainer,
-    *,
-    design_version_id: str,
-    profile_revision_id: str,
-    input_manifest_ref: str,
-    score: float,
-    baseline_constraints: dict[str, Any],
-) -> AnalysisRunRecord:
-    run = AnalysisRunRecord(
-        analysis_run_id=new_id("run"),
-        design_version_id=design_version_id,
-        input_manifest_ref=input_manifest_ref,
-        spec_revision_id="spec_v1",
-        profile_revision_id=profile_revision_id,
-        status=AnalysisStatus.COMPLETED,
-        started_at=utc_now_iso(),
-        completed_at=utc_now_iso(),
-    )
-    container.repository.add_analysis_run(run)
-    result_constraints = {
-        str(name): {"passed": True}
-        for name in baseline_constraints
-    }
-    result_constraints["imported_simulation"] = {"passed": True}
-    payloads = {
-        "real_summary.json": json.dumps({"Overall_status": "PASS", "evidence": BOUNDARY}),
-        "score_summary.json": json.dumps(
-            {
-                "overall_score": score,
-                "hard_constraint_passed": True,
-                "hard_constraints": result_constraints,
-                "evidence": BOUNDARY,
-            }
-        ),
-        "real_metrics.csv": f"metric,value\noverall_score,{score}\n",
-    }
-    for name, payload in payloads.items():
-        ref = container.artifact_store.put_bytes(
-            f"product_demo/analysis_runs/{run.analysis_run_id}/{name}",
-            (payload + "\n").encode("utf-8"),
-        )
-        container.repository.add_evidence(
-            EvidenceRecord(
-                evidence_id=new_id("evidence"),
-                subject_type="analysis_run",
-                subject_id=run.analysis_run_id,
-                evidence_type=name,
-                source_ref=ref.uri,
-                checksum=ref.sha256,
-            )
-        )
-    return run
-
-
 def _render_report(manifest: dict[str, Any], *, baseline_score: float, result_score: float) -> str:
     workflow = manifest["workflow"]
     return f"""# CircuitPilot Product Demo v1
@@ -319,7 +279,7 @@ must_resimulate = true
 - Confirmation before import rejected: {str(workflow['confirmation_before_import_rejected']).lower()}
 - Confirmation before evaluation rejected: {str(workflow['confirmation_before_evaluation_rejected']).lower()}
 
-The package contains simulation-only evidence. It does not claim silicon validation or real ngspice execution.
+The repeat evaluation is neutral, so confirmation remains rejected. The package contains simulation-only evidence. It does not claim silicon validation or real ngspice execution.
 """
 
 

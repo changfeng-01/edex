@@ -18,6 +18,10 @@ def service_context(tmp_path: Path):
 profiles:
   default:
     aliases: []
+    boundary:
+      data_source: real_simulation_csv
+      engineering_validity: simulation_only
+      must_resimulate: true
     metrics: {}
   goa_reference:
     aliases: [goa_alias]
@@ -106,7 +110,8 @@ def test_create_project_publishes_deterministic_config_snapshots_and_evidence(se
 
     profile_snapshot = json.loads(artifact_store.resolve(first.profile_snapshot).read_text(encoding="utf-8"))
     spec_snapshot = json.loads(artifact_store.resolve(first.spec_snapshot).read_text(encoding="utf-8"))
-    assert profile_snapshot["name"] == "goa_reference"
+    assert profile_snapshot["profile_id"] == "goa_reference"
+    assert profile_snapshot["profile"]["name"] == "goa_reference"
     assert profile_snapshot["boundary"] == {
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
@@ -192,3 +197,29 @@ def test_project_overview_returns_small_counts_latest_state_and_evidence_summary
 
     with pytest.raises(ProductNotFoundError, match="project_missing"):
         service.get_project_overview("project_missing")
+
+
+def test_create_project_uses_validated_profile_revision_and_rejects_bad_semantics(service_context):
+    service, _, _, profile_path, _ = service_context
+    profile_path.write_text(
+        profile_path.read_text(encoding="utf-8")
+        + """
+
+  invalid_semantics:
+    aliases: []
+    boundary:
+      data_source: real_simulation_csv
+      engineering_validity: simulation_only
+      must_resimulate: true
+    metrics: {}
+    candidate_rules:
+      score:
+        - semantic_tags: [not_registered]
+          direction: increase
+""",
+        encoding="utf-8",
+    )
+    workspace = service.create_workspace("GOA team")
+
+    with pytest.raises(InvalidCircuitProfile, match="not_registered"):
+        service.create_project(workspace.workspace_id, "Invalid", "invalid_semantics", "spec_v1")
