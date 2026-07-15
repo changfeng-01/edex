@@ -89,7 +89,13 @@ class SimulationJobService:
     ) -> SimulationJobRecord:
         if adapter_type == "manual" or self._simulator_registry is None:
             raise SimulationJobConflict("a registered execution adapter is required")
-        self._simulator_registry.get(adapter_type)
+        adapter = self._simulator_registry.get(adapter_type)
+        availability = adapter.availability()
+        if not availability.execution_enabled:
+            raise SimulationJobConflict(f"adapter does not support direct execution: {adapter_type}")
+        if not availability.available:
+            reason = "; ".join(availability.reasons) or "unavailable"
+            raise SimulationJobConflict(f"simulator adapter is unavailable: {reason}")
         ids = tuple(dict.fromkeys(str(value) for value in candidate_ids))
         if not ids:
             raise SimulationJobConflict("at least one approved candidate is required")
