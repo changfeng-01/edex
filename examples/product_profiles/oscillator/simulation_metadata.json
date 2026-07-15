@@ -1,0 +1,6 @@
+{
+  "simulator": "deterministic_public_fixture",
+  "data_source": "real_simulation_csv",
+  "engineering_validity": "simulation_only",
+  "must_resimulate": true
+}

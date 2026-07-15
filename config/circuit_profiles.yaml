@@ -6,6 +6,7 @@ profiles:
     boundary:
       data_source: "real_simulation_csv"
       engineering_validity: "simulation_only"
+      must_resimulate: true
     metrics: {}
 
   goa_8k_lcd_reference:
@@ -18,6 +19,7 @@ profiles:
     boundary:
       data_source: "real_simulation_csv"
       engineering_validity: "simulation_only"
+      must_resimulate: true
     reference:
       source: "literature_reference"
       note: "Lei Tengteng thesis 8K LCD GOA reference values; not reproduced by this repository."
@@ -183,8 +185,9 @@ profiles:
       - two_stage_opamp
       - amplifier
     boundary:
-      data_source: "real_simulation_artifacts"
+      data_source: "real_simulation_csv"
       engineering_validity: "simulation_only"
+      must_resimulate: true
     required_analyses:
       - op
       - ac
@@ -192,6 +195,11 @@ profiles:
     optional_analyses:
       - dc
       - noise
+    node_rules:
+      input:
+        - "v(in)"
+      output:
+        - "v(out)"
     metrics:
       dc_gain_db:
         source: ac_metrics
@@ -205,12 +213,12 @@ profiles:
         unit: Hz
         minimum: 20MHz
         direction: larger_better
-      phase_margin_deg:
+      bandwidth_3db_hz:
         source: ac_metrics
         source_analysis: ac
-        unit: deg
-        minimum: 55deg
-        direction: target_or_larger
+        unit: Hz
+        minimum: 1MHz
+        direction: larger_better
       static_power_w:
         source: op_metrics
         source_analysis: op
@@ -223,9 +231,15 @@ profiles:
         unit: V/s
         minimum: 10000000.0
         direction: larger_better
+      output_swing_v:
+        source: tran_metrics
+        source_analysis: tran
+        unit: V
+        minimum: 1.0
+        direction: larger_better
     hard_constraints:
-      phase_margin_deg:
-        minimum: 55deg
+      dc_gain_db:
+        minimum: 60dB
       static_power_w:
         maximum: 5mW
     objective:
@@ -233,11 +247,12 @@ profiles:
         method: weighted_sum
         missing_metric_policy: not_evaluable
       weights:
-        dc_gain_db: 0.25
+        dc_gain_db: 0.20
         unity_gain_hz: 0.20
-        phase_margin_deg: 0.15
+        bandwidth_3db_hz: 0.15
         static_power_w: 0.20
-        slew_rate_v_per_s: 0.20
+        slew_rate_v_per_s: 0.15
+        output_swing_v: 0.10
     candidate_rules:
       dc_gain_db:
         - semantic_tags:
@@ -260,9 +275,128 @@ profiles:
           direction: decrease
           priority: 96
           rationale: "Reduce bias current when static power dominates."
-      phase_margin_deg:
+      bandwidth_3db_hz:
         - semantic_tags:
             - compensation_capacitance
-          direction: increase
+            - speed_power_tradeoff
+          direction: review_tradeoff
           priority: 85
-          rationale: "Increasing compensation capacitance may improve phase margin but reduce bandwidth."
+          rationale: "Review compensation and bias trade-offs when measured bandwidth is insufficient."
+
+  comparator_general:
+    type: "analog_comparator"
+    aliases:
+      - comparator
+      - voltage_comparator
+    boundary:
+      data_source: "real_simulation_csv"
+      engineering_validity: "simulation_only"
+      must_resimulate: true
+    required_analyses:
+      - op
+      - dc
+    optional_analyses:
+      - tran
+    node_rules:
+      input:
+        - "input_v"
+      output:
+        - "output_v"
+    metrics:
+      switching_threshold_v:
+        source: dc_metrics
+        source_analysis: dc
+        unit: V
+        target: 0.9V
+        tolerance: 0.1V
+        direction: target
+      output_swing_v:
+        source: dc_metrics
+        source_analysis: dc
+        unit: V
+        minimum: 1.6V
+        direction: larger_better
+      static_power_w:
+        source: op_metrics
+        source_analysis: op
+        unit: W
+        maximum: 1mW
+        direction: smaller_better
+    hard_constraints:
+      output_swing_v:
+        minimum: 1.6V
+      static_power_w:
+        maximum: 1mW
+    objective:
+      scalarization:
+        method: weighted_sum
+        missing_metric_policy: not_evaluable
+      weights:
+        switching_threshold_v: 0.35
+        output_swing_v: 0.35
+        static_power_w: 0.30
+
+  oscillator_general:
+    type: "ring_oscillator"
+    aliases:
+      - oscillator
+      - ring_oscillator
+      - ring_osc
+    boundary:
+      data_source: "real_simulation_csv"
+      engineering_validity: "simulation_only"
+      must_resimulate: true
+    required_analyses:
+      - op
+      - tran
+    node_rules:
+      output:
+        - "v(out)"
+    metrics:
+      frequency_hz:
+        source: tran_metrics
+        source_analysis: tran
+        unit: Hz
+        minimum: 100kHz
+        direction: larger_better
+      period_std_s:
+        source: tran_metrics
+        source_analysis: tran
+        unit: s
+        maximum: 100ns
+        direction: smaller_better
+      startup_time_s:
+        source: tran_metrics
+        source_analysis: tran
+        unit: s
+        maximum: 10us
+        direction: smaller_better
+      output_swing_v:
+        source: tran_metrics
+        source_analysis: tran
+        unit: V
+        minimum: 1.6V
+        direction: larger_better
+      static_power_w:
+        source: op_metrics
+        source_analysis: op
+        unit: W
+        maximum: 2mW
+        direction: smaller_better
+    hard_constraints:
+      frequency_hz:
+        minimum: 100kHz
+      output_swing_v:
+        minimum: 1.6V
+      static_power_w:
+        maximum: 2mW
+    objective:
+      scalarization:
+        method: weighted_sum
+        missing_metric_policy: not_evaluable
+      weights:
+        frequency_hz: 0.30
+        period_std_s: 0.15
+        startup_time_s: 0.15
+        output_swing_v: 0.20
+        static_power_w: 0.20

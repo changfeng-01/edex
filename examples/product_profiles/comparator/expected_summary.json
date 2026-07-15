@@ -1,0 +1,8 @@
+{
+  "profile_id": "comparator_general",
+  "metrics": {
+    "switching_threshold_v": {"source": "dc_metrics", "value": 0.9},
+    "output_swing_v": {"source": "dc_metrics", "value": 1.8},
+    "static_power_w": {"source": "op_metrics", "value": 0.00036}
+  }
+}

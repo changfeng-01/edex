@@ -1,0 +1,10 @@
+{
+  "profile_id": "oscillator_general",
+  "metrics": {
+    "frequency_hz": {"source": "tran_metrics", "value": 250000.0},
+    "period_std_s": {"source": "tran_metrics", "value": 0.0},
+    "startup_time_s": {"source": "tran_metrics", "value": 0.000001},
+    "output_swing_v": {"source": "tran_metrics", "value": 1.8},
+    "static_power_w": {"source": "op_metrics", "value": 0.0009}
+  }
+}
