@@ -13,6 +13,7 @@ from goa_eval.product.comparison_service import ComparisonClaimError
 from goa_eval.product.experiment_service import ExperimentConflict, ExperimentNotFound
 from goa_eval.product.job_runner import JobExecutionDisabled
 from goa_eval.product.project_service import InvalidCircuitProfile, ProductNotFoundError
+from goa_eval.product.profile_service import ProfileNotFoundError, ProfileValidationError
 from goa_eval.product.simulation_job_service import SimulationImportError, SimulationJobConflict
 from goa_eval.product.state_machine import InvalidTransition
 
@@ -70,6 +71,15 @@ def translate_domain_error(exc: Exception) -> ProductApiError:
         return exc
     if isinstance(exc, InvalidCircuitProfile):
         return ProductApiError("CIRCUIT_PROFILE_INVALID", "Circuit profile is invalid.", 422)
+    if isinstance(exc, ProfileNotFoundError):
+        return ProductApiError("CIRCUIT_PROFILE_NOT_FOUND", "Circuit profile was not found.", 404)
+    if isinstance(exc, ProfileValidationError):
+        return ProductApiError(
+            "CIRCUIT_PROFILE_INVALID",
+            "Circuit profile is invalid.",
+            422,
+            details={"errors": [str(exc)]},
+        )
     if isinstance(exc, InputPreviewFailed):
         return ProductApiError(
             "INPUT_PREVIEW_FAILED",

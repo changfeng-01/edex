@@ -71,3 +71,72 @@ parameters:
 
     with pytest.raises(ValueError, match="missing_tag"):
         validate_profile_references(profile_file=profile_file, semantics_file=semantics_file)
+
+
+def test_load_circuit_profiles_rejects_duplicate_aliases(tmp_path):
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        """
+profiles:
+  ota:
+    aliases: [shared]
+    metrics: {}
+  comparator:
+    aliases: [shared]
+    metrics: {}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate circuit profile alias.*shared"):
+        load_circuit_profiles(profile_file)
+
+
+def test_load_circuit_profiles_rejects_metric_from_unsupported_analysis(tmp_path):
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        """
+profiles:
+  ota:
+    aliases: []
+    required_analyses: [op]
+    metrics:
+      dc_gain_db:
+        source: ac_metrics
+        source_analysis: ac
+        unit: dB
+        minimum: 40dB
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="dc_gain_db.*unsupported analysis: ac"):
+        load_circuit_profiles(profile_file)
+
+
+def test_load_circuit_profiles_rejects_unknown_required_metric_and_wrong_units(tmp_path):
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        """
+profiles:
+  oscillator:
+    aliases: []
+    required_analyses: [tran]
+    metrics:
+      frequency_hz:
+        source: tran_metrics
+        source_analysis: tran
+        unit: Hz
+        minimum: 2mV
+    hard_constraints:
+      missing_metric:
+        maximum: 1
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError) as error:
+        load_circuit_profiles(profile_file)
+
+    assert "missing_metric" in str(error.value)
+    assert "2mV" in str(error.value)

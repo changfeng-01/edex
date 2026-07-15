@@ -14,6 +14,7 @@ from goa_eval.product.experiment_service import ExperimentService
 from goa_eval.product.job_runner import ProductJobRunner
 from goa_eval.product.pia_experiment_adapter import PiaExperimentAdapter
 from goa_eval.product.project_service import ProjectService
+from goa_eval.product.profile_service import ProfileService
 from goa_eval.product.repositories import SqlAlchemyProductRepository
 from goa_eval.product.settings import ProductSettings
 from goa_eval.product.simulation_job_service import SimulationJobService
@@ -26,6 +27,7 @@ class ProductContainer:
     repository: SqlAlchemyProductRepository
     artifact_store: LocalArtifactStore
     project_service: ProjectService
+    profile_service: ProfileService
     input_service: InputService
     analysis_service: AnalysisService
     experiment_service: ExperimentService
@@ -55,6 +57,7 @@ class ProductContainer:
             repository=repository,
             artifact_store=artifact_store,
             project_service=project_service,
+            profile_service=ProfileService(artifact_store),
             input_service=InputService(repository, artifact_store),
             analysis_service=AnalysisService(repository, artifact_store),
             experiment_service=ExperimentService(repository, pia_adapter=pia_adapter),
