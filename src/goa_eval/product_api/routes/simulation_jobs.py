@@ -115,6 +115,6 @@ def execute_job(job_id: str, container: ProductContainer = Depends(get_container
         result = container.job_runner.run_job(job_id)
         if result is None:
             raise SimulationJobConflict("simulation job is not available for execution")
-        return success(result)
+        return success(container.simulation_job_service.commit_execution_outputs(job_id))
     except Exception as exc:
         raise translate_domain_error(exc) from exc

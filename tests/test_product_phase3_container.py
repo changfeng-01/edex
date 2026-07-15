@@ -1,5 +1,7 @@
+import json
 import sys
 
+import pandas as pd
 from fastapi.testclient import TestClient
 
 from goa_eval.product.experiment_service import ExperimentService
@@ -37,19 +39,45 @@ def test_phase3_execution_is_reachable_through_product_api_and_persists_outputs(
     container = ProductContainer.from_settings(settings, create_tables=True)
 
     class Adapter:
-        def availability(self):
-            return AdapterAvailability(True, (), ("execute",))
+        result_output_name = "simulation_results.csv"
 
-        def build_execution(self, _job, _store, work_dir):
-            command = "from pathlib import Path; Path('result.csv').write_text('candidate_id,score\\na,1\\n')"
+        def availability(self):
+            return AdapterAvailability(True, (), ("render", "execute", "import"))
+
+        def build_execution(self, job, store, work_dir):
+            manifest = json.loads(
+                store.resolve(store.ref_from_uri(job.input_manifest_ref)).read_text(encoding="utf-8")
+            )
+            assert manifest["schema_version"] == "circuitpilot.ngspice-execution-input.v1"
+            batch = pd.read_csv(store.resolve(job.batch_ref))
+            row = batch.iloc[0]
+            result = pd.DataFrame(
+                [
+                    {
+                        "candidate_id": row["candidate_id"],
+                        "parameter_hash": row["parameter_hash"],
+                        "overall_score": 91.0,
+                        "hard_constraint_passed": True,
+                        "data_source": "real_simulation_csv",
+                        "engineering_validity": "simulation_only",
+                        "must_resimulate": True,
+                    }
+                ]
+            ).to_csv(index=False)
+            command = f"from pathlib import Path; Path('simulation_results.csv').write_text({result!r})"
             return ExecutionCommand(
                 (sys.executable, "-c", command),
                 cwd=work_dir,
                 evidence={"evidence_type": "mock_fixture", "reportable_as_real_ngspice": False},
-                output_files=("result.csv",),
+                output_files=("simulation_results.csv",),
             )
 
-    registry = SimulatorRegistry({"fixture": Adapter, "empyrean_offline": EmpyreanOfflineAdapter})
+        def import_results(self, result_path, *, expected_candidate_ids=()):
+            frame = pd.read_csv(result_path)
+            assert set(frame["candidate_id"].astype(str)) == set(expected_candidate_ids)
+            return frame
+
+    registry = SimulatorRegistry({"ngspice_sky130": Adapter, "empyrean_offline": EmpyreanOfflineAdapter})
     container.simulator_registry = registry
     container.simulation_job_service = SimulationJobService(
         container.repository,
@@ -96,14 +124,28 @@ def test_phase3_execution_is_reachable_through_product_api_and_persists_outputs(
         f"/api/v1/candidates/{candidate['candidate_id']}:approve",
         json={"actor_id": "reviewer"},
     ).json()["data"]
-    input_manifest = container.artifact_store.put_bytes("phase3/test/input_manifest.json", b"{}")
+    netlist = tmp_path / "source_netlist.spice"
+    netlist.write_text("V1 out 0 1\n.op\n.end\n", encoding="utf-8")
+    with (
+        open("examples/sample_waveform.csv", "rb") as waveform,
+        open("examples/sample_params.yaml", "rb") as params,
+        netlist.open("rb") as netlist_handle,
+    ):
+        snapshot = client.post(
+            f"/api/v1/design-versions/{baseline['design_version_id']}/inputs/preview",
+            files={
+                "waveform": ("waveform.csv", waveform, "text/csv"),
+                "params": ("params.yaml", params, "application/yaml"),
+                "netlist": ("source_netlist.spice", netlist_handle, "text/plain"),
+            },
+        ).json()["data"]
 
     created = client.post(
         "/api/v1/simulation-jobs",
         json={
             "candidate_ids": [candidate["candidate_id"]],
-            "adapter_type": "fixture",
-            "input_manifest_ref": input_manifest.uri,
+            "adapter_type": "ngspice_sky130",
+            "input_manifest_ref": snapshot["manifest_ref"]["uri"],
         },
     )
     job = created.json()["data"]
@@ -114,11 +156,13 @@ def test_phase3_execution_is_reachable_through_product_api_and_persists_outputs(
     assert created.status_code == 201
     assert queued.json()["data"]["status"] == "queued"
     assert executed.status_code == 200
-    assert persisted.status.value == "waiting_for_results"
+    assert executed.json()["data"]["status"] == "completed"
+    assert persisted.status.value == "completed"
     assert persisted.batch_ref is not None
     assert persisted.command_manifest_ref is not None
     assert container.artifact_store.ref_from_uri(persisted.result_manifest_ref)
     assert container.artifact_store.ref_from_uri(persisted.command_manifest_ref)
+    assert container.repository.get_candidate(candidate["candidate_id"]).status.value == "resimulated"
 
     offline_candidate = client.post(
         f"/api/v1/candidates/{candidates[1]['candidate_id']}:approve",

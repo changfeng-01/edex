@@ -85,10 +85,14 @@ class ProductJobRunner:
                 result_manifest_ref = None
                 if completed.returncode == 0:
                     try:
+                        output_files = command.output_files
+                        collector = getattr(adapter, "collect_outputs", None)
+                        if collector is not None:
+                            output_files = collector(claimed, self._artifact_store, work_dir)
                         result_manifest_ref = self._persist_outputs(
                             claimed,
                             work_dir,
-                            command.output_files,
+                            output_files,
                             dict(command.evidence or {}),
                         )
                     except FileNotFoundError as exc:

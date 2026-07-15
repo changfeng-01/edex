@@ -29,6 +29,7 @@ class ProductContainer:
     input_service: InputService
     analysis_service: AnalysisService
     experiment_service: ExperimentService
+    pia_adapter: PiaExperimentAdapter
     simulation_job_service: SimulationJobService
     comparison_service: ComparisonService
     simulator_registry: SimulatorRegistry
@@ -57,6 +58,7 @@ class ProductContainer:
             input_service=InputService(repository, artifact_store),
             analysis_service=AnalysisService(repository, artifact_store),
             experiment_service=ExperimentService(repository, pia_adapter=pia_adapter),
+            pia_adapter=pia_adapter,
             simulation_job_service=SimulationJobService(
                 repository,
                 artifact_store,

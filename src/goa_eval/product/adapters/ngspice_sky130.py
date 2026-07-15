@@ -24,6 +24,8 @@ ExecutableResolver = Callable[[str], str | None]
 class NgspiceSky130Adapter:
     """Strict real-ngspice adapter; it never selects or permits a mock fallback."""
 
+    result_output_name = "simulation_results.csv"
+
     def __init__(
         self,
         *,
@@ -65,10 +67,14 @@ class NgspiceSky130Adapter:
             raise ValueError("ngspice job requires an immutable input manifest")
         manifest_ref = artifact_store.ref_from_uri(job.input_manifest_ref)
         manifest = json.loads(artifact_store.resolve(manifest_ref).read_text(encoding="utf-8"))
+        if manifest.get("schema_version") != "circuitpilot.ngspice-execution-input.v1":
+            raise ValueError("ngspice input manifest schema is unsupported")
+        if tuple(str(value) for value in manifest.get("candidate_ids", ())) != tuple(job.candidate_ids):
+            raise ValueError("ngspice input manifest candidate IDs do not match the job")
         netlist_uri = manifest.get("netlist_ref")
         if not isinstance(netlist_uri, str):
             raise ValueError("ngspice input manifest requires netlist_ref")
-        netlist_ref = artifact_store.ref_from_uri(netlist_uri)
+        netlist_ref = artifact_store.ref_from_uri(netlist_uri, manifest.get("netlist_sha256"))
         source_text = artifact_store.resolve(netlist_ref).read_text(encoding="utf-8")
         _validate_safe_netlist(source_text)
         library = self._pdk_library()
@@ -94,6 +100,36 @@ class NgspiceSky130Adapter:
             output_files=("ngspice.log",),
         )
 
+    def collect_outputs(self, job: Any, artifact_store: Any, work_dir: Path) -> tuple[str, ...]:
+        log_path = Path(work_dir) / "ngspice.log"
+        if not log_path.is_file() or log_path.is_symlink():
+            raise ValueError("ngspice execution did not produce a regular log")
+        if job.batch_ref is None:
+            raise ValueError("ngspice execution job is missing its product batch contract")
+        batch = pd.read_csv(artifact_store.resolve(job.batch_ref))
+        if len(batch) != 1 or tuple(batch["candidate_id"].astype(str)) != tuple(job.candidate_ids):
+            raise ValueError("ngspice execution requires one batch row matching the job candidate")
+        measurements = _parse_measurements(log_path.read_text(encoding="utf-8", errors="replace"))
+        missing = sorted({"overall_score", "hard_constraint_passed"}.difference(measurements))
+        if missing:
+            raise ValueError(f"ngspice log is missing required measurements: {missing}")
+        row = batch.iloc[0]
+        result = pd.DataFrame(
+            [
+                {
+                    "candidate_id": str(row["candidate_id"]),
+                    "parameter_hash": str(row["parameter_hash"]),
+                    "overall_score": float(measurements["overall_score"]),
+                    "hard_constraint_passed": bool(round(measurements["hard_constraint_passed"])),
+                    "data_source": "real_simulation_csv",
+                    "engineering_validity": "simulation_only",
+                    "must_resimulate": True,
+                }
+            ]
+        )
+        result.to_csv(Path(work_dir) / self.result_output_name, index=False)
+        return ("ngspice.log", self.result_output_name)
+
     def import_results(
         self,
         result_path: Path,
@@ -104,7 +140,15 @@ class NgspiceSky130Adapter:
         if not path.is_file() or path.is_symlink():
             raise ValueError("ngspice result must be a regular CSV file")
         frame = pd.read_csv(path)
-        required = {"candidate_id", "data_source", "engineering_validity", "must_resimulate"}
+        required = {
+            "candidate_id",
+            "parameter_hash",
+            "overall_score",
+            "hard_constraint_passed",
+            "data_source",
+            "engineering_validity",
+            "must_resimulate",
+        }
         missing = sorted(required.difference(frame.columns))
         if missing:
             raise ValueError(f"ngspice result missing columns: {missing}")
@@ -166,6 +210,20 @@ def _render_library_path(netlist: str, library: Path) -> str:
 
 def _strict_true(value: Any) -> bool:
     return value is True or value == 1 or (isinstance(value, str) and value.strip().lower() == "true")
+
+
+def _parse_measurements(log_text: str) -> dict[str, float]:
+    wanted = {"overall_score", "hard_constraint_passed"}
+    values: dict[str, float] = {}
+    pattern = re.compile(
+        r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"
+        r"([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?)\b",
+        re.MULTILINE,
+    )
+    for name, raw in pattern.findall(log_text):
+        if name.lower() in wanted:
+            values[name.lower()] = float(raw)
+    return values
 
 
 _ALLOWED_DIRECTIVES = {

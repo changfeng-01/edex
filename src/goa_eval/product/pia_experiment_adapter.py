@@ -123,10 +123,20 @@ class PiaExperimentAdapter:
 
         artifact_files = self._validated_artifact_files(output)
         artifacts = tuple(self._publish_files(experiment_id, output, artifact_files))
-        jobs = tuple(
-            self._job_for_generation(experiment, generation, generation_candidates[generation.generation], artifacts)
-            for generation in generations
-        )
+        jobs_list: list[SimulationJobRecord] = []
+        product_artifacts: list[ArtifactRef] = []
+        for generation in generations:
+            job, result_manifest_ref = self._job_for_generation(
+                experiment,
+                generation,
+                generation_candidates[generation.generation],
+                artifacts,
+            )
+            jobs_list.append(job)
+            if result_manifest_ref is not None:
+                product_artifacts.append(result_manifest_ref)
+        jobs = tuple(jobs_list)
+        artifacts = (*artifacts, *product_artifacts)
         for job in jobs:
             existing_job = self._repository.get_simulation_job(job.simulation_job_id)
             if existing_job is not None and (
@@ -186,43 +196,83 @@ class PiaExperimentAdapter:
         )
         return PiaExperimentMapping(updated, tuple(product_candidates), persisted_jobs, artifacts)
 
-    @staticmethod
     def _job_for_generation(
+        self,
         experiment: OptimizationExperimentRecord,
         generation: _GenerationInput,
         candidates: Sequence[CandidateRecord],
         artifacts: Sequence[ArtifactRef],
-    ) -> SimulationJobRecord:
+    ) -> tuple[SimulationJobRecord, ArtifactRef | None]:
         marker = f"generation_{generation.generation:03d}/"
         manifest_ref = next(
             ref for ref in artifacts if marker in ref.key and ref.key.endswith("/simulation_manifest.json")
         )
         batch_ref = next(ref for ref in artifacts if marker in ref.key and ref.key.endswith("/simulation_batch.csv"))
-        result_ref = next(
-            (
-                ref
-                for ref in artifacts
-                if marker in ref.key
-                and (ref.key.endswith("/imported_results.csv") or ref.key.endswith("/simulation_results.csv"))
-            ),
-            None,
-        )
         identity = hashlib.sha256(
             f"pia-job:{experiment.experiment_id}:{generation.generation}".encode("utf-8")
         ).hexdigest()[:32]
-        completed = generation.status != "pending_simulation"
-        return SimulationJobRecord(
+        status = {
+            "pending_simulation": SimulationJobStatus.WAITING_FOR_RESULTS,
+            "results_imported": SimulationJobStatus.COMPLETED,
+            "error": SimulationJobStatus.FAILED,
+        }[generation.status]
+        result_ref = None
+        result_manifest_ref = None
+        if status == SimulationJobStatus.COMPLETED:
+            result_ref = next(
+                (ref for ref in artifacts if marker in ref.key and ref.key.endswith("/imported_results.csv")),
+                None,
+            )
+            if result_ref is None:
+                raise ValueError(f"completed PIA generation is missing imported_results.csv: {generation.generation}")
+            imported = pd.read_csv(self._artifact_store.resolve(result_ref))
+            source_ids = {str(row["candidate_id"]) for row in generation.rows}
+            if imported.empty or set(imported["candidate_id"].astype(str)) != source_ids:
+                raise ValueError(
+                    f"completed PIA generation results do not match selected candidates: {generation.generation}"
+                )
+            result_manifest = {
+                "schema_version": "1.0",
+                "simulation_job_id": f"job_{identity}",
+                "generation": generation.generation,
+                "candidate_ids": [candidate.candidate_id for candidate in candidates],
+                "source_candidate_ids": sorted(source_ids),
+                "result_ref": result_ref.uri,
+                "result_sha256": result_ref.sha256,
+                "data_source": DATA_SOURCE,
+                "engineering_validity": ENGINEERING_VALIDITY,
+                "must_resimulate": False,
+            }
+            key = (
+                f"phase3/experiments/{experiment.experiment_id}/pia/"
+                f"generation_{generation.generation:03d}/product_result_manifest.json"
+            )
+            payload = (json.dumps(result_manifest, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n").encode(
+                "utf-8"
+            )
+            try:
+                result_manifest_ref = self._artifact_store.put_bytes(key, payload)
+            except ArtifactAlreadyExists:
+                result_manifest_ref = self._artifact_store.ref_from_uri(
+                    f"artifact://{key}",
+                    expected_sha256=hashlib.sha256(payload).hexdigest(),
+                )
+        job = SimulationJobRecord(
             simulation_job_id=f"job_{identity}",
             project_id=experiment.project_id,
             candidate_ids=tuple(candidate.candidate_id for candidate in candidates),
             adapter_type="pia_evolution",
-            status=(SimulationJobStatus.COMPLETED if completed else SimulationJobStatus.WAITING_FOR_RESULTS),
+            status=status,
             input_manifest_ref=manifest_ref.uri,
-            result_manifest_ref=result_ref.uri if result_ref is not None else None,
+            result_manifest_ref=result_manifest_ref.uri if result_manifest_ref is not None else None,
             export_attempt=generation.generation + 1,
             batch_ref=batch_ref,
             result_ref=result_ref,
+            result_sha256=result_ref.sha256 if result_ref is not None else None,
+            error_code="PIA_SIMULATION_ERROR" if status == SimulationJobStatus.FAILED else None,
+            retryable=status == SimulationJobStatus.FAILED,
         )
+        return job, result_manifest_ref
 
     def _validate_output(self, output: Path, parameters: tuple[str, ...]) -> list[_GenerationInput]:
         generations: list[_GenerationInput] = []
@@ -264,6 +314,8 @@ class PiaExperimentAdapter:
             status = str(status_value.get("status", "")) if isinstance(status_value, dict) else str(status_value)
             if not status:
                 raise ValueError(f"PIA generation status is missing: {summary_path}")
+            if status not in {"pending_simulation", "results_imported", "error"}:
+                raise ValueError(f"unsupported PIA generation status {status!r}: {summary_path}")
             rows = tuple(selected.to_dict(orient="records"))
             source_ids = [str(row["candidate_id"]) for row in rows]
             if len(source_ids) != len(set(source_ids)):
@@ -422,6 +474,8 @@ class PiaExperimentAdapter:
         if summary_path.is_file() and not summary_path.is_symlink():
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
             stop_reason = summary.get("stop_reason")
+        if generations[-1].status == "error":
+            return ExperimentStatus.FAILED
         if generations[-1].status == "pending_simulation" or stop_reason == "pending_simulation_results":
             return ExperimentStatus.WAITING_FOR_SIMULATION
         return ExperimentStatus.COMPLETED

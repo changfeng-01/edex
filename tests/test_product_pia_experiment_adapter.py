@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
+from fastapi.testclient import TestClient
 
 from goa_eval.product.artifact_store import LocalArtifactStore
 from goa_eval.product.database import create_schema, make_engine
@@ -11,6 +13,7 @@ from goa_eval.product.models import ExperimentStatus, SimulationJobStatus
 from goa_eval.product.pia_experiment_adapter import PiaExperimentAdapter
 from goa_eval.product.project_service import ProjectService
 from goa_eval.product.repositories import SqlAlchemyProductRepository
+from goa_eval.product_api.app import create_product_app
 
 
 @pytest.fixture
@@ -252,8 +255,55 @@ def test_completed_pia_output_maps_to_completed_experiment(pia_product_context):
 
     assert mapping.experiment.state == ExperimentStatus.COMPLETED
     assert mapping.jobs[0].status == SimulationJobStatus.COMPLETED
+    assert mapping.jobs[0].result_ref is not None
+    assert mapping.jobs[0].result_manifest_ref.endswith("/product_result_manifest.json")
+    result_manifest = json.loads(
+        store.resolve(store.ref_from_uri(mapping.jobs[0].result_manifest_ref)).read_text(encoding="utf-8")
+    )
+    assert result_manifest["candidate_ids"] == [candidate.candidate_id for candidate in mapping.candidates]
     event = next(event for event in repository.list_audit_events("experiment", experiment.experiment_id) if event.action == "pia.generation.mapped")
     assert event.details["state"] == "completed"
+
+
+def test_pia_error_status_maps_to_failed_instead_of_completed(pia_product_context):
+    repository, store, experiment, tmp_path = pia_product_context
+    output = tmp_path / "pia-output"
+    _write_pending_generation(output)
+    summary_path = output / "generation_000" / "generation_summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["status"] = {"status": "error", "message": "simulator configuration missing"}
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    evolution_path = output / "evolution_summary.json"
+    evolution = json.loads(evolution_path.read_text(encoding="utf-8"))
+    evolution["stop_reason"] = "simulation_error"
+    evolution_path.write_text(json.dumps(evolution), encoding="utf-8")
+
+    mapping = PiaExperimentAdapter(repository, store).map_output(
+        experiment.experiment_id,
+        output,
+        parameter_columns=("x1", "x2"),
+    )
+
+    assert mapping.experiment.state == ExperimentStatus.FAILED
+    assert mapping.jobs[0].status == SimulationJobStatus.FAILED
+    assert mapping.jobs[0].result_ref is None
+
+
+def test_pia_unknown_generation_status_is_rejected(pia_product_context):
+    repository, store, experiment, tmp_path = pia_product_context
+    output = tmp_path / "pia-output"
+    _write_pending_generation(output)
+    summary_path = output / "generation_000" / "generation_summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["status"] = {"status": "mystery"}
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unsupported PIA generation status"):
+        PiaExperimentAdapter(repository, store).map_output(
+            experiment.experiment_id,
+            output,
+            parameter_columns=("x1", "x2"),
+        )
 
 
 def test_mapping_publishes_only_declared_and_boundary_validated_pia_artifacts(pia_product_context):
@@ -280,3 +330,47 @@ def test_mapping_publishes_only_declared_and_boundary_validated_pia_artifacts(pi
             output,
             parameter_columns=("x1", "x2"),
         )
+
+
+def test_product_api_maps_and_resumes_pia_output_from_immutable_artifact_refs(pia_product_context):
+    repository, store, experiment, tmp_path = pia_product_context
+    output = tmp_path / "pia-output"
+    _write_pending_generation(output)
+    refs = store.publish_directory("phase3/test/pia-source", output)
+    prefix = "phase3/test/pia-source/"
+    payload = {
+        "parameter_columns": ["x1", "x2"],
+        "artifacts": [
+            {
+                "relative_path": ref.key.removeprefix(prefix),
+                "artifact_ref": {
+                    "uri": ref.uri,
+                    "key": ref.key,
+                    "size_bytes": ref.size_bytes,
+                    "sha256": ref.sha256,
+                },
+            }
+            for ref in refs
+        ],
+    }
+    adapter = PiaExperimentAdapter(repository, store)
+    client = TestClient(
+        create_product_app(
+            SimpleNamespace(
+                repository=repository,
+                artifact_store=store,
+                pia_adapter=adapter,
+            )
+        )
+    )
+
+    first = client.post(f"/api/v1/experiments/{experiment.experiment_id}/pia-output:map", json=payload)
+    second = client.post(f"/api/v1/experiments/{experiment.experiment_id}/pia-output:map", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["data"]["experiment"]["state"] == "waiting_for_simulation"
+    assert [job["simulation_job_id"] for job in second.json()["data"]["jobs"]] == [
+        job["simulation_job_id"] for job in first.json()["data"]["jobs"]
+    ]
+    assert len(repository.list_simulation_jobs(experiment.project_id)) == 1

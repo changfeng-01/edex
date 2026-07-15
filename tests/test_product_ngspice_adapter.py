@@ -10,18 +10,26 @@ from goa_eval.product.artifact_store import LocalArtifactStore
 from goa_eval.product.models import SimulationJobRecord
 
 
-def _job_with_netlist(store, netlist_text):
+def _job_with_netlist(store, netlist_text, *, candidate_ids=(), batch_ref=None):
     netlist_ref = store.put_bytes("inputs/circuit.spice", netlist_text.encode("utf-8"))
     manifest_ref = store.put_bytes(
         "inputs/manifest.json",
-        json.dumps({"netlist_ref": netlist_ref.uri}).encode("utf-8"),
+        json.dumps(
+            {
+                "schema_version": "circuitpilot.ngspice-execution-input.v1",
+                "netlist_ref": netlist_ref.uri,
+                "netlist_sha256": netlist_ref.sha256,
+                "candidate_ids": list(candidate_ids),
+            }
+        ).encode("utf-8"),
     )
     return SimulationJobRecord(
         simulation_job_id="job_ngspice",
         project_id="project_test",
-        candidate_ids=(),
+        candidate_ids=tuple(candidate_ids),
         adapter_type="ngspice_sky130",
         input_manifest_ref=manifest_ref.uri,
+        batch_ref=batch_ref,
     )
 
 
@@ -137,7 +145,9 @@ def test_result_import_preserves_simulation_only_boundary_and_candidate_identity
         [
             {
                 "candidate_id": "candidate_a",
+                "parameter_hash": "hash_a",
                 "overall_score": 88.0,
+                "hard_constraint_passed": True,
                 "data_source": "real_simulation_csv",
                 "engineering_validity": "simulation_only",
                 "must_resimulate": True,
@@ -154,6 +164,44 @@ def test_result_import_preserves_simulation_only_boundary_and_candidate_identity
         adapter.import_results(result, expected_candidate_ids=("candidate_a",))
 
 
+def test_collect_outputs_turns_required_measurements_into_product_result_csv(tmp_path):
+    pdk_root, _ = _pdk(tmp_path)
+    executable = tmp_path / "ngspice"
+    executable.write_bytes(b"")
+    adapter = NgspiceSky130Adapter(
+        ngspice_cmd=str(executable),
+        pdk_root=pdk_root,
+        executable_resolver=lambda _command: str(executable),
+    )
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    batch_ref = store.put_bytes(
+        "inputs/batch.csv",
+        b"candidate_id,parameter_hash,x\ncandidate_a,hash_a,1.0\n",
+    )
+    job = _job_with_netlist(
+        store,
+        ".op\n.end\n",
+        candidate_ids=("candidate_a",),
+        batch_ref=batch_ref,
+    )
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    (work_dir / "ngspice.log").write_text(
+        "overall_score = 9.125000e+01\nhard_constraint_passed = 1.000000e+00\n",
+        encoding="utf-8",
+    )
+
+    outputs = adapter.collect_outputs(job, store, work_dir)
+    result = adapter.import_results(
+        work_dir / "simulation_results.csv",
+        expected_candidate_ids=("candidate_a",),
+    )
+
+    assert outputs == ("ngspice.log", "simulation_results.csv")
+    assert result.loc[0, "overall_score"] == 91.25
+    assert bool(result.loc[0, "hard_constraint_passed"]) is True
+
+
 @pytest.mark.skipif(
     os.getenv("CIRCUITPILOT_RUN_REAL_NGSPICE") != "1",
     reason="requires an explicitly enabled real ngspice/SKY130 environment",
@@ -164,19 +212,25 @@ def test_optional_real_ngspice_sky130_execution(tmp_path):
     if not availability.available:
         pytest.fail(f"explicit real-ngspice run requested but unavailable: {availability.reasons}")
     store = LocalArtifactStore(tmp_path / "artifacts")
+    batch_ref = store.put_bytes(
+        "inputs/real_batch.csv",
+        b"candidate_id,parameter_hash,x\ncandidate_real,hash_real,1.0\n",
+    )
     job = _job_with_netlist(
         store,
         "\n".join(
             [
                 '.lib "sky130.lib.spice" tt',
-                "Vd drain 0 1.8",
-                "Vg gate 0 1.8",
-                "X1 drain gate 0 0 sky130_fd_pr__nfet_01v8 W=1 L=0.15",
-                ".op",
+                "Vout out 0 1.0",
+                ".tran 1n 2n",
+                ".meas tran overall_score FIND v(out) AT=1n",
+                ".meas tran hard_constraint_passed PARAM='1'",
                 ".end",
                 "",
             ]
         ),
+        candidate_ids=("candidate_real",),
+        batch_ref=batch_ref,
     )
     work_dir = tmp_path / "real-ngspice"
     work_dir.mkdir()
@@ -193,3 +247,10 @@ def test_optional_real_ngspice_sky130_execution(tmp_path):
 
     assert completed.returncode == 0, completed.stderr
     assert (work_dir / "ngspice.log").is_file()
+    adapter.collect_outputs(job, store, work_dir)
+    result = adapter.import_results(
+        work_dir / "simulation_results.csv",
+        expected_candidate_ids=("candidate_real",),
+    )
+    assert result.loc[0, "overall_score"] == pytest.approx(1.0)
+    assert bool(result.loc[0, "hard_constraint_passed"]) is True
