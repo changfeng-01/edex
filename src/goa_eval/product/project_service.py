@@ -35,6 +35,9 @@ class InvalidCircuitProfile(ProjectServiceError):
     pass
 
 
+PROJECT_EVIDENCE_ORDER = {"profile_snapshot": 0, "spec_snapshot": 1}
+
+
 @dataclass(frozen=True)
 class ProjectCreationResult:
     project: ProjectRecord
@@ -218,7 +221,16 @@ class ProjectService:
         versions = tuple(self._repository.list_design_versions(project_id))
         runs = self._repository.list_analysis_runs(project_id=project_id)
         latest = self._repository.get_latest_analysis_run(project_id)
-        evidence = self._repository.list_evidence("project", project_id)
+        evidence = tuple(
+            sorted(
+                self._repository.list_evidence("project", project_id),
+                key=lambda record: (
+                    PROJECT_EVIDENCE_ORDER.get(record.evidence_type, 99),
+                    record.evidence_type,
+                    record.evidence_id,
+                ),
+            )
+        )
         return ProjectOverview(
             project=project,
             design_versions=versions,

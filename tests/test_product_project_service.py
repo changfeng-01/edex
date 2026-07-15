@@ -199,6 +199,18 @@ def test_project_overview_returns_small_counts_latest_state_and_evidence_summary
         service.get_project_overview("project_missing")
 
 
+def test_project_overview_orders_config_evidence_deterministically(service_context, monkeypatch):
+    service, repository, _, _, _ = service_context
+    workspace = service.create_workspace("GOA team")
+    project = service.create_project(workspace.workspace_id, "GOA", "goa_alias", "spec_v1").project
+    records = repository.list_evidence("project", project.project_id)
+    monkeypatch.setattr(repository, "list_evidence", lambda *_args: list(reversed(records)))
+
+    overview = service.get_project_overview(project.project_id)
+
+    assert overview.evidence_types == ("profile_snapshot", "spec_snapshot")
+
+
 def test_create_project_uses_validated_profile_revision_and_rejects_bad_semantics(service_context):
     service, _, _, profile_path, _ = service_context
     profile_path.write_text(
