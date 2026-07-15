@@ -11,6 +11,7 @@ from goa_eval.product.artifact_store import ArtifactStoreError
 from goa_eval.product.input_service import InputPreviewFailed
 from goa_eval.product.comparison_service import ComparisonClaimError
 from goa_eval.product.experiment_service import ExperimentConflict, ExperimentNotFound
+from goa_eval.product.job_runner import JobExecutionDisabled
 from goa_eval.product.project_service import InvalidCircuitProfile, ProductNotFoundError
 from goa_eval.product.simulation_job_service import SimulationImportError, SimulationJobConflict
 from goa_eval.product.state_machine import InvalidTransition
@@ -91,6 +92,8 @@ def translate_domain_error(exc: Exception) -> ProductApiError:
         if "not found" in str(exc).lower():
             return ProductApiError("SIMULATION_JOB_NOT_FOUND", "Simulation job was not found.", 404)
         return ProductApiError("EXPERIMENT_STATE_CONFLICT", "Experiment state does not allow this operation.", 409)
+    if isinstance(exc, JobExecutionDisabled):
+        return ProductApiError("JOB_EXECUTION_DISABLED", "Simulation job execution is disabled.", 409)
     if isinstance(exc, (ExperimentConflict, InvalidTransition)):
         return ProductApiError("EXPERIMENT_STATE_CONFLICT", "Experiment state does not allow this operation.", 409)
     if isinstance(exc, SimulationImportError):

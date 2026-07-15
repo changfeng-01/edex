@@ -11,10 +11,13 @@ from goa_eval.product.database import create_schema, make_engine
 from goa_eval.product.input_service import InputService
 from goa_eval.product.comparison_service import ComparisonService
 from goa_eval.product.experiment_service import ExperimentService
+from goa_eval.product.job_runner import ProductJobRunner
+from goa_eval.product.pia_experiment_adapter import PiaExperimentAdapter
 from goa_eval.product.project_service import ProjectService
 from goa_eval.product.repositories import SqlAlchemyProductRepository
 from goa_eval.product.settings import ProductSettings
 from goa_eval.product.simulation_job_service import SimulationJobService
+from goa_eval.product.simulator_registry import SimulatorRegistry, build_default_simulator_registry
 
 
 @dataclass
@@ -26,8 +29,11 @@ class ProductContainer:
     input_service: InputService
     analysis_service: AnalysisService
     experiment_service: ExperimentService
+    pia_adapter: PiaExperimentAdapter
     simulation_job_service: SimulationJobService
     comparison_service: ComparisonService
+    simulator_registry: SimulatorRegistry
+    job_runner: ProductJobRunner
 
     @classmethod
     def from_settings(
@@ -42,6 +48,8 @@ class ProductContainer:
         repository = SqlAlchemyProductRepository(engine)
         artifact_store = LocalArtifactStore(settings.artifact_root)
         project_service = ProjectService(repository, artifact_store)
+        simulator_registry = build_default_simulator_registry()
+        pia_adapter = PiaExperimentAdapter(repository, artifact_store)
         return cls(
             settings=settings,
             repository=repository,
@@ -49,9 +57,17 @@ class ProductContainer:
             project_service=project_service,
             input_service=InputService(repository, artifact_store),
             analysis_service=AnalysisService(repository, artifact_store),
-            experiment_service=ExperimentService(repository),
-            simulation_job_service=SimulationJobService(repository, artifact_store, project_service),
+            experiment_service=ExperimentService(repository, pia_adapter=pia_adapter),
+            pia_adapter=pia_adapter,
+            simulation_job_service=SimulationJobService(
+                repository,
+                artifact_store,
+                project_service,
+                simulator_registry,
+            ),
             comparison_service=ComparisonService(repository, artifact_store),
+            simulator_registry=simulator_registry,
+            job_runner=ProductJobRunner(repository, artifact_store, simulator_registry, settings),
         )
 
     def ref_from_uri(self, uri: str, checksum: str) -> ArtifactRef:

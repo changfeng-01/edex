@@ -58,9 +58,20 @@ class CandidateDecision(BaseModel):
     reason: str | None = None
 
 
+class PiaArtifactInput(BaseModel):
+    relative_path: str = Field(min_length=1, max_length=512)
+    artifact_ref: ArtifactRefDto
+
+
+class PiaOutputMap(BaseModel):
+    parameter_columns: list[str] = Field(min_length=1, max_length=256)
+    artifacts: list[PiaArtifactInput] = Field(min_length=1, max_length=1000)
+
+
 class SimulationJobCreate(BaseModel):
     candidate_ids: list[str] = Field(min_length=1)
     adapter_type: str = "manual"
+    input_manifest_ref: str | None = None
 
 
 class ImportCommit(BaseModel):
