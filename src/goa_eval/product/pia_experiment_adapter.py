@@ -17,7 +17,8 @@ from goa_eval.product.models import (
     CandidateRecord,
     ExperimentStatus,
     OptimizationExperimentRecord,
-    new_id,
+    SimulationJobRecord,
+    SimulationJobStatus,
 )
 from goa_eval.product.state_machine import transition_experiment
 
@@ -30,6 +31,7 @@ ResumeLoader = Callable[[str | Path, int], dict[str, Any]]
 class PiaExperimentMapping:
     experiment: OptimizationExperimentRecord
     candidates: tuple[CandidateRecord, ...]
+    jobs: tuple[SimulationJobRecord, ...]
     artifacts: tuple[ArtifactRef, ...]
 
 
@@ -37,6 +39,7 @@ class PiaExperimentMapping:
 class _GenerationInput:
     generation: int
     rows: tuple[dict[str, Any], ...]
+    status: str
 
 
 class PiaExperimentAdapter:
@@ -103,53 +106,123 @@ class PiaExperimentAdapter:
             if event.action == "pia.generation.mapped" and "generation" in event.details
         }
         product_candidates: list[CandidateRecord] = []
+        new_candidates: list[CandidateRecord] = []
+        generation_candidates: dict[int, list[CandidateRecord]] = {}
         for generation in generations:
+            generation_candidates[generation.generation] = []
             for row in generation.rows:
                 candidate = self._candidate_from_row(experiment, generation.generation, row, parameters)
                 existing = self._repository.get_candidate(candidate.candidate_id)
                 if existing is None:
-                    self._repository.add_candidate(candidate)
                     existing = candidate
+                    new_candidates.append(candidate)
                 elif existing.experiment_id != experiment_id or existing.parameter_changes != candidate.parameter_changes:
                     raise ValueError(f"PIA candidate identity collision: {candidate.candidate_id}")
                 product_candidates.append(existing)
+                generation_candidates[generation.generation].append(existing)
 
-        artifacts = tuple(self._publish_files(experiment_id, output))
+        artifact_files = self._validated_artifact_files(output)
+        artifacts = tuple(self._publish_files(experiment_id, output, artifact_files))
+        jobs = tuple(
+            self._job_for_generation(experiment, generation, generation_candidates[generation.generation], artifacts)
+            for generation in generations
+        )
+        for job in jobs:
+            existing_job = self._repository.get_simulation_job(job.simulation_job_id)
+            if existing_job is not None and (
+                existing_job.project_id != job.project_id
+                or existing_job.candidate_ids != job.candidate_ids
+                or existing_job.adapter_type != job.adapter_type
+            ):
+                raise ValueError(f"PIA simulation job identity collision: {job.simulation_job_id}")
         metadata = self._mapping_metadata(generations, artifacts, output)
         config = dict(experiment.strategy_config)
         config["pia_evolution"] = metadata
+        desired_state = self._desired_experiment_state(generations, output)
         state = experiment.state
-        if state == ExperimentStatus.READY:
-            state = transition_experiment(state, ExperimentStatus.RUNNING)
-        if state == ExperimentStatus.RUNNING:
-            state = transition_experiment(state, ExperimentStatus.WAITING_FOR_SIMULATION)
-        if state != ExperimentStatus.WAITING_FOR_SIMULATION:
-            raise ValueError(f"experiment cannot accept pending PIA simulation work from state {state.value}")
+        if state != desired_state:
+            if state in {ExperimentStatus.READY, ExperimentStatus.WAITING_FOR_SIMULATION}:
+                state = transition_experiment(state, ExperimentStatus.RUNNING)
+            if state == ExperimentStatus.RUNNING:
+                state = transition_experiment(state, desired_state)
+        if state != desired_state:
+            raise ValueError(f"experiment cannot accept PIA output from state {state.value}")
         updated = replace(experiment, strategy_config=config, state=state)
-        self._repository.update_experiment(updated)
 
         artifact_uris = [ref.uri for ref in artifacts]
+        new_events: list[AuditEventRecord] = []
         for generation in generations:
             if generation.generation in mapped_generations:
                 continue
             generation_marker = f"generation_{generation.generation:03d}/"
             generation_refs = [uri for uri in artifact_uris if generation_marker in uri]
-            self._repository.append_audit_event(
+            event_identity = hashlib.sha256(
+                f"pia-generation:{experiment_id}:{generation.generation}".encode("utf-8")
+            ).hexdigest()[:32]
+            new_events.append(
                 AuditEventRecord(
-                    event_id=new_id("event"),
+                    event_id=f"event_{event_identity}",
                     actor_id="system",
                     action="pia.generation.mapped",
                     subject_type="experiment",
                     subject_id=experiment_id,
                     details={
                         "generation": generation.generation,
-                        "state": ExperimentStatus.WAITING_FOR_SIMULATION.value,
+                        "state": desired_state.value,
                         "candidate_count": len(generation.rows),
+                        "simulation_job_id": next(
+                            job.simulation_job_id
+                            for job in jobs
+                            if job.candidate_ids
+                            == tuple(candidate.candidate_id for candidate in generation_candidates[generation.generation])
+                        ),
                         "artifact_refs": generation_refs,
                     },
                 )
             )
-        return PiaExperimentMapping(updated, tuple(product_candidates), artifacts)
+        self._repository.apply_pia_mapping(new_candidates, jobs, updated, new_events)
+        persisted_jobs = tuple(
+            self._repository.get_simulation_job(job.simulation_job_id) or job for job in jobs
+        )
+        return PiaExperimentMapping(updated, tuple(product_candidates), persisted_jobs, artifacts)
+
+    @staticmethod
+    def _job_for_generation(
+        experiment: OptimizationExperimentRecord,
+        generation: _GenerationInput,
+        candidates: Sequence[CandidateRecord],
+        artifacts: Sequence[ArtifactRef],
+    ) -> SimulationJobRecord:
+        marker = f"generation_{generation.generation:03d}/"
+        manifest_ref = next(
+            ref for ref in artifacts if marker in ref.key and ref.key.endswith("/simulation_manifest.json")
+        )
+        batch_ref = next(ref for ref in artifacts if marker in ref.key and ref.key.endswith("/simulation_batch.csv"))
+        result_ref = next(
+            (
+                ref
+                for ref in artifacts
+                if marker in ref.key
+                and (ref.key.endswith("/imported_results.csv") or ref.key.endswith("/simulation_results.csv"))
+            ),
+            None,
+        )
+        identity = hashlib.sha256(
+            f"pia-job:{experiment.experiment_id}:{generation.generation}".encode("utf-8")
+        ).hexdigest()[:32]
+        completed = generation.status != "pending_simulation"
+        return SimulationJobRecord(
+            simulation_job_id=f"job_{identity}",
+            project_id=experiment.project_id,
+            candidate_ids=tuple(candidate.candidate_id for candidate in candidates),
+            adapter_type="pia_evolution",
+            status=(SimulationJobStatus.COMPLETED if completed else SimulationJobStatus.WAITING_FOR_RESULTS),
+            input_manifest_ref=manifest_ref.uri,
+            result_manifest_ref=result_ref.uri if result_ref is not None else None,
+            export_attempt=generation.generation + 1,
+            batch_ref=batch_ref,
+            result_ref=result_ref,
+        )
 
     def _validate_output(self, output: Path, parameters: tuple[str, ...]) -> list[_GenerationInput]:
         generations: list[_GenerationInput] = []
@@ -182,8 +255,20 @@ class PiaExperimentAdapter:
                 raise ValueError(f"PIA manifest generation mismatch: {manifest_path}")
             if int(manifest.get("candidate_count", -1)) != len(selected):
                 raise ValueError(f"PIA manifest candidate_count mismatch: {manifest_path}")
+            summary_path = directory / "generation_summary.json"
+            if not summary_path.is_file() or summary_path.is_symlink():
+                raise ValueError(f"missing PIA generation summary: {summary_path}")
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            self._validate_present_boundaries(summary, summary_path)
+            status_value = summary.get("status", {})
+            status = str(status_value.get("status", "")) if isinstance(status_value, dict) else str(status_value)
+            if not status:
+                raise ValueError(f"PIA generation status is missing: {summary_path}")
             rows = tuple(selected.to_dict(orient="records"))
-            generations.append(_GenerationInput(generation, rows))
+            source_ids = [str(row["candidate_id"]) for row in rows]
+            if len(source_ids) != len(set(source_ids)):
+                raise ValueError(f"PIA generation contains duplicate candidate_id values: {selected_path}")
+            generations.append(_GenerationInput(generation, rows, status))
         return generations
 
     @staticmethod
@@ -203,6 +288,21 @@ class PiaExperimentAdapter:
             raise ValueError(f"engineering_validity must remain {ENGINEERING_VALIDITY}: {source}")
         if value.get("must_resimulate") is not True:
             raise ValueError(f"must_resimulate must remain true: {source}")
+
+    @staticmethod
+    def _validate_present_boundaries(value: Any, source: Path) -> None:
+        if isinstance(value, dict):
+            if "data_source" in value and value["data_source"] != DATA_SOURCE:
+                raise ValueError(f"data_source must remain {DATA_SOURCE}: {source}")
+            if "engineering_validity" in value and value["engineering_validity"] != ENGINEERING_VALIDITY:
+                raise ValueError(f"engineering_validity must remain {ENGINEERING_VALIDITY}: {source}")
+            if "must_resimulate" in value and _boundary_bool(value["must_resimulate"]) is None:
+                raise ValueError(f"must_resimulate must remain a boolean boundary: {source}")
+            for nested in value.values():
+                PiaExperimentAdapter._validate_present_boundaries(nested, source)
+        elif isinstance(value, list):
+            for nested in value:
+                PiaExperimentAdapter._validate_present_boundaries(nested, source)
 
     @staticmethod
     def _candidate_from_row(
@@ -227,14 +327,15 @@ class PiaExperimentAdapter:
             must_resimulate=True,
         )
 
-    def _publish_files(self, experiment_id: str, output: Path) -> list[ArtifactRef]:
+    def _publish_files(
+        self,
+        experiment_id: str,
+        output: Path,
+        files: Sequence[Path],
+    ) -> list[ArtifactRef]:
         refs: list[ArtifactRef] = []
         prefix = f"phase3/experiments/{experiment_id}/pia"
-        for source in sorted(output.rglob("*")):
-            if source.is_symlink():
-                raise ValueError(f"PIA output cannot contain symlinks: {source}")
-            if not source.is_file():
-                continue
+        for source in files:
             relative = source.relative_to(output).as_posix()
             key = f"{prefix}/{relative}"
             digest = _sha256(source)
@@ -246,6 +347,84 @@ class PiaExperimentAdapter:
                 raise ArtifactIntegrityError(f"published PIA artifact differs from source: {key}")
             refs.append(ref)
         return refs
+
+    def _validated_artifact_files(self, output: Path) -> tuple[Path, ...]:
+        root_names = {
+            "generation_state.jsonl",
+            "evolution_history.csv",
+            "evolution_summary.json",
+            "evolution_report.md",
+        }
+        generation_names = {
+            "offspring_candidates.csv",
+            "pia_selected_candidates.csv",
+            "simulation_batch.csv",
+            "simulation_manifest.json",
+            "generation_summary.json",
+            "simulator_invocation.json",
+            "simulator_stdout.txt",
+            "simulator_stderr.txt",
+            "simulation_results.csv",
+            "imported_results.csv",
+        }
+        selected: list[Path] = []
+        for source in sorted(output.rglob("*")):
+            if source.is_symlink():
+                raise ValueError(f"PIA output cannot contain symlinks: {source}")
+            if not source.is_file():
+                continue
+            relative = source.relative_to(output)
+            allowed = (
+                len(relative.parts) == 1 and relative.name in root_names
+            ) or (
+                len(relative.parts) == 2
+                and relative.parts[0].startswith("generation_")
+                and relative.name in generation_names
+            )
+            if not allowed:
+                continue
+            if source.suffix == ".json":
+                self._validate_present_boundaries(json.loads(source.read_text(encoding="utf-8")), source)
+            elif source.suffix == ".jsonl":
+                for line in source.read_text(encoding="utf-8").splitlines():
+                    if line.strip():
+                        self._validate_present_boundaries(json.loads(line), source)
+            elif source.suffix == ".csv":
+                frame = pd.read_csv(source)
+                is_result = source.name in {"simulation_results.csv", "imported_results.csv"}
+                if is_result and "must_resimulate" in frame.columns:
+                    if not frame["must_resimulate"].map(lambda value: _boundary_bool(value) is False).all():
+                        raise ValueError(f"imported results must set must_resimulate to false: {source}")
+                    if "data_source" in frame.columns and not frame["data_source"].eq(DATA_SOURCE).all():
+                        raise ValueError(f"data_source must remain {DATA_SOURCE}: {source}")
+                    if "engineering_validity" in frame.columns and not frame["engineering_validity"].eq(
+                        ENGINEERING_VALIDITY
+                    ).all():
+                        raise ValueError(f"engineering_validity must remain {ENGINEERING_VALIDITY}: {source}")
+                elif {"data_source", "engineering_validity", "must_resimulate"} <= set(frame.columns):
+                    self._validate_boundary_frame(frame, source)
+                elif "data_source" in frame.columns and not frame["data_source"].eq(DATA_SOURCE).all():
+                    raise ValueError(f"data_source must remain {DATA_SOURCE}: {source}")
+                elif "engineering_validity" in frame.columns and not frame["engineering_validity"].eq(
+                    ENGINEERING_VALIDITY
+                ).all():
+                    raise ValueError(f"engineering_validity must remain {ENGINEERING_VALIDITY}: {source}")
+            selected.append(source)
+        return tuple(selected)
+
+    @staticmethod
+    def _desired_experiment_state(
+        generations: Sequence[_GenerationInput],
+        output: Path,
+    ) -> ExperimentStatus:
+        summary_path = output / "evolution_summary.json"
+        stop_reason = None
+        if summary_path.is_file() and not summary_path.is_symlink():
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            stop_reason = summary.get("stop_reason")
+        if generations[-1].status == "pending_simulation" or stop_reason == "pending_simulation_results":
+            return ExperimentStatus.WAITING_FOR_SIMULATION
+        return ExperimentStatus.COMPLETED
 
     @staticmethod
     def _mapping_metadata(
@@ -276,6 +455,14 @@ class PiaExperimentAdapter:
 
 def _strict_true(value: Any) -> bool:
     return value is True or value == 1 or (isinstance(value, str) and value.strip().lower() == "true")
+
+
+def _boundary_bool(value: Any) -> bool | None:
+    if value is True or value == 1 or (isinstance(value, str) and value.strip().lower() == "true"):
+        return True
+    if value is False or value == 0 or (isinstance(value, str) and value.strip().lower() == "false"):
+        return False
+    return None
 
 
 def _json_scalar(value: Any, column: str) -> Any:

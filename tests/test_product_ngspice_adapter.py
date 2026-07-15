@@ -66,7 +66,7 @@ def test_available_adapter_renders_only_registered_real_ngspice_command(tmp_path
     command = adapter.build_execution(job, store, work_dir)
 
     rendered = (work_dir / "circuit.spice").read_text(encoding="utf-8")
-    assert command.argv == (str(executable.resolve()), "-b", "-o", "ngspice.log", "circuit.spice")
+    assert command.argv == (str(executable.resolve()), "-n", "-b", "-o", "ngspice.log", "circuit.spice")
     assert library.resolve().as_posix() in rendered
     assert "mock" not in " ".join(command.argv).lower()
     assert command.evidence == {
@@ -79,6 +79,34 @@ def test_available_adapter_renders_only_registered_real_ngspice_command(tmp_path
         "engineering_validity": "simulation_only",
         "must_resimulate": True,
     }
+
+
+@pytest.mark.parametrize(
+    "unsafe_netlist",
+    [
+        '.lib "sky130.lib.spice" tt\n.control\nshell whoami\n.endc\n.end\n',
+        '.include "C:/Windows/System32/drivers/etc/hosts"\n.end\n',
+        '.lib "C:/secrets/private.lib" tt\n.end\n',
+        'V1 in 0 PWL FILE="C:/secrets/waveform.csv"\n.end\n',
+        '.lib "sky130.lib.spice" tt\nA1 in out malicious_code_model\n.end\n',
+    ],
+)
+def test_adapter_rejects_netlists_that_can_access_host_resources(tmp_path, unsafe_netlist):
+    executable = tmp_path / "ngspice.exe"
+    executable.write_bytes(b"")
+    pdk_root, _ = _pdk(tmp_path)
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    job = _job_with_netlist(store, unsafe_netlist)
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    adapter = NgspiceSky130Adapter(
+        ngspice_cmd=str(executable),
+        pdk_root=pdk_root,
+        executable_resolver=lambda _command: str(executable),
+    )
+
+    with pytest.raises(ValueError, match="unsafe ngspice netlist"):
+        adapter.build_execution(job, store, work_dir)
 
 
 def test_availability_is_read_only_and_never_invokes_subprocess(tmp_path, monkeypatch):

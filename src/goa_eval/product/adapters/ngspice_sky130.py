@@ -70,6 +70,7 @@ class NgspiceSky130Adapter:
             raise ValueError("ngspice input manifest requires netlist_ref")
         netlist_ref = artifact_store.ref_from_uri(netlist_uri)
         source_text = artifact_store.resolve(netlist_ref).read_text(encoding="utf-8")
+        _validate_safe_netlist(source_text)
         library = self._pdk_library()
         if library is None:
             raise AdapterUnavailable("SKY130 PDK library not found")
@@ -87,9 +88,10 @@ class NgspiceSky130Adapter:
         if executable is None:
             raise AdapterUnavailable("ngspice executable not found")
         return ExecutionCommand(
-            argv=(str(Path(executable).resolve()), "-b", "-o", "ngspice.log", netlist_path.name),
+            argv=(str(Path(executable).resolve()), "-n", "-b", "-o", "ngspice.log", netlist_path.name),
             cwd=work_dir,
             evidence=self.evidence_metadata(),
+            output_files=("ngspice.log",),
         )
 
     def import_results(
@@ -164,3 +166,57 @@ def _render_library_path(netlist: str, library: Path) -> str:
 
 def _strict_true(value: Any) -> bool:
     return value is True or value == 1 or (isinstance(value, str) and value.strip().lower() == "true")
+
+
+_ALLOWED_DIRECTIVES = {
+    ".ac",
+    ".dc",
+    ".end",
+    ".ends",
+    ".global",
+    ".ic",
+    ".meas",
+    ".measure",
+    ".nodeset",
+    ".op",
+    ".option",
+    ".param",
+    ".print",
+    ".save",
+    ".subckt",
+    ".temp",
+    ".title",
+    ".tran",
+}
+_ALLOWED_DEVICE_PREFIXES = frozenset({"b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "q", "r", "s", "v", "w", "x"})
+
+
+def _validate_safe_netlist(netlist: str) -> None:
+    encoded = netlist.encode("utf-8")
+    if len(encoded) > 1024 * 1024:
+        raise ValueError("unsafe ngspice netlist: file exceeds 1 MiB")
+    lines = netlist.splitlines()
+    if len(lines) > 20_000:
+        raise ValueError("unsafe ngspice netlist: too many lines")
+    for number, raw in enumerate(lines, start=1):
+        line = raw.strip()
+        if not line or line.startswith("*"):
+            continue
+        lower = line.lower()
+        if len(line) > 4096 or ";" in line or "\x00" in line:
+            raise ValueError(f"unsafe ngspice netlist directive at line {number}")
+        if re.search(r"\b(file\s*=|shell|system|source|load)\b", lower):
+            raise ValueError(f"unsafe ngspice netlist host access at line {number}")
+        if lower.startswith(".lib"):
+            if not re.fullmatch(r"\.lib\s+[\"']?sky130\.lib\.spice[\"']?\s+(tt|ss|ff|sf|fs)", lower):
+                raise ValueError(f"unsafe ngspice netlist library at line {number}")
+            continue
+        if line.startswith("."):
+            directive = lower.split(maxsplit=1)[0]
+            if directive not in _ALLOWED_DIRECTIVES:
+                raise ValueError(f"unsafe ngspice netlist directive at line {number}: {directive}")
+            continue
+        if line.startswith("+"):
+            continue
+        if lower[0] not in _ALLOWED_DEVICE_PREFIXES or '"' in line or "'" in line:
+            raise ValueError(f"unsafe ngspice netlist element at line {number}")

@@ -7,8 +7,9 @@ import pytest
 
 from goa_eval.product.artifact_store import LocalArtifactStore
 from goa_eval.product.database import create_schema, make_engine
+from goa_eval.product.experiment_service import ExperimentService
 from goa_eval.product.job_runner import ExecutionCommand, JobExecutionDisabled, ProductJobRunner
-from goa_eval.product.models import SimulationJobRecord, SimulationJobStatus, new_id
+from goa_eval.product.models import CandidateStatus, SimulationJobRecord, SimulationJobStatus, new_id
 from goa_eval.product.project_service import ProjectService
 from goa_eval.product.repositories import SqlAlchemyProductRepository
 from goa_eval.product.settings import ProductSettings
@@ -27,9 +28,10 @@ class Registry:
 
 
 class CommandAdapter:
-    def __init__(self, argv, *, on_build=None):
+    def __init__(self, argv, *, on_build=None, output_files=()):
         self.argv = tuple(argv)
         self.on_build = on_build
+        self.output_files = tuple(output_files)
 
     def build_execution(self, job, artifact_store, work_dir):
         del artifact_store
@@ -46,6 +48,7 @@ class CommandAdapter:
                 "engineering_validity": "simulation_only",
                 "must_resimulate": True,
             },
+            output_files=self.output_files,
         )
 
 
@@ -68,6 +71,8 @@ def runner_context(tmp_path):
         )
         repository.add_simulation_job(job)
         return job
+
+    add_job.project_id = project.project_id
 
     return repository, store, projects, add_job, tmp_path
 
@@ -122,7 +127,7 @@ def test_success_stores_stdout_stderr_exit_code_and_mock_evidence(runner_context
     log_ref = store.ref_from_uri(completed.logs_ref)
     log = json.loads(store.resolve(log_ref).read_text(encoding="utf-8"))
     assert result.exit_code == 0
-    assert completed.status == SimulationJobStatus.COMPLETED
+    assert completed.status == SimulationJobStatus.WAITING_FOR_RESULTS
     assert completed.attempt == 1
     assert "local_fixture" in log["stdout"]
     assert log["stderr"].strip() == "fixture warning"
@@ -199,4 +204,67 @@ def test_concurrent_claims_cannot_execute_same_job_twice(runner_context):
 
     assert len(builds) == 1
     assert sum(result is not None for result in results) == 1
-    assert repository.get_simulation_job(job.simulation_job_id).status == SimulationJobStatus.COMPLETED
+    assert repository.get_simulation_job(job.simulation_job_id).status == SimulationJobStatus.WAITING_FOR_RESULTS
+
+
+def test_success_persists_declared_simulator_outputs_before_workspace_cleanup(runner_context):
+    repository, store, _, add_job, tmp_path = runner_context
+    job = add_job()
+    command = "from pathlib import Path; Path('results.csv').write_text('candidate_id,score\\na,1\\n'); print('ok')"
+    adapter = CommandAdapter(
+        [sys.executable, "-c", command],
+        output_files=("results.csv",),
+    )
+    runner = ProductJobRunner(repository, store, Registry({"local_simulator": adapter}), _settings(tmp_path, True))
+
+    runner.run_job(job.simulation_job_id)
+
+    waiting = repository.get_simulation_job(job.simulation_job_id)
+    manifest_ref = store.ref_from_uri(waiting.result_manifest_ref)
+    manifest = json.loads(store.resolve(manifest_ref).read_text(encoding="utf-8"))
+    output_ref = store.ref_from_uri(manifest["outputs"][0]["uri"])
+    assert waiting.status == SimulationJobStatus.WAITING_FOR_RESULTS
+    assert store.resolve(output_ref).read_text(encoding="utf-8") == "candidate_id,score\na,1\n"
+    assert manifest["evidence"]["evidence_type"] == "mock_fixture"
+
+
+def test_missing_declared_output_fails_closed(runner_context):
+    repository, store, _, add_job, tmp_path = runner_context
+    job = add_job()
+    adapter = CommandAdapter(
+        [sys.executable, "-c", "print('no result')"],
+        output_files=("missing.csv",),
+    )
+    runner = ProductJobRunner(repository, store, Registry({"local_simulator": adapter}), _settings(tmp_path, True))
+
+    runner.run_job(job.simulation_job_id)
+
+    failed = repository.get_simulation_job(job.simulation_job_id)
+    assert failed.status == SimulationJobStatus.FAILED
+    assert failed.error_code == "SIMULATION_OUTPUT_MISSING"
+
+
+def test_execution_failure_and_retry_keep_candidate_state_in_sync(runner_context):
+    repository, store, projects, add_job, tmp_path = runner_context
+    baseline = projects.create_design_version(add_job.project_id, "baseline")
+
+    def generator(_config, _maximum, _seed):
+        return [{"parameter_changes": {"x": 1.0}}]
+
+    experiments = ExperimentService(repository, generators={"rule": generator})
+    experiment = experiments.create_experiment(add_job.project_id, baseline.design_version_id, {})
+    candidate = experiments.generate_candidates(experiment.experiment_id, "rule", 1, 1)[0]
+    candidate = experiments.approve_candidate(candidate.candidate_id, "reviewer")
+    job = add_job()
+    repository.update_simulation_job(replace(job, candidate_ids=(candidate.candidate_id,)))
+    repository.update_candidate(
+        replace(candidate, status=CandidateStatus.SIMULATION_PENDING, simulation_job_id=job.simulation_job_id)
+    )
+    adapter = CommandAdapter([sys.executable, "-c", "import sys; sys.exit(2)"])
+    runner = ProductJobRunner(repository, store, Registry({"local_simulator": adapter}), _settings(tmp_path, True))
+
+    runner.run_job(job.simulation_job_id)
+    assert repository.get_candidate(candidate.candidate_id).status == CandidateStatus.SIMULATION_FAILED
+
+    SimulationJobService(repository, store, projects).retry_execution(job.simulation_job_id)
+    assert repository.get_candidate(candidate.candidate_id).status == CandidateStatus.SIMULATION_PENDING

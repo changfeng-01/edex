@@ -4,6 +4,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Iterable
 
 import pandas as pd
@@ -86,6 +87,7 @@ class SimulationJobService:
         self,
         candidate_ids: Iterable[str],
         adapter_type: str,
+        input_manifest_ref: str | None = None,
     ) -> SimulationJobRecord:
         if adapter_type == "manual" or self._simulator_registry is None:
             raise SimulationJobConflict("a registered execution adapter is required")
@@ -96,6 +98,102 @@ class SimulationJobService:
         if not availability.available:
             reason = "; ".join(availability.reasons) or "unavailable"
             raise SimulationJobConflict(f"simulator adapter is unavailable: {reason}")
+        if not input_manifest_ref:
+            raise SimulationJobConflict("execution adapter requires input_manifest_ref")
+        try:
+            self._artifact_store.ref_from_uri(input_manifest_ref)
+        except Exception as exc:
+            raise SimulationJobConflict("execution input manifest is not an immutable artifact") from exc
+        ids = tuple(dict.fromkeys(str(value) for value in candidate_ids))
+        if not ids:
+            raise SimulationJobConflict("at least one approved candidate is required")
+        candidates = [self._require_candidate(candidate_id) for candidate_id in ids]
+        if any(candidate.status != CandidateStatus.APPROVED for candidate in candidates):
+            raise SimulationJobConflict("all candidates must be explicitly approved")
+        experiments = [self._repository.get_experiment(candidate.experiment_id) for candidate in candidates]
+        if any(experiment is None for experiment in experiments):
+            raise SimulationJobConflict("candidate experiment was not found")
+        project_ids = {experiment.project_id for experiment in experiments}
+        if len(project_ids) != 1:
+            raise SimulationJobConflict("all candidates must belong to the same project")
+        job = SimulationJobRecord(
+            simulation_job_id=new_id("job"),
+            project_id=project_ids.pop(),
+            candidate_ids=ids,
+            adapter_type=adapter_type,
+            input_manifest_ref=input_manifest_ref,
+        )
+        selected = self._candidate_frame(candidates)
+        config = self._simulation_config(selected)
+        batch, contract = build_simulation_batch(selected, config, generation=1)
+        batch["parameter_hash"] = [self._parameter_hash(candidate.parameter_changes) for candidate in candidates]
+        prefix = f"phase3/simulation_jobs/{job.simulation_job_id}/contracts/1"
+        batch_ref = self._artifact_store.put_bytes(
+            f"{prefix}/simulation_batch.csv",
+            batch.to_csv(index=False).encode("utf-8"),
+        )
+        contract.update(
+            {
+                "simulation_job_id": job.simulation_job_id,
+                "adapter_type": adapter_type,
+                "adapter_input_manifest_ref": input_manifest_ref,
+                "batch_ref": batch_ref.uri,
+                "batch_sha256": batch_ref.sha256,
+                "parameter_columns": list(config["parameter_columns"]),
+            }
+        )
+        contract_ref = self._artifact_store.put_bytes(
+            f"{prefix}/execution_contract.json",
+            self._json_bytes(contract),
+        )
+        job = replace(
+            job,
+            command_manifest_ref=contract_ref.uri,
+            export_attempt=1,
+            batch_ref=batch_ref,
+        )
+        self._repository.add_simulation_job(job)
+        self._audit(job, "simulation_job.created", {"candidate_ids": list(ids), "adapter_type": adapter_type})
+        return job
+
+    def queue_execution(self, job_id: str) -> SimulationJobRecord:
+        job = self._require_job(job_id)
+        if job.adapter_type == "manual" or job.status != SimulationJobStatus.DRAFT:
+            raise SimulationJobConflict(f"job cannot be queued from {job.status.value}")
+        candidates = [self._require_candidate(candidate_id) for candidate_id in job.candidate_ids]
+        if any(candidate.status != CandidateStatus.APPROVED for candidate in candidates):
+            raise SimulationJobConflict("only approved candidates can be queued")
+        queued = replace(job, status=transition_simulation_job(job.status, SimulationJobStatus.QUEUED))
+        candidate_updates = [
+            replace(
+                candidate,
+                status=transition_candidate(candidate.status, CandidateStatus.SIMULATION_PENDING),
+                simulation_job_id=job.simulation_job_id,
+            )
+            for candidate in candidates
+        ]
+        event = AuditEventRecord(
+            new_id("event"),
+            "system",
+            "simulation_job.queued",
+            "simulation_job",
+            queued.simulation_job_id,
+            {"attempt": queued.attempt + 1},
+        )
+        self._repository.apply_simulation_job_update(queued, candidate_updates, event)
+        return queued
+
+    def create_offline_job(
+        self,
+        candidate_ids: Iterable[str],
+        adapter_type: str,
+    ) -> SimulationJobRecord:
+        if adapter_type == "manual" or self._simulator_registry is None:
+            raise SimulationJobConflict("a registered offline adapter is required")
+        adapter = self._simulator_registry.get(adapter_type)
+        availability = adapter.availability()
+        if availability.execution_enabled or "export" not in availability.capabilities:
+            raise SimulationJobConflict(f"adapter is not an offline export adapter: {adapter_type}")
         ids = tuple(dict.fromkeys(str(value) for value in candidate_ids))
         if not ids:
             raise SimulationJobConflict("at least one approved candidate is required")
@@ -118,26 +216,6 @@ class SimulationJobService:
         self._audit(job, "simulation_job.created", {"candidate_ids": list(ids), "adapter_type": adapter_type})
         return job
 
-    def queue_execution(self, job_id: str) -> SimulationJobRecord:
-        job = self._require_job(job_id)
-        if job.adapter_type == "manual" or job.status != SimulationJobStatus.DRAFT:
-            raise SimulationJobConflict(f"job cannot be queued from {job.status.value}")
-        candidates = [self._require_candidate(candidate_id) for candidate_id in job.candidate_ids]
-        if any(candidate.status != CandidateStatus.APPROVED for candidate in candidates):
-            raise SimulationJobConflict("only approved candidates can be queued")
-        queued = replace(job, status=transition_simulation_job(job.status, SimulationJobStatus.QUEUED))
-        self._repository.update_simulation_job(queued)
-        for candidate in candidates:
-            self._repository.update_candidate(
-                replace(
-                    candidate,
-                    status=transition_candidate(candidate.status, CandidateStatus.SIMULATION_PENDING),
-                    simulation_job_id=job.simulation_job_id,
-                )
-            )
-        self._audit(queued, "simulation_job.queued", {"attempt": queued.attempt + 1})
-        return queued
-
     def retry_execution(self, job_id: str) -> SimulationJobRecord:
         job = self._require_job(job_id)
         if job.adapter_type == "manual" or job.status != SimulationJobStatus.FAILED or not job.retryable:
@@ -148,8 +226,25 @@ class SimulationJobService:
             error_code=None,
             retryable=False,
         )
-        self._repository.update_simulation_job(queued)
-        self._audit(queued, "simulation_job.retried", {"attempt": queued.attempt + 1})
+        candidate_updates = []
+        for candidate_id in job.candidate_ids:
+            candidate = self._require_candidate(candidate_id)
+            if candidate.status == CandidateStatus.SIMULATION_FAILED:
+                candidate_updates.append(
+                    replace(
+                        candidate,
+                        status=transition_candidate(candidate.status, CandidateStatus.SIMULATION_PENDING),
+                    )
+                )
+        event = AuditEventRecord(
+            new_id("event"),
+            "system",
+            "simulation_job.retried",
+            "simulation_job",
+            queued.simulation_job_id,
+            {"attempt": queued.attempt + 1},
+        )
+        self._repository.apply_simulation_job_update(queued, candidate_updates, event)
         return queued
 
     def export_job(self, job_id: str, force_new_attempt: bool = False) -> SimulationJobRecord:
@@ -166,7 +261,8 @@ class SimulationJobService:
         config = self._simulation_config(selected)
         batch, manifest = build_simulation_batch(selected, config, generation)
         batch["parameter_hash"] = [self._parameter_hash(candidate.parameter_changes) for candidate in candidates]
-        prefix = f"phase2/simulation_jobs/{job.simulation_job_id}/exports/{generation}"
+        phase = "phase2" if job.adapter_type == "manual" else "phase3"
+        prefix = f"{phase}/simulation_jobs/{job.simulation_job_id}/exports/{generation}"
         batch_ref = self._artifact_store.put_bytes(
             f"{prefix}/simulation_batch.csv",
             batch.to_csv(index=False).encode("utf-8"),
@@ -174,7 +270,7 @@ class SimulationJobService:
         manifest.update(
             {
                 "simulation_job_id": job.simulation_job_id,
-                "adapter_type": "manual",
+                "adapter_type": job.adapter_type,
                 "batch_ref": batch_ref.uri,
                 "batch_sha256": batch_ref.sha256,
                 "parameter_columns": list(config["parameter_columns"]),
@@ -211,6 +307,19 @@ class SimulationJobService:
                         simulation_job_id=job.simulation_job_id,
                     )
                 )
+        if job.adapter_type != "manual":
+            if self._simulator_registry is None:
+                raise SimulationJobConflict("registered offline adapter is unavailable")
+            adapter = self._simulator_registry.get(job.adapter_type)
+            with TemporaryDirectory(prefix="circuitpilot-offline-export-") as temporary:
+                manifest_path = adapter.export_job(updated, self._artifact_store, Path(temporary))
+                refs = self._artifact_store.publish_directory(
+                    f"phase3/simulation_jobs/{job.simulation_job_id}/offline_exports/{generation}",
+                    Path(temporary),
+                )
+            manifest_ref = next(ref for ref in refs if ref.key.endswith(f"/{manifest_path.name}"))
+            updated = replace(updated, command_manifest_ref=manifest_ref.uri)
+            self._repository.update_simulation_job(updated)
         self._audit(updated, "simulation_job.exported", {"batch_ref": batch_ref.uri})
         return updated
 

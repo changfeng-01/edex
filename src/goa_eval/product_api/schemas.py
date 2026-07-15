@@ -61,6 +61,7 @@ class CandidateDecision(BaseModel):
 class SimulationJobCreate(BaseModel):
     candidate_ids: list[str] = Field(min_length=1)
     adapter_type: str = "manual"
+    input_manifest_ref: str | None = None
 
 
 class ImportCommit(BaseModel):

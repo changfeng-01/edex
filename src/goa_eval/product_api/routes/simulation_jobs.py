@@ -19,7 +19,21 @@ def create_simulation_job(
     container: ProductContainer = Depends(get_container),
 ):
     try:
-        record = container.simulation_job_service.create_manual_job(payload.candidate_ids, payload.adapter_type)
+        if payload.adapter_type == "manual":
+            record = container.simulation_job_service.create_manual_job(payload.candidate_ids)
+        else:
+            availability = container.simulator_registry.availability(payload.adapter_type)
+            if availability.execution_enabled:
+                record = container.simulation_job_service.create_execution_job(
+                    payload.candidate_ids,
+                    payload.adapter_type,
+                    payload.input_manifest_ref,
+                )
+            else:
+                record = container.simulation_job_service.create_offline_job(
+                    payload.candidate_ids,
+                    payload.adapter_type,
+                )
         return success(record, status_code=201)
     except Exception as exc:
         raise translate_domain_error(exc) from exc
@@ -74,6 +88,33 @@ def commit_import(
 @router.post("/simulation-jobs/{job_id}:retry")
 def retry_job(job_id: str, container: ProductContainer = Depends(get_container)):
     try:
-        return success(container.simulation_job_service.retry_job(job_id))
+        job = container.repository.get_simulation_job(job_id)
+        if job is None:
+            raise SimulationJobConflict(f"simulation job was not found: {job_id}")
+        retried = (
+            container.simulation_job_service.retry_job(job_id)
+            if job.adapter_type == "manual"
+            else container.simulation_job_service.retry_execution(job_id)
+        )
+        return success(retried)
+    except Exception as exc:
+        raise translate_domain_error(exc) from exc
+
+
+@router.post("/simulation-jobs/{job_id}:queue")
+def queue_job(job_id: str, container: ProductContainer = Depends(get_container)):
+    try:
+        return success(container.simulation_job_service.queue_execution(job_id))
+    except Exception as exc:
+        raise translate_domain_error(exc) from exc
+
+
+@router.post("/simulation-jobs/{job_id}:execute")
+def execute_job(job_id: str, container: ProductContainer = Depends(get_container)):
+    try:
+        result = container.job_runner.run_job(job_id)
+        if result is None:
+            raise SimulationJobConflict("simulation job is not available for execution")
+        return success(result)
     except Exception as exc:
         raise translate_domain_error(exc) from exc

@@ -4,17 +4,18 @@ import json
 import os
 import subprocess
 from dataclasses import dataclass, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from typing import Any, Mapping, Sequence
 
 from goa_eval.product.models import (
     AuditEventRecord,
+    CandidateStatus,
     SimulationJobRecord,
     SimulationJobStatus,
     new_id,
 )
-from goa_eval.product.state_machine import transition_simulation_job
+from goa_eval.product.state_machine import transition_candidate, transition_simulation_job
 
 
 class JobExecutionDisabled(PermissionError):
@@ -27,6 +28,7 @@ class ExecutionCommand:
     cwd: Path | None = None
     env: Mapping[str, str] | None = None
     evidence: Mapping[str, Any] | None = None
+    output_files: tuple[str, ...] | Sequence[str] = ()
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,26 @@ class ProductJobRunner:
                     cwd=cwd,
                     env=environment,
                 )
+                result_manifest_ref = None
+                if completed.returncode == 0:
+                    try:
+                        result_manifest_ref = self._persist_outputs(
+                            claimed,
+                            work_dir,
+                            command.output_files,
+                            dict(command.evidence or {}),
+                        )
+                    except FileNotFoundError as exc:
+                        return self._finish(
+                            claimed,
+                            argv,
+                            stdout=completed.stdout or "",
+                            stderr=str(exc),
+                            exit_code=completed.returncode,
+                            timed_out=False,
+                            evidence=dict(command.evidence or {}),
+                            error_code_override="SIMULATION_OUTPUT_MISSING",
+                        )
                 return self._finish(
                     claimed,
                     argv,
@@ -88,6 +110,7 @@ class ProductJobRunner:
                     exit_code=completed.returncode,
                     timed_out=False,
                     evidence=dict(command.evidence or {}),
+                    result_manifest_ref=result_manifest_ref,
                 )
             except subprocess.TimeoutExpired as exc:
                 return self._finish(
@@ -122,15 +145,23 @@ class ProductJobRunner:
         timed_out: bool,
         evidence: Mapping[str, Any],
         internal_error: bool = False,
+        error_code_override: str | None = None,
+        result_manifest_ref: Any | None = None,
     ) -> JobRunResult:
-        successful = not timed_out and not internal_error and exit_code == 0
-        status = SimulationJobStatus.COMPLETED if successful else SimulationJobStatus.FAILED
-        error_code = None
+        successful = (
+            not timed_out
+            and not internal_error
+            and error_code_override is None
+            and exit_code == 0
+            and result_manifest_ref is not None
+        )
+        status = SimulationJobStatus.WAITING_FOR_RESULTS if successful else SimulationJobStatus.FAILED
+        error_code = error_code_override
         if timed_out:
             error_code = "SIMULATION_TIMEOUT"
         elif internal_error:
             error_code = "SIMULATION_RUNNER_ERROR"
-        elif not successful:
+        elif not successful and error_code is None:
             error_code = "SIMULATION_PROCESS_FAILED"
         log = {
             "simulation_job_id": job.simulation_job_id,
@@ -139,12 +170,13 @@ class ProductJobRunner:
             "argv": list(argv),
             "shell": False,
             "timeout": timed_out,
-            "status": "completed" if successful else "timeout" if timed_out else "failed",
+            "status": "waiting_for_results" if successful else "timeout" if timed_out else "failed",
             "stdout": stdout,
             "stderr": stderr,
             "exit_code": exit_code,
             "error_code": error_code,
             "evidence": dict(evidence),
+            "result_manifest_ref": result_manifest_ref.uri if result_manifest_ref is not None else None,
         }
         log_ref = self._artifact_store.put_bytes(
             f"phase3/simulation_jobs/{job.simulation_job_id}/attempts/{job.attempt}/execution_log.json",
@@ -154,27 +186,77 @@ class ProductJobRunner:
             job,
             status=transition_simulation_job(job.status, status),
             logs_ref=log_ref.uri,
+            result_manifest_ref=result_manifest_ref.uri if result_manifest_ref is not None else None,
+            result_ref=result_manifest_ref,
             error_code=error_code,
             retryable=not successful,
         )
-        self._repository.update_simulation_job(updated)
-        self._repository.append_audit_event(
-            AuditEventRecord(
-                event_id=new_id("event"),
-                actor_id="job_runner",
-                action="simulation_job.execution_finished",
-                subject_type="simulation_job",
-                subject_id=job.simulation_job_id,
-                details={
-                    "attempt": job.attempt,
-                    "status": status.value,
-                    "exit_code": exit_code,
-                    "error_code": error_code,
-                    "logs_ref": log_ref.uri,
-                },
-            )
+        candidate_updates = []
+        if status == SimulationJobStatus.FAILED:
+            for candidate_id in job.candidate_ids:
+                candidate = self._repository.get_candidate(candidate_id)
+                if candidate is not None and candidate.status == CandidateStatus.SIMULATION_PENDING:
+                    candidate_updates.append(
+                        replace(
+                            candidate,
+                            status=transition_candidate(candidate.status, CandidateStatus.SIMULATION_FAILED),
+                        )
+                    )
+        event = AuditEventRecord(
+            event_id=new_id("event"),
+            actor_id="job_runner",
+            action="simulation_job.execution_finished",
+            subject_type="simulation_job",
+            subject_id=job.simulation_job_id,
+            details={
+                "attempt": job.attempt,
+                "status": status.value,
+                "exit_code": exit_code,
+                "error_code": error_code,
+                "logs_ref": log_ref.uri,
+            },
         )
+        self._repository.apply_simulation_job_update(updated, candidate_updates, event)
         return JobRunResult(job.simulation_job_id, job.attempt, exit_code, timed_out, log_ref.uri)
+
+    def _persist_outputs(
+        self,
+        job: SimulationJobRecord,
+        work_dir: Path,
+        output_files: Sequence[str],
+        evidence: Mapping[str, Any],
+    ) -> Any:
+        refs = []
+        for relative_name in output_files:
+            relative = PurePosixPath(str(relative_name))
+            if (
+                relative.is_absolute()
+                or "\\" in str(relative_name)
+                or any(part in {"", ".", ".."} for part in relative.parts)
+            ):
+                raise ValueError(f"adapter declared an invalid output path: {relative_name!r}")
+            source = work_dir.joinpath(*relative.parts).resolve()
+            if work_dir not in source.parents or not source.is_file() or source.is_symlink():
+                raise FileNotFoundError(f"declared simulator output is missing: {relative.as_posix()}")
+            refs.append(
+                self._artifact_store.put_file(
+                    f"phase3/simulation_jobs/{job.simulation_job_id}/attempts/{job.attempt}/outputs/{relative.as_posix()}",
+                    source,
+                )
+            )
+        manifest = {
+            "simulation_job_id": job.simulation_job_id,
+            "adapter_type": job.adapter_type,
+            "attempt": job.attempt,
+            "outputs": [
+                {"uri": ref.uri, "sha256": ref.sha256, "size_bytes": ref.size_bytes} for ref in refs
+            ],
+            "evidence": dict(evidence),
+        }
+        return self._artifact_store.put_bytes(
+            f"phase3/simulation_jobs/{job.simulation_job_id}/attempts/{job.attempt}/result_manifest.json",
+            (json.dumps(manifest, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8"),
+        )
 
     @staticmethod
     def _validated_argv(argv: Sequence[str]) -> tuple[str, ...]:

@@ -231,6 +231,36 @@ class SqlAlchemyProductRepository:
             ).all()
             return [_candidate_record(row) for row in rows]
 
+    def apply_pia_mapping(
+        self,
+        candidates: list[CandidateRecord],
+        jobs: tuple[SimulationJobRecord, ...],
+        experiment: OptimizationExperimentRecord,
+        events: list[AuditEventRecord],
+    ) -> None:
+        """Commit one PIA product mapping as a single database transaction."""
+        with self._sessions.begin() as session:
+            experiment_row = session.get(OptimizationExperimentORM, experiment.experiment_id)
+            if experiment_row is None:
+                raise KeyError(experiment.experiment_id)
+            for record in candidates:
+                payload = asdict(record)
+                payload["reason_codes"] = list(record.reason_codes)
+                payload["status"] = record.status.value
+                session.add(CandidateORM(**payload))
+            for record in jobs:
+                row = session.get(SimulationJobORM, record.simulation_job_id)
+                if row is None:
+                    payload = asdict(record)
+                    payload["candidate_ids"] = list(record.candidate_ids)
+                    payload["status"] = record.status.value
+                    session.add(SimulationJobORM(**payload))
+                else:
+                    _assign_simulation_job(row, record)
+            _assign_experiment(experiment_row, experiment)
+            for event_record in events:
+                session.add(AuditEventORM(**asdict(event_record)))
+
     def add_simulation_job(self, record: SimulationJobRecord) -> None:
         payload = asdict(record)
         payload["candidate_ids"] = list(record.candidate_ids)
@@ -244,6 +274,25 @@ class SqlAlchemyProductRepository:
             if row is None:
                 raise KeyError(record.simulation_job_id)
             _assign_simulation_job(row, record)
+
+    def apply_simulation_job_update(
+        self,
+        job: SimulationJobRecord,
+        candidates: list[CandidateRecord],
+        event_record: AuditEventRecord,
+    ) -> None:
+        """Commit a job, its candidate states, and audit event atomically."""
+        with self._sessions.begin() as session:
+            job_row = session.get(SimulationJobORM, job.simulation_job_id)
+            if job_row is None:
+                raise KeyError(job.simulation_job_id)
+            _assign_simulation_job(job_row, job)
+            for candidate in candidates:
+                candidate_row = session.get(CandidateORM, candidate.candidate_id)
+                if candidate_row is None:
+                    raise KeyError(candidate.candidate_id)
+                _assign_candidate(candidate_row, candidate)
+            session.add(AuditEventORM(**asdict(event_record)))
 
     def get_simulation_job(self, job_id: str) -> SimulationJobRecord | None:
         with self._sessions() as session:

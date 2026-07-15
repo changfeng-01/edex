@@ -7,7 +7,7 @@ import pytest
 from goa_eval.product.artifact_store import LocalArtifactStore
 from goa_eval.product.database import create_schema, make_engine
 from goa_eval.product.experiment_service import ExperimentService
-from goa_eval.product.models import ExperimentStatus
+from goa_eval.product.models import ExperimentStatus, SimulationJobStatus
 from goa_eval.product.pia_experiment_adapter import PiaExperimentAdapter
 from goa_eval.product.project_service import ProjectService
 from goa_eval.product.repositories import SqlAlchemyProductRepository
@@ -126,6 +126,12 @@ def test_maps_pending_pia_generation_to_product_candidates_and_events(pia_produc
         {"x1": 2.5, "x2": 3.0},
     ]
     assert all(candidate.must_resimulate is True for candidate in mapping.candidates)
+    assert len(mapping.jobs) == 1
+    assert mapping.jobs[0].status == SimulationJobStatus.WAITING_FOR_RESULTS
+    assert mapping.jobs[0].candidate_ids == tuple(candidate.candidate_id for candidate in mapping.candidates)
+    assert mapping.jobs[0].input_manifest_ref.endswith("/generation_000/simulation_manifest.json")
+    assert mapping.jobs[0].batch_ref is not None
+    assert repository.get_simulation_job(mapping.jobs[0].simulation_job_id) == mapping.jobs[0]
     events = repository.list_audit_events("experiment", experiment.experiment_id)
     generation_events = [event for event in events if event.action == "pia.generation.mapped"]
     assert len(generation_events) == 1
@@ -149,6 +155,8 @@ def test_mapping_resume_is_idempotent_and_does_not_duplicate_candidates(pia_prod
         candidate.candidate_id for candidate in first.candidates
     ]
     assert len(repository.list_candidates(experiment.experiment_id)) == 2
+    assert [job.simulation_job_id for job in second.jobs] == [job.simulation_job_id for job in first.jobs]
+    assert len(repository.list_simulation_jobs(experiment.project_id)) == 1
     events = repository.list_audit_events("experiment", experiment.experiment_id)
     assert sum(event.action == "pia.generation.mapped" for event in events) == 1
 
@@ -217,3 +225,58 @@ def test_adapter_wraps_native_evolution_runner_and_resume_loader(pia_product_con
     assert mapping.experiment.state == ExperimentStatus.WAITING_FOR_SIMULATION
     assert calls == [(history, pool, {"parameter_columns": ["x1", "x2"]}, output, {"generations": 2})]
     assert adapter.load_resume_state(output, 0) == {"output_dir": output, "generation": 0}
+
+
+def test_completed_pia_output_maps_to_completed_experiment(pia_product_context):
+    repository, store, experiment, tmp_path = pia_product_context
+    output = tmp_path / "pia-output"
+    _write_pending_generation(output)
+    summary_path = output / "generation_000" / "generation_summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["status"] = {"status": "results_imported", "mode": "local_fixture"}
+    summary["must_resimulate"] = False
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    imported = pd.read_csv(output / "generation_000" / "simulation_batch.csv")
+    imported["must_resimulate"] = False
+    imported.to_csv(output / "generation_000" / "imported_results.csv", index=False)
+    evolution_path = output / "evolution_summary.json"
+    evolution = json.loads(evolution_path.read_text(encoding="utf-8"))
+    evolution["stop_reason"] = "max_generations"
+    evolution_path.write_text(json.dumps(evolution), encoding="utf-8")
+
+    mapping = PiaExperimentAdapter(repository, store).map_output(
+        experiment.experiment_id,
+        output,
+        parameter_columns=("x1", "x2"),
+    )
+
+    assert mapping.experiment.state == ExperimentStatus.COMPLETED
+    assert mapping.jobs[0].status == SimulationJobStatus.COMPLETED
+    event = next(event for event in repository.list_audit_events("experiment", experiment.experiment_id) if event.action == "pia.generation.mapped")
+    assert event.details["state"] == "completed"
+
+
+def test_mapping_publishes_only_declared_and_boundary_validated_pia_artifacts(pia_product_context):
+    repository, store, experiment, tmp_path = pia_product_context
+    output = tmp_path / "pia-output"
+    _write_pending_generation(output)
+    (output / "unrelated_secret.txt").write_text("do not publish", encoding="utf-8")
+
+    mapping = PiaExperimentAdapter(repository, store).map_output(
+        experiment.experiment_id,
+        output,
+        parameter_columns=("x1", "x2"),
+    )
+
+    assert all(not ref.key.endswith("unrelated_secret.txt") for ref in mapping.artifacts)
+
+    summary_path = output / "generation_000" / "generation_summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["engineering_validity"] = "physical_validation"
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    with pytest.raises(ValueError, match="engineering_validity"):
+        PiaExperimentAdapter(repository, LocalArtifactStore(tmp_path / "other-artifacts")).map_output(
+            experiment.experiment_id,
+            output,
+            parameter_columns=("x1", "x2"),
+        )
