@@ -6,6 +6,7 @@ profiles:
     boundary:
       data_source: "real_simulation_csv"
       engineering_validity: "simulation_only"
+      must_resimulate: true
     metrics: {}
 
   goa_8k_lcd_reference:
@@ -18,6 +19,7 @@ profiles:
     boundary:
       data_source: "real_simulation_csv"
       engineering_validity: "simulation_only"
+      must_resimulate: true
     reference:
       source: "literature_reference"
       note: "Lei Tengteng thesis 8K LCD GOA reference values; not reproduced by this repository."
@@ -183,15 +185,15 @@ profiles:
       - two_stage_opamp
       - amplifier
     boundary:
-      data_source: "real_simulation_artifacts"
+      data_source: "real_simulation_csv"
       engineering_validity: "simulation_only"
+      must_resimulate: true
     required_analyses:
       - op
       - ac
       - tran
     optional_analyses:
       - dc
-      - noise
     metrics:
       dc_gain_db:
         source: ac_metrics
@@ -266,3 +268,226 @@ profiles:
           direction: increase
           priority: 85
           rationale: "Increasing compensation capacitance may improve phase margin but reduce bandwidth."
+
+  ota_general_v2:
+    type: "analog_amplifier"
+    aliases:
+      - ota_v2
+      - opamp_v2
+      - two_stage_opamp_v2
+      - amplifier_v2
+    boundary:
+      data_source: "real_simulation_csv"
+      engineering_validity: "simulation_only"
+      must_resimulate: true
+    required_analyses:
+      - op
+      - ac
+      - tran
+    optional_analyses:
+      - dc
+    node_rules:
+      input:
+        - "v(in)"
+      output:
+        - "v(out)"
+    metrics:
+      dc_gain_db:
+        source: ac_metrics
+        source_analysis: ac
+        unit: dB
+        minimum: 60dB
+        direction: larger_better
+      unity_gain_hz:
+        source: ac_metrics
+        source_analysis: ac
+        unit: Hz
+        minimum: 20MHz
+        direction: larger_better
+      bandwidth_3db_hz:
+        source: ac_metrics
+        source_analysis: ac
+        unit: Hz
+        minimum: 1MHz
+        direction: larger_better
+      static_power_w:
+        source: op_metrics
+        source_analysis: op
+        unit: W
+        maximum: 5mW
+        direction: smaller_better
+      slew_rate_v_per_s:
+        source: tran_metrics
+        source_analysis: tran
+        unit: V/s
+        minimum: 10000000.0
+        direction: larger_better
+      output_swing_v:
+        source: tran_metrics
+        source_analysis: tran
+        unit: V
+        minimum: 1.0
+        direction: larger_better
+    hard_constraints:
+      dc_gain_db:
+        minimum: 60dB
+      static_power_w:
+        maximum: 5mW
+    objective:
+      scalarization:
+        method: weighted_sum
+        missing_metric_policy: not_evaluable
+      weights:
+        dc_gain_db: 0.20
+        unity_gain_hz: 0.20
+        bandwidth_3db_hz: 0.15
+        static_power_w: 0.20
+        slew_rate_v_per_s: 0.15
+        output_swing_v: 0.10
+    candidate_rules:
+      dc_gain_db:
+        - semantic_tags:
+            - input_pair_width
+            - gain_device_width
+            - gm_control
+          direction: increase
+          priority: 92
+          rationale: "Increase effective transconductance or gain-device dimensions for gain recovery."
+      unity_gain_hz:
+        - semantic_tags:
+            - bias_current
+            - speed_power_tradeoff
+          direction: increase
+          priority: 88
+          rationale: "Increasing bias current may improve bandwidth but increases static power."
+      static_power_w:
+        - semantic_tags:
+            - bias_current
+          direction: decrease
+          priority: 96
+          rationale: "Reduce bias current when static power dominates."
+      bandwidth_3db_hz:
+        - semantic_tags:
+            - compensation_capacitance
+            - speed_power_tradeoff
+          direction: review_tradeoff
+          priority: 85
+          rationale: "Review compensation and bias trade-offs when measured bandwidth is insufficient."
+
+  comparator_general:
+    type: "analog_comparator"
+    aliases:
+      - comparator
+      - voltage_comparator
+    boundary:
+      data_source: "real_simulation_csv"
+      engineering_validity: "simulation_only"
+      must_resimulate: true
+    required_analyses:
+      - op
+      - dc
+    optional_analyses:
+      - tran
+    node_rules:
+      input:
+        - "input_v"
+      output:
+        - "output_v"
+    metrics:
+      switching_threshold_v:
+        source: dc_metrics
+        source_analysis: dc
+        unit: V
+        target: 0.9V
+        tolerance: 0.1V
+        direction: target
+      output_swing_v:
+        source: dc_metrics
+        source_analysis: dc
+        unit: V
+        minimum: 1.6V
+        direction: larger_better
+      static_power_w:
+        source: op_metrics
+        source_analysis: op
+        unit: W
+        maximum: 1mW
+        direction: smaller_better
+    hard_constraints:
+      output_swing_v:
+        minimum: 1.6V
+      static_power_w:
+        maximum: 1mW
+    objective:
+      scalarization:
+        method: weighted_sum
+        missing_metric_policy: not_evaluable
+      weights:
+        switching_threshold_v: 0.35
+        output_swing_v: 0.35
+        static_power_w: 0.30
+
+  oscillator_general:
+    type: "ring_oscillator"
+    aliases:
+      - oscillator
+      - ring_oscillator
+      - ring_osc
+    boundary:
+      data_source: "real_simulation_csv"
+      engineering_validity: "simulation_only"
+      must_resimulate: true
+    required_analyses:
+      - op
+      - tran
+    node_rules:
+      output:
+        - "v(out)"
+    metrics:
+      frequency_hz:
+        source: tran_metrics
+        source_analysis: tran
+        unit: Hz
+        minimum: 100kHz
+        direction: larger_better
+      period_std_s:
+        source: tran_metrics
+        source_analysis: tran
+        unit: s
+        maximum: 100ns
+        direction: smaller_better
+      startup_time_s:
+        source: tran_metrics
+        source_analysis: tran
+        unit: s
+        maximum: 10us
+        direction: smaller_better
+      output_swing_v:
+        source: tran_metrics
+        source_analysis: tran
+        unit: V
+        minimum: 1.6V
+        direction: larger_better
+      static_power_w:
+        source: op_metrics
+        source_analysis: op
+        unit: W
+        maximum: 2mW
+        direction: smaller_better
+    hard_constraints:
+      frequency_hz:
+        minimum: 100kHz
+      output_swing_v:
+        minimum: 1.6V
+      static_power_w:
+        maximum: 2mW
+    objective:
+      scalarization:
+        method: weighted_sum
+        missing_metric_policy: not_evaluable
+      weights:
+        frequency_hz: 0.30
+        period_std_s: 0.15
+        startup_time_s: 0.15
+        output_swing_v: 0.20
+        static_power_w: 0.20

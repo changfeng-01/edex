@@ -47,11 +47,19 @@ def deterministic_generator(config, max_candidates, seed):
     ]
 
 
-def test_create_and_generate_are_deterministic_and_persisted(experiment_context):
-    from goa_eval.product.experiment_service import ExperimentService
+def test_create_and_generate_are_deterministic_and_persisted(experiment_context, monkeypatch):
+    import goa_eval.product.experiment_service as experiment_module
+
+    candidate_record = experiment_module.CandidateRecord
+
+    def coarse_clock_candidate(**kwargs):
+        kwargs.setdefault("created_at", "2026-01-01T00:00:00+00:00")
+        return candidate_record(**kwargs)
+
+    monkeypatch.setattr(experiment_module, "CandidateRecord", coarse_clock_candidate)
 
     repository, project, baseline = experiment_context
-    service = ExperimentService(repository, generators={"rule": deterministic_generator})
+    service = experiment_module.ExperimentService(repository, generators={"rule": deterministic_generator})
     experiment = service.create_experiment(
         project.project_id,
         baseline.design_version_id,
@@ -67,6 +75,9 @@ def test_create_and_generate_are_deterministic_and_persisted(experiment_context)
     assert all(candidate.parent_design_version_id == baseline.design_version_id for candidate in first)
     assert all(candidate.must_resimulate is True for candidate in first)
     assert first[0].selection_score == 0.9
+    assert [candidate.created_at for candidate in first] == sorted(
+        {candidate.created_at for candidate in first}
+    )
     assert repository.list_candidates(experiment.experiment_id) == first
 
 

@@ -20,6 +20,11 @@ def test_load_circuit_profiles_resolves_aliases_and_units():
     assert ota["metrics"]["unity_gain_hz"]["minimum"] == 20_000_000.0
     assert ota["profile_source"].endswith("config/circuit_profiles.yaml")
 
+    ota_v2 = resolve_circuit_profile("ota_v2", profiles)
+    assert ota_v2["name"] == "ota_general_v2"
+    assert "phase_margin_deg" in ota["metrics"]
+    assert "bandwidth_3db_hz" in ota_v2["metrics"]
+
 
 def test_load_circuit_profiles_resolves_goa_8k_reference_profile():
     profiles = load_circuit_profiles(Path("config/circuit_profiles.yaml"))
@@ -71,3 +76,138 @@ parameters:
 
     with pytest.raises(ValueError, match="missing_tag"):
         validate_profile_references(profile_file=profile_file, semantics_file=semantics_file)
+
+
+def test_load_circuit_profiles_rejects_duplicate_aliases(tmp_path):
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        """
+profiles:
+  ota:
+    aliases: [shared]
+    metrics: {}
+  comparator:
+    aliases: [shared]
+    metrics: {}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate circuit profile alias.*shared"):
+        load_circuit_profiles(profile_file)
+
+
+def test_load_circuit_profiles_rejects_duplicate_aliases_within_one_profile(tmp_path):
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        """
+profiles:
+  ota:
+    aliases: [shared, shared]
+    metrics: {}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate circuit profile alias.*shared"):
+        load_circuit_profiles(profile_file)
+
+
+@pytest.mark.parametrize("identifier", ["ota/bad", "../ota", "ota bad"])
+def test_load_circuit_profiles_rejects_unsafe_identifiers(tmp_path, identifier):
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        f"profiles:\n  {identifier!r}:\n    aliases: []\n    metrics: {{}}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="invalid circuit profile identifier"):
+        load_circuit_profiles(profile_file)
+
+
+def test_load_circuit_profiles_rejects_unregistered_analysis_and_source(tmp_path):
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        """
+profiles:
+  ota:
+    aliases: []
+    required_analyses: [foo]
+    metrics:
+      dc_gain_db:
+        source: foo_metrics
+        source_analysis: foo
+        unit: dB
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unregistered analysis: foo"):
+        load_circuit_profiles(profile_file)
+
+    profile_file.write_text(
+        """
+profiles:
+  ota:
+    aliases: []
+    required_analyses: [ac]
+    metrics:
+      dc_gain_db:
+        source: made_up_metrics
+        source_analysis: ac
+        unit: dB
+""".strip(),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="must use source ac_metrics"):
+        load_circuit_profiles(profile_file)
+
+
+def test_load_circuit_profiles_rejects_metric_from_unsupported_analysis(tmp_path):
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        """
+profiles:
+  ota:
+    aliases: []
+    required_analyses: [op]
+    metrics:
+      dc_gain_db:
+        source: ac_metrics
+        source_analysis: ac
+        unit: dB
+        minimum: 40dB
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="dc_gain_db.*unsupported analysis: ac"):
+        load_circuit_profiles(profile_file)
+
+
+def test_load_circuit_profiles_rejects_unknown_required_metric_and_wrong_units(tmp_path):
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        """
+profiles:
+  oscillator:
+    aliases: []
+    required_analyses: [tran]
+    metrics:
+      frequency_hz:
+        source: tran_metrics
+        source_analysis: tran
+        unit: Hz
+        minimum: 2mV
+    hard_constraints:
+      missing_metric:
+        maximum: 1
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError) as error:
+        load_circuit_profiles(profile_file)
+
+    assert "missing_metric" in str(error.value)
+    assert "2mV" in str(error.value)

@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "fixture_kind": "synthetic_contract_fixture",
+  "hash_normalization": "utf8_lf",
+  "files": {
+    "ac_metrics.csv": "f28d6604962e42409e7f8d644dcd37c051e30bb02b8353d34b984335ffd7c295",
+    "op_metrics.csv": "d610bae1c11687f72db5b1ccdec9158eb32bdea5b175025e99ba632b86e40a85",
+    "tran_metrics.csv": "fbc27332cac0d26ca1f179970c712fe9eed34c8fa2d5cd5082107a90bac8a228"
+  }
+}

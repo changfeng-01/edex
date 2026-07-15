@@ -320,6 +320,9 @@ python scripts/build_public_demo.py
 
 Core documentation:
 
+- `docs/product_quickstart.md`
+- `docs/product_architecture.md`
+- `docs/product_migration.md`
 - `docs/reproduce_results.md`
 - `docs/schema_spec.md`
 - `docs/metrics_spec.md`

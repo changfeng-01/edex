@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -87,7 +88,16 @@ class ExperimentService:
         if generator is None:
             raise ValueError(f"unsupported candidate strategy: {strategy}")
         proposals = generator(experiment.strategy_config, max_candidates, seed)[:max_candidates]
-        candidates = [self._candidate_from_proposal(experiment, strategy, proposal) for proposal in proposals]
+        generation_started_at = dt.datetime.now(dt.timezone.utc)
+        candidates = [
+            self._candidate_from_proposal(
+                experiment,
+                strategy,
+                proposal,
+                created_at=(generation_started_at + dt.timedelta(microseconds=index)).isoformat(),
+            )
+            for index, proposal in enumerate(proposals)
+        ]
         for candidate in candidates:
             self._repository.add_candidate(candidate)
         config = dict(experiment.strategy_config)
@@ -166,6 +176,8 @@ class ExperimentService:
         experiment: OptimizationExperimentRecord,
         strategy: str,
         proposal: Mapping[str, Any],
+        *,
+        created_at: str,
     ) -> CandidateRecord:
         changes = proposal.get("parameter_changes")
         if not isinstance(changes, dict) or not changes:
@@ -181,6 +193,7 @@ class ExperimentService:
             selection_score=self._float_or_none(proposal.get("selection_score")),
             selection_scores=dict(proposal.get("selection_scores") or {}),
             must_resimulate=True,
+            created_at=created_at,
         )
 
     def _audit(

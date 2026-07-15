@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 import yaml
 
-from goa_eval.circuit_profiles import load_circuit_profiles, resolve_circuit_profile
+from goa_eval.parameter_semantics import DEFAULT_PARAMETER_SEMANTICS_PATH
 from goa_eval.product.artifact_store import ArtifactRef, ArtifactStore
 from goa_eval.product.models import (
     AuditEventRecord,
@@ -20,6 +20,7 @@ from goa_eval.product.models import (
     new_id,
 )
 from goa_eval.product_demo.schemas import normalize_evidence_boundary
+from goa_eval.product.profile_service import ProfileService, ProfileServiceError
 
 
 class ProjectServiceError(ValueError):
@@ -32,6 +33,9 @@ class ProductNotFoundError(ProjectServiceError):
 
 class InvalidCircuitProfile(ProjectServiceError):
     pass
+
+
+PROJECT_EVIDENCE_ORDER = {"profile_snapshot": 0, "spec_snapshot": 1}
 
 
 @dataclass(frozen=True)
@@ -49,12 +53,19 @@ class ProjectService:
         artifact_store: ArtifactStore,
         *,
         circuit_profile_path: Path = Path("config/circuit_profiles.yaml"),
+        parameter_semantics_path: Path = DEFAULT_PARAMETER_SEMANTICS_PATH,
         default_spec_path: Path = Path("config/spec.yaml"),
+        profile_service: ProfileService | None = None,
     ) -> None:
         self._repository = repository
         self._artifact_store = artifact_store
         self._circuit_profile_path = Path(circuit_profile_path)
         self._default_spec_path = Path(default_spec_path)
+        self._profile_service = profile_service or ProfileService(
+            artifact_store,
+            profile_path=self._circuit_profile_path,
+            semantics_path=parameter_semantics_path,
+        )
 
     def create_workspace(self, name: str, actor_id: str = "user_local") -> WorkspaceRecord:
         normalized_name = name.strip()
@@ -97,13 +108,16 @@ class ProjectService:
             project_id=new_id("project"),
             workspace_id=workspace_id,
             name=normalized_name,
-            circuit_profile_id=str(profile["name"]),
+            circuit_profile_id=str(profile["profile_id"]),
             spec_revision_id=spec_revision_id,
         )
         prefix = f"workspaces/{workspace_id}/projects/{project.project_id}/config"
-        profile_ref = self._artifact_store.put_bytes(
-            f"{prefix}/profile_snapshot.json",
-            _canonical_json(profile),
+        snapshot = profile["snapshot_ref"]
+        profile_ref = ArtifactRef(
+            uri=str(snapshot["uri"]),
+            key=str(snapshot["key"]),
+            size_bytes=int(snapshot["size_bytes"]),
+            sha256=str(snapshot["sha256"]),
         )
         spec_ref = self._artifact_store.put_bytes(
             f"{prefix}/spec_snapshot.json",
@@ -207,7 +221,16 @@ class ProjectService:
         versions = tuple(self._repository.list_design_versions(project_id))
         runs = self._repository.list_analysis_runs(project_id=project_id)
         latest = self._repository.get_latest_analysis_run(project_id)
-        evidence = self._repository.list_evidence("project", project_id)
+        evidence = tuple(
+            sorted(
+                self._repository.list_evidence("project", project_id),
+                key=lambda record: (
+                    PROJECT_EVIDENCE_ORDER.get(record.evidence_type, 99),
+                    record.evidence_type,
+                    record.evidence_id,
+                ),
+            )
+        )
         return ProjectOverview(
             project=project,
             design_versions=versions,
@@ -220,21 +243,12 @@ class ProjectService:
         )
 
     def _resolve_profile(self, circuit_profile_id: str) -> dict[str, Any]:
-        profiles = load_circuit_profiles(self._circuit_profile_path)
-        wanted = _normalized_identifier(circuit_profile_id)
-        if not wanted:
+        if not _normalized_identifier(circuit_profile_id):
             raise InvalidCircuitProfile("circuit profile is required")
-        known = {
-            _normalized_identifier(alias)
-            for name, profile in profiles.items()
-            for alias in (name, *(profile.get("aliases", []) or []))
-        }
-        if wanted not in known:
-            raise InvalidCircuitProfile(f"circuit profile was not found: {circuit_profile_id}")
-        resolved = dict(resolve_circuit_profile(circuit_profile_id, profiles))
-        resolved.pop("profile_source", None)
-        resolved["boundary"] = normalize_evidence_boundary(resolved.get("boundary"))
-        return _normalized_mapping(resolved)
+        try:
+            return self._profile_service.get_profile(circuit_profile_id)
+        except ProfileServiceError as exc:
+            raise InvalidCircuitProfile(str(exc)) from exc
 
     @staticmethod
     def _load_spec(path: Path) -> dict[str, Any]:

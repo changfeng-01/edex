@@ -1,0 +1,11 @@
+{
+  "profile_id": "ota_general_v2",
+  "metrics": {
+    "dc_gain_db": {"source": "ac_metrics", "value": 70.0},
+    "bandwidth_3db_hz": {"source": "ac_metrics", "value": 10000.0},
+    "unity_gain_hz": {"source": "ac_metrics", "value": 20000000.0},
+    "static_power_w": {"source": "op_metrics", "value": 0.0018},
+    "slew_rate_v_per_s": {"source": "tran_metrics", "value": 18000000.0},
+    "output_swing_v": {"source": "tran_metrics", "value": 1.8}
+  }
+}
