@@ -41,10 +41,17 @@ class SimulationImportPreview:
 
 
 class SimulationJobService:
-    def __init__(self, repository: Any, artifact_store: Any, project_service: Any) -> None:
+    def __init__(
+        self,
+        repository: Any,
+        artifact_store: Any,
+        project_service: Any,
+        simulator_registry: Any | None = None,
+    ) -> None:
         self._repository = repository
         self._artifact_store = artifact_store
         self._project_service = project_service
+        self._simulator_registry = simulator_registry
 
     def create_manual_job(
         self,
@@ -74,6 +81,70 @@ class SimulationJobService:
         self._repository.add_simulation_job(job)
         self._audit(job, "simulation_job.created", {"candidate_ids": list(ids)})
         return job
+
+    def create_execution_job(
+        self,
+        candidate_ids: Iterable[str],
+        adapter_type: str,
+    ) -> SimulationJobRecord:
+        if adapter_type == "manual" or self._simulator_registry is None:
+            raise SimulationJobConflict("a registered execution adapter is required")
+        self._simulator_registry.get(adapter_type)
+        ids = tuple(dict.fromkeys(str(value) for value in candidate_ids))
+        if not ids:
+            raise SimulationJobConflict("at least one approved candidate is required")
+        candidates = [self._require_candidate(candidate_id) for candidate_id in ids]
+        if any(candidate.status != CandidateStatus.APPROVED for candidate in candidates):
+            raise SimulationJobConflict("all candidates must be explicitly approved")
+        experiments = [self._repository.get_experiment(candidate.experiment_id) for candidate in candidates]
+        if any(experiment is None for experiment in experiments):
+            raise SimulationJobConflict("candidate experiment was not found")
+        project_ids = {experiment.project_id for experiment in experiments}
+        if len(project_ids) != 1:
+            raise SimulationJobConflict("all candidates must belong to the same project")
+        job = SimulationJobRecord(
+            simulation_job_id=new_id("job"),
+            project_id=project_ids.pop(),
+            candidate_ids=ids,
+            adapter_type=adapter_type,
+        )
+        self._repository.add_simulation_job(job)
+        self._audit(job, "simulation_job.created", {"candidate_ids": list(ids), "adapter_type": adapter_type})
+        return job
+
+    def queue_execution(self, job_id: str) -> SimulationJobRecord:
+        job = self._require_job(job_id)
+        if job.adapter_type == "manual" or job.status != SimulationJobStatus.DRAFT:
+            raise SimulationJobConflict(f"job cannot be queued from {job.status.value}")
+        candidates = [self._require_candidate(candidate_id) for candidate_id in job.candidate_ids]
+        if any(candidate.status != CandidateStatus.APPROVED for candidate in candidates):
+            raise SimulationJobConflict("only approved candidates can be queued")
+        queued = replace(job, status=transition_simulation_job(job.status, SimulationJobStatus.QUEUED))
+        self._repository.update_simulation_job(queued)
+        for candidate in candidates:
+            self._repository.update_candidate(
+                replace(
+                    candidate,
+                    status=transition_candidate(candidate.status, CandidateStatus.SIMULATION_PENDING),
+                    simulation_job_id=job.simulation_job_id,
+                )
+            )
+        self._audit(queued, "simulation_job.queued", {"attempt": queued.attempt + 1})
+        return queued
+
+    def retry_execution(self, job_id: str) -> SimulationJobRecord:
+        job = self._require_job(job_id)
+        if job.adapter_type == "manual" or job.status != SimulationJobStatus.FAILED or not job.retryable:
+            raise SimulationJobConflict("only retryable execution jobs can be retried")
+        queued = replace(
+            job,
+            status=transition_simulation_job(job.status, SimulationJobStatus.QUEUED),
+            error_code=None,
+            retryable=False,
+        )
+        self._repository.update_simulation_job(queued)
+        self._audit(queued, "simulation_job.retried", {"attempt": queued.attempt + 1})
+        return queued
 
     def export_job(self, job_id: str, force_new_attempt: bool = False) -> SimulationJobRecord:
         job = self._require_job(job_id)

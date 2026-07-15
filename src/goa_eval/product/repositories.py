@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 from sqlalchemy.orm import sessionmaker
 
 from goa_eval.product.models import (
@@ -249,6 +249,24 @@ class SqlAlchemyProductRepository:
         with self._sessions() as session:
             row = session.get(SimulationJobORM, job_id)
             return _simulation_job_record(row) if row else None
+
+    def claim_simulation_job(self, job_id: str) -> SimulationJobRecord | None:
+        """Atomically move one queued job to running and increment its attempt."""
+        with self._sessions.begin() as session:
+            result = session.execute(
+                update(SimulationJobORM)
+                .where(SimulationJobORM.simulation_job_id == job_id)
+                .where(SimulationJobORM.status == SimulationJobStatus.QUEUED.value)
+                .values(
+                    status=SimulationJobStatus.RUNNING.value,
+                    attempt=SimulationJobORM.attempt + 1,
+                    error_code=None,
+                    retryable=False,
+                )
+            )
+            if result.rowcount != 1:
+                return None
+        return self.get_simulation_job(job_id)
 
     def list_simulation_jobs(self, project_id: str) -> list[SimulationJobRecord]:
         with self._sessions() as session:
