@@ -27,10 +27,10 @@ FULL_NAME = "芯智调参：基于仿真数据的电路参数智能推荐系统"
 SHORT_NAME = "芯智调参"
 VERSION = "V1.0"
 PACKAGE_VERSION = "1.0.0"
-BASELINE_COMMIT = "b97915fa600b31213c208b90b6b2278a4bbaf4ad"
-BRANCH = "codex/software-copyright-v1"
+BASELINE_COMMIT = "4ea050e47957a3d984ca9ea95f71c53be0e0f3cf"
+BRANCH = "codex/software-copyright-template-aligned"
 COMPLETION_DATE = "2026年07月15日"
-FIRST_PUBLICATION_DATE = "2026年05月16日"
+FIRST_PUBLICATION_DATE = "2026年07月15日"
 FIRST_PUBLICATION = "GitHub 公开仓库"
 BOUNDARIES = (
     "data_source = real_simulation_csv",
@@ -45,8 +45,28 @@ OFFICIAL_FORM_URL = (
 REGULATION_URL = "https://www.ncac.gov.cn/xxfb/flfg/bmgz/202410/t20241015_869486.html"
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUTPUT = Path(r"D:\EDA大赛\output\software_copyright\CircuitPilot_V1.0")
+DEFAULT_OUTPUT = Path(r"D:\EDA大赛\output\software_copyright\CircuitPilot_V1.0_template_aligned")
 SCREENSHOT_SOURCE = ROOT / "output" / "playwright" / "software_copyright"
+MANIFEST_SCHEMA_VERSION = "1.1"
+TEMPLATE_ALIGNMENT = {
+    "application_form": "3.申请表模板.doc",
+    "source_code": "4.程序鉴别材料模板.doc",
+    "manual_primary": "5.3说明书-虚拟机管理系统（应用软件）.doc",
+    "manual_screenshots": "5.5说明书-网页截图软件（应用软件）.doc",
+    "cooperation_contract": "6.技术开发（合作）合同模板.doc",
+    "approved_example": "2023年8月审核通过的申请实例材料一套.zip",
+}
+
+DOCUMENT_SPECS = {
+    "00_材料总目录与提交检查清单": {"pdf_pages": 3, "submission_role": "内部总控"},
+    "01_软件著作权登记申请表填报底稿": {"pdf_pages": 6, "submission_role": "官方系统录入底稿"},
+    "02_业务理解与软件设计说明书": {"pdf_pages": 12, "submission_role": "内部支撑材料"},
+    "03_软件操作手册暨文档鉴别材料": {"pdf_pages": 18, "submission_role": "正式文档鉴别材料"},
+    "04_源程序鉴别材料_前30页后30页": {"pdf_pages": 60, "submission_role": "正式源程序鉴别材料"},
+    "05_技术开发（合作）合同": {"pdf_pages": 16, "submission_role": "权属证明材料"},
+    "05A_共同开发与著作权归属确认书": {"pdf_pages": 4, "submission_role": "合同附件"},
+    "06_第三方组件与权利边界说明": {"pdf_pages": 3, "submission_role": "内部支撑材料"},
+}
 
 BLACK = "000000"
 GRAY = "666666"
@@ -63,8 +83,26 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def ensure_safe_output_path(output: Path) -> None:
+    if output.name.casefold() == "circuitpilot_v1.0":
+        raise RuntimeError("拒绝写入旧版材料目录 CircuitPilot_V1.0；请使用模板对齐版新目录。")
+    if (
+        output.is_dir()
+        and next(output.iterdir(), None) is not None
+        and os.environ.get("CIRCUITPILOT_ALLOW_MATERIAL_REBUILD") != "1"
+    ):
+        raise RuntimeError("模板对齐版输出目录非空；默认拒绝覆盖，请改用新目录或显式启用受控重建。")
+
+
 def run_text(args: Sequence[str]) -> str:
     return subprocess.check_output(args, cwd=ROOT, text=True, encoding="utf-8").strip()
+
+
+def read_baseline_blob(relative_path: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", f"{BASELINE_COMMIT}:{relative_path}"],
+        cwd=ROOT,
+    )
 
 
 def set_cell_shading(cell, fill: str) -> None:
@@ -206,6 +244,37 @@ def set_fixed_page_header(section, left_text: str, page_no: int, *, font_size: f
     trailing.paragraph_format.line_spacing = Pt(1)
 
 
+def set_source_page_header(section, path_text: str, page_no: int) -> None:
+    header = section.header
+    for child in list(header._element):
+        header._element.remove(child)
+    table = header.add_table(rows=1, cols=3, width=Cm(14.75))
+    table.autofit = False
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    widths = (8.2, 2.3, 4.25)
+    values = (f"{FULL_NAME}{VERSION}", "源代码", f"第{page_no}页，共60页")
+    alignments = (WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.CENTER, WD_ALIGN_PARAGRAPH.RIGHT)
+    for index, (width, value, alignment) in enumerate(zip(widths, values, alignments)):
+        cell = table.cell(0, index)
+        cell.width = Cm(width)
+        paragraph = cell.paragraphs[0]
+        paragraph.alignment = alignment
+        paragraph.paragraph_format.space_before = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(0)
+        run = paragraph.add_run(value)
+        set_run_font(run, east_asia="宋体", latin="Times New Roman", size=6.8, bold=(index == 1))
+        if index == 0:
+            run._element.get_or_add_rPr().append(_char_scale(70))
+    path_paragraph = header.add_paragraph()
+    path_paragraph.paragraph_format.space_before = Pt(0)
+    path_paragraph.paragraph_format.space_after = Pt(0)
+    path_paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    path_paragraph.paragraph_format.line_spacing = Pt(8)
+    run = path_paragraph.add_run(f"文件路径：{path_text}")
+    set_run_font(run, east_asia="宋体", latin="Courier New", size=6.2, color=GRAY)
+    run._element.get_or_add_rPr().append(_char_scale(75))
+
+
 def add_cover(doc: Document, title: str, subtitle: str, kind: str = "申报材料") -> None:
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -328,13 +397,13 @@ def source_group(path: str) -> tuple[int, str]:
         ("src/goa_eval/product/", 1, "产品服务"),
         ("src/goa_eval/web_api/", 2, "只读仪表盘 API"),
         ("src/goa_eval/web/", 3, "上传分析服务"),
-        ("src/goa_eval/pia/", 4, "PIA 与候选生成"),
-        ("src/goa_eval/ca/", 5, "电路分析"),
-        ("src/goa_eval/llso/", 6, "LLSO 优化"),
-        ("src/goa_eval/multi_agent/", 7, "多智能体协作"),
-        ("src/goa_eval/", 8, "评估内核与命令行"),
-        ("frontend/src/", 9, "前端界面"),
-        ("scripts/", 10, "工程脚本"),
+        ("frontend/src/", 4, "前端界面"),
+        ("scripts/", 5, "工程脚本"),
+        ("src/goa_eval/ca/", 6, "电路分析"),
+        ("src/goa_eval/pia/", 7, "PIA 与候选生成"),
+        ("src/goa_eval/llso/", 8, "LLSO 优化"),
+        ("src/goa_eval/multi_agent/", 9, "多智能体协作"),
+        ("src/goa_eval/", 10, "评估内核与命令行"),
     ]
     for prefix, rank, label in groups:
         if path.startswith(prefix):
@@ -347,7 +416,7 @@ def language_for(path: str) -> str:
 
 
 def list_source_files() -> list[dict]:
-    tracked = run_text(["git", "ls-files"]).splitlines()
+    tracked = run_text(["git", "ls-tree", "-r", "--name-only", BASELINE_COMMIT]).splitlines()
     accepted: list[dict] = []
     allowed_ext = {".py", ".ts", ".tsx", ".css"}
     for rel in tracked:
@@ -368,10 +437,7 @@ def list_source_files() -> list[dict]:
             or posix.startswith("scripts/software_copyright/")
         ):
             continue
-        path = ROOT / Path(posix)
-        if not path.is_file():
-            continue
-        raw = path.read_bytes()
+        raw = read_baseline_blob(posix)
         text = raw.decode("utf-8", errors="replace")
         lines = text.splitlines()
         rank, group = source_group(posix)
@@ -428,6 +494,19 @@ def flatten_source(entries: list[dict]) -> list[dict]:
     return stream
 
 
+def select_source_pages(stream: Sequence[dict]) -> list[list[dict]]:
+    lines_per_page = 50
+    segment_lines = 30 * lines_per_page
+    if len(stream) < segment_lines * 2:
+        raise RuntimeError("源程序不足以提取前后各30页。")
+    selected = list(stream[:segment_lines]) + list(stream[-segment_lines:])
+    numbered = [dict(item, display_line=index) for index, item in enumerate(selected, 1)]
+    return [
+        numbered[start : start + lines_per_page]
+        for start in range(0, len(numbered), lines_per_page)
+    ]
+
+
 def add_source_page(doc: Document, page_lines: Sequence[dict], display_page: int) -> None:
     if display_page == 1:
         section = doc.sections[0]
@@ -435,12 +514,12 @@ def add_source_page(doc: Document, page_lines: Sequence[dict], display_page: int
         section = doc.add_section(WD_SECTION.NEW_PAGE)
     section.page_width = Cm(21)
     section.page_height = Cm(29.7)
-    section.top_margin = Cm(1.05)
-    section.bottom_margin = Cm(1.05)
-    section.left_margin = Cm(1.05)
-    section.right_margin = Cm(1.05)
-    section.header_distance = Cm(0.35)
-    section.footer_distance = Cm(0.35)
+    section.top_margin = Cm(2.0)
+    section.bottom_margin = Cm(2.0)
+    section.left_margin = Cm(3.75)
+    section.right_margin = Cm(2.5)
+    section.header_distance = Cm(1.5)
+    section.footer_distance = Cm(1.0)
     section.header.is_linked_to_previous = False
     section.footer.is_linked_to_previous = False
     unique_paths: list[str] = []
@@ -448,28 +527,32 @@ def add_source_page(doc: Document, page_lines: Sequence[dict], display_page: int
         if line["path"] not in unique_paths:
             unique_paths.append(line["path"])
     path_text = unique_paths[0] if len(unique_paths) == 1 else f"{unique_paths[0]} → {unique_paths[-1]}"
-    set_fixed_page_header(
-        section,
-        f"{FULL_NAME}  {VERSION}  文件路径：{path_text}",
-        display_page,
-        font_size=5.8,
-    )
+    set_source_page_header(section, path_text, display_page)
     fp = section.footer.paragraphs[0]
     fp.clear()
     fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = fp.add_run("源程序鉴别材料｜50行/页｜" + BASELINE_COMMIT[:12])
-    set_run_font(r, east_asia="宋体", size=6.5, color=GRAY)
+    r = fp.add_run(f"{display_page}/60")
+    set_run_font(r, east_asia="宋体", size=8, color=BLACK)
 
     for item in page_lines:
         p = doc.add_paragraph()
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(0)
         p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-        p.paragraph_format.line_spacing = Pt(10.5)
+        p.paragraph_format.line_spacing = Pt(10.2)
         p.paragraph_format.keep_together = True
-        r = p.add_run(f"{item['text']}")
-        set_run_font(r, east_asia="宋体", latin="Courier New", size=6.5)
-        r._element.get_or_add_rPr().append(_char_scale(78))
+        number_run = p.add_run(f"{item['display_line']:04d}  ")
+        set_run_font(number_run, east_asia="宋体", latin="Courier New", size=7.2, color=GRAY)
+        text = item["text"].expandtabs(4)
+        code_run = p.add_run(text)
+        set_run_font(code_run, east_asia="宋体", latin="Courier New", size=7.5)
+        scale = source_char_scale(len(text))
+        code_run._element.get_or_add_rPr().append(_char_scale(scale))
+
+
+def source_char_scale(text_length: int) -> int:
+    """Return a conservative Word character scale that prevents code wrapping."""
+    return min(100, max(26, int(6500 / max(1, text_length))))
 
 
 def _char_scale(value: int) -> OxmlElement:
@@ -481,20 +564,22 @@ def _char_scale(value: int) -> OxmlElement:
 def build_source_doc(output: Path, entries: list[dict]) -> dict:
     stream = flatten_source(entries)
     needed = 30 * 50
-    if len(stream) < needed * 2:
-        raise RuntimeError("源程序不足以提取前后各30页。")
-    selected = stream[:needed] + stream[-needed:]
+    page_groups = select_source_pages(stream)
+    selected = [line for page in page_groups for line in page]
     doc = Document()
     doc._body.clear_content()
     configure_document(doc, compact=True)
     page_map = []
-    for page_index in range(60):
-        page_lines = selected[page_index * 50 : (page_index + 1) * 50]
+    for page_index, page_lines in enumerate(page_groups):
         add_source_page(doc, page_lines, page_index + 1)
         page_map.append(
             {
                 "display_page": page_index + 1,
                 "segment": "front" if page_index < 30 else "back",
+                "display_start": page_lines[0]["display_line"],
+                "display_end": page_lines[-1]["display_line"],
+                "original_global_start": page_lines[0]["global_line"],
+                "original_global_end": page_lines[-1]["global_line"],
                 "global_start": page_lines[0]["global_line"],
                 "global_end": page_lines[-1]["global_line"],
                 "source_line_count": 50,
@@ -504,6 +589,36 @@ def build_source_doc(output: Path, entries: list[dict]) -> dict:
         )
     path = output / "04_源程序鉴别材料_前30页后30页.docx"
     save_doc(doc, path)
+    support_dir = output / "internal_support"
+    support_dir.mkdir(parents=True, exist_ok=True)
+    digest_by_path = {item["path"]: item["sha256"] for item in entries}
+    line_manifest = support_dir / "source_line_manifest.csv"
+    with line_manifest.open("w", newline="", encoding="utf-8-sig") as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=[
+                "submission_line",
+                "display_page",
+                "segment",
+                "original_global_line",
+                "path",
+                "file_line",
+                "file_sha256",
+            ],
+        )
+        writer.writeheader()
+        for item in selected:
+            writer.writerow(
+                {
+                    "submission_line": item["display_line"],
+                    "display_page": (item["display_line"] - 1) // 50 + 1,
+                    "segment": "front" if item["display_line"] <= 1500 else "back",
+                    "original_global_line": item["global_line"],
+                    "path": item["path"],
+                    "file_line": item["file_line"],
+                    "file_sha256": digest_by_path[item["path"]],
+                }
+            )
     return {
         "path": path.name,
         "full_stream_lines": len(stream),
@@ -511,6 +626,7 @@ def build_source_doc(output: Path, entries: list[dict]) -> dict:
         "front_range": [1, needed],
         "back_range": [len(stream) - needed + 1, len(stream)],
         "pages": page_map,
+        "line_manifest": "internal_support/source_line_manifest.csv",
     }
 
 
@@ -825,7 +941,7 @@ def build_application_draft(output: Path, source_stats: dict) -> Path:
     doc.add_paragraph(
         f"申报版本以 Git 提交 {BASELINE_COMMIT} 为功能基线，在分支 {BRANCH} "
         f"仅对 Python 包、前端包及锁文件的版本元数据统一为 {PACKAGE_VERSION}，未改变产品 API、CLI、数据库模型"
-        "或前端业务行为。首次发表口径为已于2026年05月16日在 GitHub 公开仓库发表；正式提交前由团队保存和核对"
+        f"或前端业务行为。首次发表口径为已于{FIRST_PUBLICATION_DATE}在 GitHub 公开仓库发表；正式提交前由团队保存和核对"
         "可证明公开日期、仓库归属与作品内容的证据。"
     )
     doc.add_heading("八、官方系统录入核对表", level=1)
@@ -1390,10 +1506,395 @@ def build_third_party(output: Path) -> Path:
     return path
 
 
+def _new_template_doc() -> Document:
+    doc = Document()
+    doc._body.clear_content()
+    configure_document(doc, compact=True)
+    normal = doc.styles["Normal"]
+    normal.font.size = Pt(10.5)
+    normal.paragraph_format.line_spacing = 1.35
+    normal.paragraph_format.space_after = Pt(4)
+    return doc
+
+
+def _clear_container(container) -> None:
+    for child in list(container._element):
+        container._element.remove(child)
+
+
+def _begin_template_page(
+    doc: Document,
+    physical_page: int,
+    total_pages: int,
+    kind: str,
+    *,
+    cover: bool = False,
+    body_page: int | None = None,
+    body_total: int | None = None,
+    profile: str = "standard",
+):
+    section = doc.sections[0] if physical_page == 1 else doc.add_section(WD_SECTION.NEW_PAGE)
+    section.page_width = Cm(21)
+    section.page_height = Cm(29.7)
+    if profile == "application":
+        section.top_margin = Cm(1.0)
+        section.bottom_margin = Cm(1.0)
+        section.left_margin = Cm(2.0)
+        section.right_margin = Cm(1.0)
+    else:
+        section.top_margin = Cm(1.75)
+        section.bottom_margin = Cm(1.65)
+        section.left_margin = Cm(2.2)
+        section.right_margin = Cm(2.0)
+    section.header_distance = Cm(0.65)
+    section.footer_distance = Cm(0.65)
+    section.header.is_linked_to_previous = False
+    section.footer.is_linked_to_previous = False
+    _clear_container(section.header)
+    _clear_container(section.footer)
+    if cover:
+        return section
+
+    shown_page = body_page if body_page is not None else physical_page
+    shown_total = body_total if body_total is not None else total_pages
+    header = section.header
+    table = header.add_table(rows=1, cols=3, width=Cm(17.0))
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = False
+    values = (f"{FULL_NAME} {VERSION}", kind, f"第{shown_page}页，共{shown_total}页")
+    widths = (9.4, 3.4, 4.2)
+    aligns = (WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.CENTER, WD_ALIGN_PARAGRAPH.RIGHT)
+    for index, value in enumerate(values):
+        cell = table.cell(0, index)
+        cell.width = Cm(widths[index])
+        paragraph = cell.paragraphs[0]
+        paragraph.alignment = aligns[index]
+        paragraph.paragraph_format.space_after = Pt(0)
+        run = paragraph.add_run(value)
+        set_run_font(run, east_asia="宋体", size=7.3, bold=(index == 1), color=BLACK)
+        if index == 0:
+            run._element.get_or_add_rPr().append(_char_scale(78))
+    footer = section.footer.add_paragraph()
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    footer.paragraph_format.space_after = Pt(0)
+    run = footer.add_run(f"{shown_page}/{shown_total}")
+    set_run_font(run, east_asia="宋体", size=8, color=BLACK)
+    return section
+
+
+def _add_template_cover(doc: Document, title: str, subtitle: str, material_use: str) -> None:
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(105)
+    r = p.add_run(FULL_NAME)
+    set_run_font(r, east_asia="黑体", size=19, bold=True)
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(34)
+    r = p.add_run(title)
+    set_run_font(r, east_asia="黑体", size=24, bold=True)
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(14)
+    r = p.add_run(subtitle)
+    set_run_font(r, east_asia="宋体", size=12)
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(115)
+    for line in (
+        f"软件简称：{SHORT_NAME}",
+        f"版本号：{VERSION}",
+        f"材料用途：{material_use}",
+        "申请口径：实际开发成员共同申请",
+        "编制日期：2026年07月",
+    ):
+        r = p.add_run(line + "\n")
+        set_run_font(r, east_asia="宋体", size=11)
+
+
+def _add_page_title(doc: Document, title: str, subtitle: str | None = None) -> None:
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(5)
+    p.paragraph_format.space_after = Pt(10)
+    r = p.add_run(title)
+    set_run_font(r, east_asia="黑体", size=16, bold=True)
+    if subtitle:
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(8)
+        r = p.add_run(subtitle)
+        set_run_font(r, east_asia="宋体", size=9, color=GRAY)
+
+
+def _add_body_paragraphs(doc: Document, paragraphs: Sequence[str]) -> None:
+    for text in paragraphs:
+        p = doc.add_paragraph()
+        p.paragraph_format.first_line_indent = Cm(0.74)
+        p.paragraph_format.line_spacing = 1.45
+        r = p.add_run(text)
+        set_run_font(r, east_asia="宋体", size=10.5)
+
+
+def build_template_catalog(output: Path, source_stats: dict) -> Path:
+    doc = _new_template_doc()
+    pages = [
+        (
+            "材料总目录与用途",
+            [
+                ("正式提交候选", "03操作手册全文（文档鉴别材料）、04源程序前后各30页；按受理系统要求提交。"),
+                ("官方系统生成件", "将01底稿内容录入中国版权保护中心系统后生成正式申请表并签章；自制底稿不能替代。"),
+                ("权属证明", "05合作合同及05A共同权属确认书，经实际开发成员逐人核实并签署后使用。"),
+                ("内部支撑件", "00目录、02设计说明书、06第三方边界、清单与internal_support用于核对和备查。"),
+            ],
+        ),
+        (
+            "正式材料与支撑材料清单",
+            [
+                ("01", "申请表填报底稿；六页；非官方申请表；不得制作二维码或官方签章。"),
+                ("03", "18页完整操作手册；不足60页按全文提交；封面不编号、正文17页连续编号。"),
+                ("04", "60页源程序；每页50行；显示行号1—3000；前后片段分别连续。"),
+                ("05/05A", "合作开发合同与共同权属确认书；补齐身份、贡献、代表、地点、日期和签章。"),
+                ("02/06/清单", "业务与设计、第三方边界、哈希和追溯数据；默认内部留存。"),
+            ],
+        ),
+        (
+            "提交前检查清单",
+            [
+                ("申请人", "【共同申请人姓名】、【证件号码】、【地址】、【电话】逐人填写并与证件一致。"),
+                ("发表信息", f"【首次发表城市】；完成日与首次发表日均为{COMPLETION_DATE}；方式为GitHub公开仓库。"),
+                ("签署", "合同编号、签订地点、申请代表、贡献说明、签字/盖章及日期必须由团队确认。"),
+                ("一致性", f"全称、简称、{VERSION}、合作开发、原始取得、全部权利保持一致。"),
+                ("边界", "不得宣称流片、物理实测或效果保证；候选参数必须经外部仿真复核。"),
+                ("源码统计", f"本次纳入{source_stats['files']}个自研文件、{source_stats['lines']}行原始源码；正式鉴别材料抽取3000行。"),
+            ],
+        ),
+    ]
+    for index, (title, rows) in enumerate(pages, 1):
+        _begin_template_page(doc, index, 3, "材料总目录与提交检查清单")
+        _add_page_title(doc, title, "模板对齐版申报包内部总控")
+        add_kv_table(doc, rows, widths=(4.0, 12.0))
+        if index in (1, 3):
+            add_boundary(doc)
+    path = output / "00_材料总目录与提交检查清单.docx"
+    save_doc(doc, path)
+    return path
+
+
+def build_template_application(output: Path, source_stats: dict) -> Path:
+    doc = _new_template_doc()
+    page_rows = [
+        ("一、软件基本信息", [("软件全称", FULL_NAME), ("软件简称", SHORT_NAME), ("版本号", VERSION), ("软件分类", "应用软件"), ("开发完成日期", COMPLETION_DATE), ("发表状态", "已发表"), ("首次发表日期", FIRST_PUBLICATION_DATE), ("首次发表方式", "GitHub公开仓库：https://github.com/changfeng-01/edex"), ("首次发表城市", "【首次发表城市】")]),
+        ("二、开发方式与权利状况", [("开发方式", "合作开发"), ("权利取得方式", "原始取得"), ("权利范围", "全部权利"), ("著作权人", "实际开发成员共同申请；一名实际开发成员一行"), ("团队名称", "仅作项目协作标识，不作为无主体资格的单一著作权人"), ("申请代表", "【申请代表姓名及授权依据】")]),
+        ("三、共同申请人信息", [("共同申请人1", "【姓名】｜【证件类型及号码】｜【地址】｜【电话】｜【邮箱】"), ("共同申请人2", "【姓名】｜【证件类型及号码】｜【地址】｜【电话】｜【邮箱】"), ("共同申请人3", "【姓名】｜【证件类型及号码】｜【地址】｜【电话】｜【邮箱】"), ("可扩展行", "按实际开发成员人数复制；非开发参赛成员和指导教师不自动列入"), ("签章核对", "正式申请表、合作合同与确认书中的姓名和顺序一致")]),
+        ("四、软硬件环境与源码规模", [("硬件环境", "通用x86-64个人计算机或服务器；建议8 GB及以上内存、2 GB及以上可用磁盘空间"), ("软件环境", "Windows 10/11或主流Linux；Python 3.11；Node.js；现代浏览器；SQLite"), ("开发语言", "Python、TypeScript/TSX、CSS"), ("主要框架", "FastAPI、SQLAlchemy、React、Vite"), ("源程序量", f"自研源码约{source_stats['lines']}行；{source_stats['files']}个纳入清单文件；鉴别材料3000行")]),
+        ("五、主要功能和技术特点", [("主要功能", "项目化管理电路仿真CSV；创建设计版本；约束分析；生成候选；人工审批；导出仿真任务；回填结果；版本比较；查看报告。"), ("技术特点", "以版本、分析运行、候选、实验和仿真任务为领域对象；前后端分离；结构化状态机；工件哈希追溯；显式证据边界。"), ("数据边界", BOUNDARIES[0]), ("工程效力", BOUNDARIES[1]), ("重仿真要求", BOUNDARIES[2]), ("限制声明", "不宣称大量实验验证、流片、物理实测或保证优化效果。")]),
+        ("六、附件与正式生成检查", [("程序鉴别材料", "04源程序鉴别材料，60页，每页50行，前后各连续30页"), ("文档鉴别材料", "03操作手册全文，18页，不足60页按全文提交"), ("权属文件", "05合作合同和05A确认书，补齐并逐人签署"), ("正式申请表", "必须在官方系统录入并在线生成；本底稿不是官方表格"), ("禁止事项", "不得伪造、复制或拼接官方二维码、流水号、受理章或签章"), ("提交前", "核对申请人身份、首次发表城市、申请代表、签订地点和所有签字日期")]),
+    ]
+    for index, (title, rows) in enumerate(page_rows, 1):
+        _begin_template_page(doc, index, 6, "软件著作权登记申请表填报底稿", profile="application")
+        _add_page_title(doc, title, "非官方申请表，仅用于系统录入；正式表须在线生成")
+        add_kv_table(doc, rows, widths=(4.2, 13.0))
+        if index in (2, 5, 6):
+            add_boundary(doc)
+    path = output / "01_软件著作权登记申请表填报底稿.docx"
+    save_doc(doc, path)
+    return path
+
+
+def build_template_design(output: Path, source_stats: dict) -> Path:
+    doc = _new_template_doc()
+    _begin_template_page(doc, 1, 12, "业务理解与软件设计说明书", cover=True)
+    _add_template_cover(doc, "业务理解与软件设计说明书", "CircuitPilot V1.0 模板对齐版", "内部支撑材料")
+    sections = [
+        ("目录与文档控制", ["第1章 软件概述与业务背景", "第2章 用户角色与业务闭环", "第3章 总体架构与模块职责", "第4章 数据模型、数据流与接口", "第5章 状态机、异常与证据链", "第6章 安全边界、部署和验收"], [("基线提交", BASELINE_COMMIT), ("源码范围", f"{source_stats['files']}个文件、{source_stats['lines']}行"), ("材料性质", "内部支撑，不替代正式操作手册或官方申请表")]),
+        ("软件概述与业务背景", ["芯智调参服务于电路工程人员在仿真结果、设计版本、约束问题和候选参数之间建立可复核闭环。", "传统分散在CSV、脚本和人工记录中的过程，被整理为项目、设计版本、分析运行、候选、实验、任务和比较等对象。", "软件输出是下一轮工程判断的输入，不把算法建议包装成已验证结论。"], []),
+        ("用户角色与核心闭环", ["工程操作员：创建项目、上传仿真CSV、确认字段、启动分析、审批候选、导出任务和回填结果。", "评审人员：查看证据、约束问题、候选理由、版本比较和报告。", "共同开发成员：维护接口、状态规则、测试、部署脚本和申报材料。", "闭环顺序：工作区→项目→设计版本→输入预览→分析→候选审批→仿真任务→外部仿真→结果回填→比较。"], []),
+        ("总体架构", ["表现层采用React和TypeScript提供项目工作台；Product API采用FastAPI公开领域操作；服务层实现项目、输入、分析、候选、实验、任务与比较逻辑；仓储层使用SQLAlchemy和SQLite保存结构化状态；工件层保存CSV、JSON、YAML与报告。", "所有跨层操作围绕稳定标识符和显式状态进行，便于审计、重放和问题定位。"], [("前端", "React / TypeScript / Vite"), ("后端", "Python / FastAPI / SQLAlchemy"), ("存储", "SQLite + 本地工件目录"), ("外部系统", "电路仿真器由用户在软件之外运行")]),
+        ("模块职责", ["工作区与项目模块负责业务隔离和导航；设计版本模块保存参数、输入工件和来源；分析模块执行CSV读取、指标计算、约束检查和报告形成；候选模块记录建议参数、理由和审批状态；实验与仿真任务模块组织导出及回填；比较模块对两个版本的指标和约束结果进行并列展示。"], [("只读仪表盘", "提供历史工件和展示接口"), ("上传分析服务", "接收输入、预览字段并生成分析入口"), ("评估/优化内核", "提供指标、规则、PIA/LLSO及多智能体协作能力")]),
+        ("核心数据模型与数据流", ["工作区包含项目；项目包含设计版本；设计版本关联输入工件和分析运行；分析运行产生问题、证据和候选；候选经审批后形成实验和仿真任务；回填后的新版本可与基线版本比较。", "CSV只作为仿真数据工件进入系统，参数建议不会直接修改物理电路。"], [("输入", "仿真CSV、约束、参数与项目元数据"), ("处理", "校验、解析、指标计算、规则判断、候选组织"), ("输出", "证据、候选、任务包、比较结果和报告")]),
+        ("API与接口契约", ["接口按工作区、项目、设计版本、分析运行、候选、实验、仿真任务和比较资源组织。创建或变更操作返回资源标识和当前状态；读取操作返回结构化JSON；错误采用明确状态码与错误对象。", "前端不绕过服务层直接操作数据库或工件目录，外部仿真器也不被伪装为软件内部能力。"], [("示例", "POST /api/v1/workspaces/{id}/projects"), ("示例", "POST /api/v1/design-versions/{id}/analysis-runs"), ("示例", "POST /api/v1/candidates/{id}/approve"), ("示例", "GET /api/v1/comparisons/{id}")]),
+        ("领域状态机", ["设计版本在创建、就绪和可分析状态之间转换；分析运行经历排队、运行、成功或失败；候选经历提出、批准/拒绝、导出、评估；仿真任务经历准备、导出、等待外部结果、回填和完成。", "状态转换由服务层校验，非法重复操作或顺序错误返回冲突，不通过界面文字掩盖。"], [("关键规则", "候选批准不等于工程有效"), ("关键规则", "结果回填后仍需重新分析和比较"), ("关键规则", "neutral或未改善结果保持原样展示")]),
+        ("异常处理", ["输入缺失、CSV字段不匹配、数值解析失败、资源不存在、状态冲突、工件哈希不一致和外部结果缺失均形成可定位错误。", "界面向用户展示可执行修复提示；服务日志保留技术上下文，但正式截图和申报材料不带本地绝对路径、密钥或调试堆栈。"], [("4xx", "输入、资源或状态问题"), ("5xx", "未预期服务异常"), ("恢复", "修正工件或状态后重新执行，不伪造成功结果")]),
+        ("证据链与安全边界", ["每个源文件、提交材料和输入工件均通过路径、行号、资源标识或SHA-256形成追溯。测试夹具只用于展示流程，不作为工程效果证据。", "系统不在材料中保存环境变量、密钥、申请人身份证件或未脱敏私有数据；正式签署信息由团队在线下或官方系统补齐。"], [("数据来源", BOUNDARIES[0]), ("工程效力", BOUNDARIES[1]), ("后续要求", BOUNDARIES[2])]),
+        ("部署、验收、版本与限制", ["部署由Python后端、React前端、SQLite数据库和本地工件目录组成；开发环境可分别启动API与Vite，生产构建由静态资源和后端服务共同交付。", "验收覆盖后端pytest、前端测试与生产构建、确定性产品演示、文档页数/哈希/占位符核对以及DOCX、PDF逐页渲染检查。", f"本材料对应{VERSION}，申报基线为{BASELINE_COMMIT}。本轮仅调整版本元数据、材料生成和验证工具，不改变Product API、CLI、数据库模型或前端业务行为。", "当前材料证明软件结构、代码与可运行流程，不证明大量实验验证、流片、芯片实测或优化效果保证。"], [("运行环境", "本机或受控内网；现代Chromium浏览器"), ("备份", "SQLite数据库与工件目录一并备份"), ("完成/发表日期", f"{COMPLETION_DATE} / {FIRST_PUBLICATION_DATE}"), ("申请口径", "实际开发成员共同申请；合作开发；原始取得；全部权利")]),
+    ]
+    for physical, (title, paragraphs, rows) in enumerate(sections, 2):
+        _begin_template_page(doc, physical, 12, "业务理解与软件设计说明书", body_page=physical - 1, body_total=11)
+        _add_page_title(doc, title)
+        _add_body_paragraphs(doc, paragraphs)
+        if rows:
+            add_kv_table(doc, rows, widths=(4.0, 12.0))
+        if physical in (3, 10, 12):
+            add_boundary(doc)
+    path = output / "02_业务理解与软件设计说明书.docx"
+    save_doc(doc, path)
+    return path
+
+
+def build_template_manual(output: Path, screenshot_dir: Path) -> Path:
+    doc = _new_template_doc()
+    _begin_template_page(doc, 1, 18, "软件操作手册暨文档鉴别材料", cover=True)
+    _add_template_cover(doc, "软件操作手册暨文档鉴别材料", "完整文档；正文17页连续编号", "正式文档鉴别材料候选")
+    manual_pages = [
+        ("目录", ["1 软件概述与边界　2 环境与安装　3 启动与工作区　4 创建项目　5 上传仿真数据", "6 设计版本预览　7 分析　8 候选审批　9 仿真任务导出　10 外部仿真与回填", "11 结果版本　12 结果分析　13 版本比较　14 报告查看　15 异常处理　16 安全说明"], None),
+        ("软件概述与证据边界", ["软件用于管理电路仿真CSV、分析约束、组织候选参数和重仿真闭环。候选不是已验证结论，必须由用户在外部仿真器复核。", *BOUNDARIES, "本手册截图均为test_only确定性演示数据，不构成实验、物理实测或流片证明。"], "01_public_demo.png"),
+        ("环境、安装与启动", ["准备Python 3.11、Node.js、现代浏览器和可写工件目录；安装后端及前端依赖。", "启动Product API，再启动前端开发或生产服务；浏览器访问工作区页面。", "生产部署时应设置受控数据库和工件目录，并通过组织现有网络边界提供访问。"], None),
+        ("创建项目", ["在工作区项目页选择“创建项目”，填写项目名称、说明和目标约束；确认后系统生成项目标识并进入项目工作台。", "项目名称仅用于业务区分，不能代替申请人或著作权人信息。"], "03_create_project.png"),
+        ("上传仿真数据", ["进入上传工作区，选择CSV和必要的映射/约束文件；先预览字段和记录数，再提交分析。", "上传文件应来自真实仿真过程；test_only夹具只用于演示页面流程。"], "12_upload_workspace.png"),
+        ("设计版本预览", ["打开基线设计版本，核对版本名称、参数、输入工件、来源和状态。", "只有输入工件可读且状态允许时，才继续创建分析运行。"], "05_baseline_design_version.png"),
+        ("运行分析", ["在设计版本页面发起分析，系统解析CSV、计算指标、检查约束并形成问题、证据与候选。", "页面显示的结论受仿真输入和约束配置限制，不扩展为物理工程保证。"], "06_baseline_analysis.png"),
+        ("候选审批", ["查看候选参数、修改理由、关联问题和证据；工程人员可批准或拒绝。", "批准只表示同意进入下一轮仿真，不表示候选已改善或已通过实验。"], "07_candidate_approval.png"),
+        ("仿真任务导出", ["批准候选后创建仿真任务，下载任务包并记录任务标识、版本和预期回填格式。", "任务状态用于组织外部工作，不自动调用或替代第三方电路仿真器。"], "08_simulation_job.png"),
+        ("外部仿真与结果回填", ["在外部仿真器中按任务包应用候选参数，运行仿真并导出结果CSV。", "回到系统按任务要求上传结果，创建新的设计版本；若文件不符合契约，修正后重新提交。", BOUNDARIES[2]], "08_simulation_job.png"),
+        ("查看结果设计版本", ["结果回填后打开新设计版本，核对来源任务、参数和新输入工件。", "新版本与基线版本并存，避免覆盖原始证据。"], "09_result_design_version.png"),
+        ("重新分析结果版本", ["对结果版本再次运行分析，查看指标、约束问题和证据。", "若结果为neutral、未改善或失败，应原样保留，不改写为成功。"], "10_result_analysis.png"),
+        ("版本比较", ["选择基线版本和结果版本进行比较，查看指标变化、约束变化和总体判定。", "比较仅描述相同口径下的仿真数据差异。"], "11_version_comparison.png"),
+        ("报告与公开演示页", ["报告页面汇总项目、版本、问题、候选、任务和边界声明；导出前核对是否含本地路径或调试信息。", "公开演示页可用于说明软件工作流，不可作为真实性能宣传。"], "01_public_demo.png"),
+        ("异常处理", ["WORKSPACE_NOT_FOUND：确认工作区标识或返回工作区列表重新选择。", "CSV_SCHEMA_INVALID：核对列名、编码和数值格式。", "STATE_CONFLICT：按页面提示完成前置状态，避免重复批准或回填。", "ARTIFACT_MISSING：恢复工件或重新上传；不得伪造成功状态。"], None),
+        ("安全与隐私说明", ["截图、导出包和申报材料不得包含密钥、环境变量、身份证号、未脱敏私有数据和本地绝对路径。", "共同申请人的身份和签章仅在官方系统或经授权的线下文件中补齐。", "第三方仿真器、PDK和依赖按其许可证使用。"], None),
+        ("停止、备份与验收", ["停止服务前确认分析和回填任务已结束；备份SQLite数据库和工件目录。", "恢复时保持数据库与工件版本一致，并抽查项目、版本、分析和比较页面。", "本手册共18个PDF页面：封面不编号，正文1—17页连续编号；因不足60页，按完整文档提交。"], None),
+    ]
+    for physical, (title, paragraphs, screenshot) in enumerate(manual_pages, 2):
+        _begin_template_page(doc, physical, 18, "软件操作手册暨文档鉴别材料", body_page=physical - 1, body_total=17)
+        _add_page_title(doc, title)
+        _add_body_paragraphs(doc, paragraphs)
+        if screenshot:
+            image_path = screenshot_dir / screenshot
+            if not image_path.is_file():
+                raise FileNotFoundError(f"手册截图不存在：{image_path}")
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_before = Pt(5)
+            p.add_run().add_picture(str(image_path), width=Cm(15.8))
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_after = Pt(0)
+            r = p.add_run(f"图{physical - 1}　test_only 真实运行界面（1440×900）")
+            set_run_font(r, east_asia="宋体", size=8, color=GRAY)
+        if physical in (3, 11, 18):
+            add_boundary(doc)
+    path = output / "03_软件操作手册暨文档鉴别材料.docx"
+    save_doc(doc, path)
+    return path
+
+
+def build_template_contract(output: Path) -> Path:
+    doc = _new_template_doc()
+    _begin_template_page(doc, 1, 16, "技术开发（合作）合同", cover=True)
+    _add_template_cover(doc, "技术开发（合作）合同", "依据合作合同模板形成的项目底稿", "权属证明；签署后使用")
+    clause_pairs = [
+        ("第一条　合同主体与项目", "甲方/合作方一：【姓名】、【证件号码】、【地址】、【电话】；乙方/合作方二：【姓名】、【证件号码】、【地址】、【电话】；其他合作方按实际开发成员增列。项目名称为“芯智调参：基于仿真数据的电路参数智能推荐系统V1.0”。", "第二条　合作目标", "共同完成电路仿真数据管理、约束分析、候选参数管理、仿真任务导出、结果回填、版本比较与报告查看的软件，并形成源码、界面、测试和文档。"),
+        ("第三条　技术内容", "合作内容包括Python后端、React前端、数据模型、工件追溯、评估与优化内核、测试及申报文档；不包括第三方仿真器、PDK和第三方组件本身。", "第四条　技术方法和路线", "采用前后端分离、领域服务、结构化状态机、SQLite与工件目录存储；以仿真CSV为输入，通过分析、候选审批、外部重仿真和版本比较形成闭环。"),
+        ("第五条　计划进度", "各方根据版本计划完成需求、实现、测试和材料；V1.0开发完成日期确认为2026年07月15日。后续版本另行书面确认，不当然改变本合同对V1.0的约定。", "第六条　组织方式", "各方以版本库、问题清单、评审记录和测试结果协同；重大架构、权利处分和对外发布事项由共同开发成员书面决定。"),
+        ("第七条　成员分工", "各方实际贡献在本合同附件《共同开发与著作权归属确认书》中逐人填写，并以提交记录、评审记录、文档或测试证据索引佐证。", "第八条　开发成本", "除各方另有书面约定外，各方自行承担本人投入的设备、时间、差旅和日常开发成本；共同采购或外部支出须事先书面同意。"),
+        ("第九条　技术资料提供", "各方应提供本人合法持有且完成任务所需的资料，不得将无权使用的源码、数据、密钥或私有材料纳入项目。", "第十条　协作与通知", "影响交付、权属或安全的事项应及时在可追溯渠道通知其他合作方；联系方式变化应书面更新。"),
+        ("第十一条　成果交付", "交付物包括版本库源码、构建配置、测试、演示工件、操作手册、设计说明、源程序鉴别材料和相关清单。交付以指定提交和SHA-256记录为准。", "第十二条　验收标准", "后端测试、前端测试和生产构建通过；确定性产品流程可运行；材料名称、版本、日期、页数、边界与哈希检查通过。"),
+        ("第十三条　验收方式", "各方共同查验版本库、测试输出、演示流程和申报材料；发现问题形成清单并由相应贡献人修正。未提出异议不当然免除权属瑕疵责任。", "第十四条　风险承担", "因外部仿真器、PDK、第三方服务、网络或硬件产生的风险由实际使用方按许可和环境承担；软件不保证候选参数必然改善。"),
+        ("第十五条　保密范围", "未公开源码、私有数据、密钥、申请人证件信息、联系方式和合作方书面标注的资料属于保密信息；依法公开或已合法公开的信息除外。", "第十六条　保密义务", "接收方仅为项目和登记目的使用保密信息，采取合理访问控制；未经信息主体和其他相关方书面同意不得对外披露。"),
+        ("第十七条　知识产权归属", "各实际开发成员对V1.0团队原创代码、原创界面编排和原创文档共同享有软件著作权；登记采用合作开发、原始取得、全部权利。", "第十八条　第三方权利", "Python、FastAPI、SQLAlchemy、React等第三方组件按各自许可证使用，不纳入共同著作权主张；引用资料不得改变原权利归属。"),
+        ("第十九条　申请与代表", "各方同意共同申请软件著作权，并授权【申请代表】在授权范围内办理材料录入、提交、补正和证书领取；代表不得单方处分共有权利。", "第二十条　署名与对外表述", "团队名称可作为项目标识使用，但不作为无主体资格的单一著作权人；非开发参赛成员和指导教师不自动列入共同著作权人。"),
+        ("第二十一条　收益分配", "许可、转让或其他处置产生的收益和费用由各方另行书面约定；未约定前不得由任何一方单独占有或处分。", "第二十二条　重大处分", "著作权转让、独占许可、质押、放弃权利、重大开源或其他重大处分必须经全体共同著作权人书面同意。"),
+        ("第二十三条　后续改进", "个人独立完成且可与V1.0区分的后续改进，其权属另行认定；基于共有代码形成且不可分割的改进，应由相关方书面约定。", "第二十四条　发表与论文", "代码公开、论文发表和竞赛展示应遵守保密与共同署名约定。软件登记不当然限制论文发表，但不得披露未获授权的身份、私有数据或第三方机密。"),
+        ("第二十五条　违约责任", "一方擅自处分共有权利、引入侵权材料、泄露保密信息或提供虚假申请信息的，应停止行为、协助补救并承担由此造成的实际损失。", "第二十六条　不可抗力", "因不可预见、不可避免且不可克服事件导致迟延的，受影响方应及时通知并提供合理证明，各方协商调整计划。"),
+        ("第二十七条　争议解决", "争议先由各方协商；协商不成，向【约定有管辖权的人民法院或仲裁机构】处理。适用中华人民共和国法律。", "第二十八条　合同生效与变更", "本合同经全部合作方签字或盖章后生效；补充、变更、附件和授权须采用可核验书面形式，并与本合同具有同等效力。"),
+    ]
+    for physical, clauses in enumerate(clause_pairs, 2):
+        _begin_template_page(doc, physical, 16, "技术开发（合作）合同")
+        _add_page_title(doc, f"合同条款（{physical - 1}）")
+        for title, text in ((clauses[0], clauses[1]), (clauses[2], clauses[3])):
+            p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(10)
+            r = p.add_run(title)
+            set_run_font(r, east_asia="黑体", size=12, bold=True)
+            _add_body_paragraphs(doc, [text])
+        if physical in (3, 10):
+            add_boundary(doc)
+    _begin_template_page(doc, 16, 16, "技术开发（合作）合同")
+    _add_page_title(doc, "第二十九条　签署页与附件")
+    _add_body_paragraphs(doc, ["本页为签署页，无正文。合同编号、签订地点、身份信息、联系方式和签署日期须由各方核实后填写。附件《共同开发与著作权归属确认书》是本合同组成部分。"])
+    add_kv_table(doc, [
+        ("合同编号", "【合同编号】"), ("签订地点", "【签订地点】"), ("合作方一", "【姓名】　签字/盖章：【签章】　日期：【年/月/日】"),
+        ("合作方二", "【姓名】　签字/盖章：【签章】　日期：【年/月/日】"), ("合作方三", "【姓名】　签字/盖章：【签章】　日期：【年/月/日】"),
+        ("其他合作方", "按实际开发成员人数增列并逐人签署"), ("附件", "05A_共同开发与著作权归属确认书"),
+    ], widths=(4.0, 12.0))
+    path = output / "05_技术开发（合作）合同.docx"
+    save_doc(doc, path)
+    return path
+
+
+def build_template_confirmation(output: Path) -> Path:
+    doc = _new_template_doc()
+    _begin_template_page(doc, 1, 4, "共同开发与著作权归属确认书", cover=True)
+    _add_template_cover(doc, "共同开发与著作权归属确认书", "技术开发（合作）合同附件", "权属证明；逐人签署")
+    page_content = [
+        ("一、共同开发成员与实际贡献", [
+            ("成员1", "【姓名】｜【证件号码】｜【实际开发贡献】｜【提交/评审/文档证据索引】"),
+            ("成员2", "【姓名】｜【证件号码】｜【实际开发贡献】｜【提交/评审/文档证据索引】"),
+            ("成员3", "【姓名】｜【证件号码】｜【实际开发贡献】｜【提交/评审/文档证据索引】"),
+            ("增列规则", "一名实际开发成员一行；非开发参赛成员和指导教师不自动列入"),
+        ]),
+        ("二、共同权属与申请授权", [
+            ("权属", "各实际开发成员对V1.0团队原创代码、原创界面编排和原创文档共同享有著作权"),
+            ("申请口径", "合作开发、原始取得、全部权利、共同申请"),
+            ("申请代表", "授权【申请代表姓名】办理系统录入、提交、补正和证书领取；不得单方处分共有权利"),
+            ("处分", "转让、独占许可、质押、放弃和重大开源须全体共同著作权人书面同意"),
+            ("第三方", "不主张第三方组件、仿真器、PDK或他人资料的著作权"),
+        ]),
+        ("三、确认与签署", [
+            ("成员1", "【姓名】　签字：【签字】　日期：【年/月/日】"),
+            ("成员2", "【姓名】　签字：【签字】　日期：【年/月/日】"),
+            ("成员3", "【姓名】　签字：【签字】　日期：【年/月/日】"),
+            ("其他成员", "按实际开发成员人数增列并逐人签署"),
+            ("共同确认", "所填贡献真实、权属无争议、申请信息一致；如有变更应由全体成员书面确认"),
+        ]),
+    ]
+    for physical, (title, rows) in enumerate(page_content, 2):
+        _begin_template_page(doc, physical, 4, "共同开发与著作权归属确认书")
+        _add_page_title(doc, title)
+        add_kv_table(doc, rows, widths=(4.0, 12.0))
+        if physical in (2, 3):
+            add_boundary(doc)
+    path = output / "05A_共同开发与著作权归属确认书.docx"
+    save_doc(doc, path)
+    return path
+
+
+def build_template_third_party(output: Path) -> Path:
+    doc = _new_template_doc()
+    _begin_template_page(doc, 1, 3, "第三方组件与权利边界说明", cover=True)
+    _add_template_cover(doc, "第三方组件与权利边界说明", "依赖、许可证与原创范围核对", "内部支撑材料")
+    _begin_template_page(doc, 2, 3, "第三方组件与权利边界说明", body_page=1, body_total=2)
+    _add_page_title(doc, "主要第三方组件")
+    add_table(doc, ["组件", "许可证", "用途", "权利边界"], [
+        ("Python", "PSF", "后端运行时", "不主张运行时著作权"), ("FastAPI", "MIT", "HTTP API框架", "仅按许可调用"),
+        ("SQLAlchemy", "MIT", "数据库访问", "仅按许可调用"), ("NumPy / pandas", "BSD-3-Clause", "数值与表格处理", "仅按许可调用"),
+        ("React / React DOM", "MIT", "前端界面框架", "仅按许可调用"), ("React Router", "MIT", "前端路由", "仅按许可调用"),
+        ("Recharts", "MIT", "图表展示", "仅按许可调用"), ("Vite / TypeScript", "MIT / Apache-2.0", "构建与语言工具", "不纳入登记主张"),
+        ("Vitest", "MIT", "前端测试", "测试工具不纳入运行成果主张"),
+    ], font_size=7.8)
+    _begin_template_page(doc, 3, 3, "第三方组件与权利边界说明", body_page=2, body_total=2)
+    _add_page_title(doc, "原创范围、排除项与合规核对")
+    add_kv_table(doc, [
+        ("登记范围", "团队原创Python/TypeScript/TSX/CSS源码、原创领域结构、界面编排和原创文档"),
+        ("不主张", "第三方组件、框架、运行时、仿真器、PDK、开源示例、字体和他人资料"),
+        ("源码排除", "tests、node_modules、锁文件、构建输出、环境变量、私有数据、自动生成样板和本材料生成工具"),
+        ("许可证核对", "正式发布前以锁文件和上游许可证原文复核版本、版权声明和再分发条件"),
+        ("界面截图", "真实运行界面由原创业务代码编排；框架提供通用能力，不改变第三方权属"),
+        ("外部仿真", "系统组织任务和回填，不主张外部仿真器或其输出格式的著作权"),
+    ], widths=(4.0, 12.0))
+    add_boundary(doc)
+    path = output / "06_第三方组件与权利边界说明.docx"
+    save_doc(doc, path)
+    return path
+
+
 def copy_support_screenshots(output: Path) -> Path:
     target = output / "internal_support" / "screenshots_test_only"
     target.mkdir(parents=True, exist_ok=True)
     for path in sorted(SCREENSHOT_SOURCE.glob("*.png")):
+        if not re.match(r"^\d{2}_.+\.png$", path.name):
+            continue
         shutil.copy2(path, target / path.name)
     readme = target / "README.txt"
     readme.write_text(
@@ -1405,10 +1906,76 @@ def copy_support_screenshots(output: Path) -> Path:
     return target
 
 
-def write_snapshot_manifest(output: Path, source_entries: list[dict], source_info: dict,
-                            document_info: dict, generated_docs: list[Path]) -> Path:
+def write_template_alignment_audit(output: Path, entries: list[dict]) -> Path:
+    support = output / "internal_support"
+    support.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "template_authority": TEMPLATE_ALIGNMENT,
+        "facts_source": "CircuitPilot repository and deterministic test_only product demo",
+        "approved_example_use": "visual acceptance only; no names, seals, QR codes or software facts copied",
+        "document_specs": DOCUMENT_SPECS,
+        "source_inventory": {
+            "file_count": len(entries),
+            "line_count": sum(item["line_count"] for item in entries),
+            "group_counts": dict(Counter(item["source_group"] for item in entries)),
+        },
+        "evidence_boundary": list(BOUNDARIES),
+        "formal_submission_recommendation": {
+            "official_form": "generate online from the authority system",
+            "document_identification": "submit the complete 18-page operation manual",
+            "program_identification": "submit the 60-page source-code material",
+            "rights_documents": "submit signed contract/confirmation when required",
+        },
+    }
+    path = support / "template_alignment_audit.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    traceability = support / "design_traceability.csv"
+    grouped: dict[str, list[dict]] = {}
+    for entry in entries:
+        grouped.setdefault(entry["source_group"], []).append(entry)
+    with traceability.open("w", newline="", encoding="utf-8-sig") as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=["设计职责", "源码分组", "代表文件", "文件数", "验证依据"],
+        )
+        writer.writeheader()
+        for group, group_entries in grouped.items():
+            writer.writerow(
+                {
+                    "设计职责": {
+                        "产品 API": "资源接口、错误契约与状态入口",
+                        "产品服务": "项目、版本、分析、候选、任务和比较领域逻辑",
+                        "只读仪表盘 API": "历史工件与只读展示接口",
+                        "上传分析服务": "输入预览、上传与分析入口",
+                        "前端界面": "项目工作台与闭环操作界面",
+                        "工程脚本": "演示、迁移、校验和运行编排",
+                        "电路分析": "电路指标与约束分析",
+                        "PIA 与候选生成": "候选参数组织与推荐依据",
+                        "LLSO 优化": "优化搜索与候选生成",
+                        "多智能体协作": "分析协作与结构化汇总",
+                        "评估内核与命令行": "数据读取、评估、诊断、报告与CLI",
+                    }.get(group, "其他原创实现"),
+                    "源码分组": group,
+                    "代表文件": "；".join(item["path"] for item in group_entries[:5]),
+                    "文件数": len(group_entries),
+                    "验证依据": "source_manifest.csv、source_line_manifest.csv、pytest/前端测试与产品演示",
+                }
+            )
+    return path
+
+
+def write_snapshot_manifest(
+    output: Path,
+    source_entries: list[dict],
+    source_info: dict,
+    generated_docs: list[Path],
+) -> Path:
+    screenshot_files = [
+        path for path in sorted(SCREENSHOT_SOURCE.glob("*.png"))
+        if re.match(r"^\d{2}_.+\.png$", path.name)
+    ]
     manifest = {
-        "schema_version": "1.0",
+        "schema_version": MANIFEST_SCHEMA_VERSION,
         "software": {
             "full_name": FULL_NAME,
             "short_name": SHORT_NAME,
@@ -1416,8 +1983,9 @@ def write_snapshot_manifest(output: Path, source_entries: list[dict], source_inf
             "package_version": PACKAGE_VERSION,
             "completion_date": "2026-07-15",
             "publication_status": "已发表",
-            "first_publication_date": "2026-05-16",
-            "first_publication_method": FIRST_PUBLICATION,
+            "first_publication_date": "2026-07-15",
+            "first_publication_method": "GitHub公开仓库",
+            "first_publication_url": "https://github.com/changfeng-01/edex",
             "first_publication_city": "【首次发表城市】",
         },
         "application": {
@@ -1430,6 +1998,22 @@ def write_snapshot_manifest(output: Path, source_entries: list[dict], source_inf
             "baseline_commit": BASELINE_COMMIT,
             "branch": BRANCH,
             "current_head": run_text(["git", "rev-parse", "HEAD"]),
+        },
+        "template_alignment": TEMPLATE_ALIGNMENT,
+        "materials": {
+            stem: {
+                "expected_pdf_pages": spec["pdf_pages"],
+                "submission_role": spec["submission_role"],
+                "docx": f"{stem}.docx",
+                "pdf": f"{stem}.pdf",
+                "formal_submission_recommended": stem in {
+                    "03_软件操作手册暨文档鉴别材料",
+                    "04_源程序鉴别材料_前30页后30页",
+                    "05_技术开发（合作）合同",
+                    "05A_共同开发与著作权归属确认书",
+                },
+            }
+            for stem, spec in DOCUMENT_SPECS.items()
         },
         "evidence_boundary": {
             "data_source": "real_simulation_csv",
@@ -1451,14 +2035,21 @@ def write_snapshot_manifest(output: Path, source_entries: list[dict], source_inf
             ],
             "identification_material": source_info,
         },
-        "document_identification_material": document_info,
+        "document_identification_material": {
+            "path": "03_软件操作手册暨文档鉴别材料.docx",
+            "expected_pdf_pages": 18,
+            "complete_document": True,
+            "under_60_pages": True,
+            "numbering": "cover unnumbered; body pages 1-17 continuous",
+            "formal_submission_recommended": True,
+        },
         "screenshots": {
             "source": "Playwright CLI",
             "viewport": "1440x900",
             "fixture": "test_only deterministic product demo",
             "files": [
                 {"path": p.name, "sha256": sha256(p), "bytes": p.stat().st_size}
-                for p in sorted(SCREENSHOT_SOURCE.glob("*.png"))
+                for p in screenshot_files
             ],
         },
         "generated_docx": [
@@ -1476,6 +2067,15 @@ def write_snapshot_manifest(output: Path, source_entries: list[dict], source_inf
                 "PDF re-render visual inspection",
                 "metadata and placeholder audit",
             ],
+            "allowed_placeholders": [
+                "applicant identity and contact details",
+                "individual contribution and evidence index",
+                "first publication city",
+                "contract number and signing place",
+                "application representative",
+                "signature/seal and signing date",
+                "dispute resolution venue",
+            ],
         },
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -1486,6 +2086,7 @@ def write_snapshot_manifest(output: Path, source_entries: list[dict], source_inf
 
 def main() -> int:
     output = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else DEFAULT_OUTPUT
+    ensure_safe_output_path(output)
     output.mkdir(parents=True, exist_ok=True)
     if not SCREENSHOT_SOURCE.is_dir():
         raise FileNotFoundError(f"截图目录不存在：{SCREENSHOT_SOURCE}")
@@ -1499,18 +2100,18 @@ def main() -> int:
         "entries": entries,
     }
     support_screenshots = copy_support_screenshots(output)
+    write_template_alignment_audit(output, entries)
     docs: list[Path] = []
-    docs.append(build_catalog(output, source_stats))
-    docs.append(build_application_draft(output, source_stats))
-    docs.append(build_design_spec(output, source_stats))
-    document_info = build_document_identification(output, entries)
-    docs.append(output / document_info["path"])
-    docs.append(build_manual(output, support_screenshots))
+    docs.append(build_template_catalog(output, source_stats))
+    docs.append(build_template_application(output, source_stats))
+    docs.append(build_template_design(output, source_stats))
+    docs.append(build_template_manual(output, support_screenshots))
     source_info = build_source_doc(output, entries)
     docs.append(output / source_info["path"])
-    docs.append(build_joint_agreement(output))
-    docs.append(build_third_party(output))
-    manifest = write_snapshot_manifest(output, entries, source_info, document_info, docs)
+    docs.append(build_template_contract(output))
+    docs.append(build_template_confirmation(output))
+    docs.append(build_template_third_party(output))
+    manifest = write_snapshot_manifest(output, entries, source_info, docs)
     print(
         json.dumps(
             {
