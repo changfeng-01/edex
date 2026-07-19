@@ -4,7 +4,7 @@ import pandas as pd
 
 from goa_eval.pia_ca_llso.candidate_generator import generate_constraint_repair_candidates
 from goa_eval.pia_ca_llso.evaluation_scheduler import attach_evaluation_schedule
-from goa_eval.pia_ca_llso.features import extract_physics_features
+from goa_eval.pia_ca_llso.features import extract_physics_features, resolve_physics_feature_config
 from goa_eval.pia_ca_llso.labeling import assign_level_labels
 from goa_eval.pia_ca_llso.physics_distance import FORBIDDEN_DISTANCE_COLUMNS
 from goa_eval.pia_ca_llso.selector import (
@@ -18,8 +18,9 @@ from goa_eval.pia_ca_llso.sklearn_baseline import predict_candidates, train_base
 
 def suggest_next_run(history: pd.DataFrame, candidates: pd.DataFrame, config: dict, strategy: str, top_k: int):
     labeled = assign_level_labels(history)
-    history_features, feature_report = extract_physics_features(labeled, config.get("physics_features", config))
-    candidate_features, candidate_feature_report = extract_physics_features(candidates, config.get("physics_features", config))
+    feature_config = resolve_physics_feature_config(config)
+    history_features, feature_report = extract_physics_features(labeled, feature_config)
+    candidate_features, candidate_feature_report = extract_physics_features(candidates, feature_config)
     history_joined = pd.concat([labeled.reset_index(drop=True), history_features.reset_index(drop=True)], axis=1)
     candidate_joined = pd.concat([candidates.reset_index(drop=True), candidate_features.reset_index(drop=True)], axis=1)
     # Drop duplicate columns that may arise from overlapping feature names
@@ -28,7 +29,7 @@ def suggest_next_run(history: pd.DataFrame, candidates: pd.DataFrame, config: di
     repairs = generate_constraint_repair_candidates(history_joined, candidate_joined, config)
     repair_report = {"enabled": config.get("repair_candidates", {}).get("enabled", True), "generated_count": int(len(repairs))}
     if not repairs.empty:
-        repair_features, repair_feature_report = extract_physics_features(repairs, config.get("physics_features", config))
+        repair_features, repair_feature_report = extract_physics_features(repairs, feature_config)
         repair_joined = repairs.copy()
         for column in repair_features.columns:
             repair_joined[column] = repair_features[column].values

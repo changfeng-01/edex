@@ -6,6 +6,8 @@ from typing import Any, Callable, Mapping, Sequence
 import pandas as pd
 
 from goa_eval.pia_ca_llso.acquisition import attach_acquisition_scores, compute_diversity, explain_acquisition
+from goa_eval.pia_ca_llso.electrical_model import V3_CANONICAL_FEATURES
+from goa_eval.pia_ca_llso.features import extract_physics_features, resolve_physics_feature_config
 from goa_eval.pia_ca_llso.leakage import FORMAL_RESULT_LEAKAGE_COLUMNS
 from goa_eval.pia_ca_llso.physics_distance import (
     FORBIDDEN_DISTANCE_COLUMNS,
@@ -182,12 +184,25 @@ def select_capm_distance(
     diagnostic_status: str = "capm_physics_manifold_no_training",
     sort_by_acquisition: bool = False,
 ) -> pd.DataFrame:
-    output = candidates.copy()
-    feature_cols = _shared_numeric_columns(output, history)
-    distance_context = build_capm_distance_context(history, weights=weights, config=config)
+    output, distance_history = _prepare_capm_v3_frames(candidates, history, config)
+    feature_cols = _shared_numeric_columns(output, distance_history)
+    distance_context = build_capm_distance_context(distance_history, weights=weights, config=config)
+    metadata_columns = [
+        column
+        for column in [
+            "physics_feature_status_json",
+            "capm_electrical_status_json",
+            "capm_pvt_features_json",
+            "capm_pvt_status",
+            "capm_pvt_diagnostics_json",
+        ]
+        if column in output.columns and column in distance_history.columns
+    ]
+    candidate_columns = [*(["candidate_id"] if "candidate_id" in output else []), *feature_cols, *metadata_columns]
+    history_columns = list(dict.fromkeys([*feature_cols, *metadata_columns, *_history_label_columns(distance_history)]))
     scored = physics_geodesic_distance_to_l1(
-        output[["candidate_id", *feature_cols]] if "candidate_id" in output else output[feature_cols],
-        history[feature_cols + _history_label_columns(history)],
+        output[candidate_columns],
+        distance_history[history_columns],
         weights=weights,
         config=config,
         context=distance_context,
@@ -203,10 +218,22 @@ def select_capm_distance(
         "capm_metric_version",
         "capm_l1_aggregation_status",
         "capm_normalization_json",
+        "capm_distance_to_l1_calibrated",
+        "capm_distance_calibration_json",
+        "capm_calibration_status",
         "capm_status",
     ]:
         output[column] = scored[column].values
-    output["capm_distance_to_l1_normalized"] = normalize_distance(output["capm_geodesic_distance_to_l1"].tolist())
+    if str(distance_context.metric_version).lower() == "v3":
+        output["capm_distance_to_l1_normalized"] = output["capm_distance_to_l1_calibrated"].astype(float)
+        if "capm_pvt_status" not in output:
+            output["capm_pvt_status"] = "nominal_only"
+        if "capm_pvt_diagnostics_json" not in output:
+            output["capm_pvt_diagnostics_json"] = "{}"
+        if "capm_electrical_status_json" not in output:
+            output["capm_electrical_status_json"] = "{}"
+    else:
+        output["capm_distance_to_l1_normalized"] = normalize_distance(output["capm_geodesic_distance_to_l1"].tolist())
     # Use CAPM distance for diversity to align with physics-manifold semantics
     def _capm_distance_fn(a: pd.Series, b: pd.Series) -> float:
         result = compute_capm_distance(a, b, weights=weights, config=config, context=distance_context)
@@ -242,6 +269,9 @@ def select_capm_distance(
         for _, row in output.iterrows()
     ]
     output["diagnostic_status"] = diagnostic_status
+    output["data_source"] = "real_simulation_csv"
+    output["engineering_validity"] = "simulation_only"
+    output["must_resimulate"] = True
     if weights is not None:
         output["adaptive_capm_weights_json"] = weights_json
         output["adaptive_acquisition_weights_json"] = acquisition_weights_json
@@ -254,6 +284,31 @@ def select_capm_distance(
         ["capm_hard_risk_passed", "capm_distance_to_l1_normalized", "diversity_score", "candidate_id"],
         ascending=[False, True, False, True],
     ).head(top_k)
+
+
+def _prepare_capm_v3_frames(
+    candidates: pd.DataFrame,
+    history: pd.DataFrame,
+    config: Mapping[str, Any] | None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    output = candidates.copy()
+    distance_history = history.copy()
+    nested = (config or {}).get("capm_distance", config or {})
+    version = str(nested.get("metric_version", "v2")).lower() if isinstance(nested, Mapping) else "v2"
+    has_canonical = any(
+        feature in output.columns and feature in distance_history.columns
+        for feature in V3_CANONICAL_FEATURES
+    )
+    if version != "v3" or has_canonical:
+        return output, distance_history
+    feature_config = resolve_physics_feature_config(config)
+    candidate_features, _ = extract_physics_features(output, feature_config)
+    history_features, _ = extract_physics_features(distance_history, feature_config)
+    for column in candidate_features.columns:
+        output[column] = candidate_features[column].values
+    for column in history_features.columns:
+        distance_history[column] = history_features[column].values
+    return output, distance_history
 
 
 def select_adaptive_capm_distance(
@@ -371,10 +426,12 @@ def select_active_uncertainty_diversity(
         return scored
 
     weights = _active_acquisition_weights(active_cfg)
-    feature_cols = _shared_numeric_columns(scored, history)
+    scored, distance_history = _prepare_capm_v3_frames(scored, history, config)
+    feature_cols = _shared_numeric_columns(scored, distance_history)
+    distance_context = build_capm_distance_context(distance_history, config=config)
 
     def _capm_distance_fn(a: pd.Series, b: pd.Series) -> float:
-        result = compute_capm_distance(a, b, config=config)
+        result = compute_capm_distance(a, b, config=config, context=distance_context)
         return float(result.get("distance", float("inf")))
 
     scored["active_uncertainty_score"] = _bounded_series(
@@ -485,14 +542,16 @@ def select_active_influence_on_demand(
 
     aiod_cfg = _nested_config(config, ACTIVE_INFLUENCE_ON_DEMAND_STRATEGY)
     weights = _active_influence_on_demand_weights(aiod_cfg)
-    feature_cols = _shared_numeric_columns(scored, history)
+    scored, distance_history = _prepare_capm_v3_frames(scored, history, config)
+    feature_cols = _shared_numeric_columns(scored, distance_history)
+    distance_context = build_capm_distance_context(distance_history, config=config)
 
     influence_enabled = aiod_cfg.get("influence_graph_enabled", True) is not False
     constraint_enabled = aiod_cfg.get("on_demand_constraint_enabled", True) is not False
     transfer_enabled = aiod_cfg.get("transfer_trust_enabled", True) is not False
 
     scored["influence_gain_score"] = (
-        _influence_gain_scores(scored, history, feature_cols, config=config)
+        _influence_gain_scores(scored, distance_history, feature_cols, config=config, context=distance_context)
         if influence_enabled
         else pd.Series(0.0, index=scored.index, dtype="float64")
     )
@@ -502,7 +561,7 @@ def select_active_influence_on_demand(
         else pd.Series(0.0, index=scored.index, dtype="float64")
     )
     scored["transfer_trust_score"] = (
-        _transfer_trust_scores(scored, history, feature_cols)
+        _transfer_trust_scores(scored, distance_history, feature_cols)
         if transfer_enabled
         else pd.Series(0.0, index=scored.index, dtype="float64")
     )
@@ -519,7 +578,7 @@ def select_active_influence_on_demand(
     scored["must_resimulate"] = True
 
     def _capm_distance_fn(a: pd.Series, b: pd.Series) -> float:
-        result = compute_capm_distance(a, b, config=config)
+        result = compute_capm_distance(a, b, config=config, context=distance_context)
         return float(result.get("distance", float("inf")))
 
     remaining = scored.copy()
@@ -888,6 +947,7 @@ def _influence_gain_scores(
     history: pd.DataFrame,
     feature_cols: Sequence[str],
     config: Mapping[str, Any] | None = None,
+    context: Any | None = None,
 ) -> pd.Series:
     if len(scored) <= 1 or not feature_cols:
         return _influence_fallback_scores(scored)
@@ -901,7 +961,9 @@ def _influence_gain_scores(
             if idx == other_idx:
                 continue
             try:
-                distance = float(compute_capm_distance(row, other, config=config).get("distance", float("inf")))
+                distance = float(
+                    compute_capm_distance(row, other, config=config, context=context).get("distance", float("inf"))
+                )
             except Exception:
                 distance = float("inf")
             if pd.isna(distance) or distance == float("inf"):

@@ -72,8 +72,10 @@ FORMULAS = {
         "+ lambda_missing * M(x,y) + lambda_fallback * F(x,y)"
     ),
     "l1_geodesic": "D_geodesic(x,L1) = softmin_top_k { shortest_path_G_history(x,z) | z in L1 }",
+    "pvt_aggregation": "D_pvt(x,y) = 0.5 mean_s D_s(x,y) + 0.5 max_s D_s(x,y)",
+    "history_distance_calibration": "D_cal(x,L1) = clip(D_geodesic(x,L1) / P90(D_history_to_L1), 0, 1)",
     "capm_acquisition": (
-        "A_capm(x) = alpha_d (1 - norm(D_geodesic(x,L1))) + alpha_v diversity(x) "
+        "A_capm(x) = alpha_d (1 - D_cal(x,L1)) + alpha_v diversity(x) "
         "+ alpha_h I[B(phi(x))=0] + alpha_m (1 - M(x))"
     ),
     "classifier_hybrid": (

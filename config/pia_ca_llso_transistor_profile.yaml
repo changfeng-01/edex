@@ -54,18 +54,69 @@ forbidden_leakage_columns:
 physics_features:
   profile: transistor_level
   electrical_features_enabled: true
+electrical_model:
+  model: tft_square_law_v1
+  units:
+    geometry: um
+    capacitance: pF
+    time: ns
+  devices:
+    pullup:
+      polarity: n
+      width_column: M_pullup_W
+      length_column: M_pullup_L
+      mobility_column: mu_pullup_cm2_v_s
+      cox_column: cox_f_per_cm2
+      threshold_column: Vth_shift
+      vgs_column: pullup_vgs_v
+      vds_column: pullup_vds_v
+      observed_resistance_column: pullup_observed_r_ohm
+    pulldown:
+      polarity: n
+      width_column: M_pulldown_W
+      length_column: M_pulldown_L
+      mobility_column: mu_pulldown_cm2_v_s
+      cox_column: cox_f_per_cm2
+      threshold_column: Vth_shift
+      vgs_column: pulldown_vgs_v
+      vds_column: pulldown_vds_v
+      observed_resistance_column: pulldown_observed_r_ohm
+    bootstrap:
+      polarity: n
+      width_column: M_bootstrap_W
+      length_column: M_bootstrap_L
+      mobility_column: mu_bootstrap_cm2_v_s
+      cox_column: cox_f_per_cm2
+      threshold_column: Vth_shift
+      vgs_column: bootstrap_vgs_v
+      vds_column: bootstrap_vds_v
+parasitics:
+  summary_path_column: parasitic_summary_path
+  net_role_map: {}
+  legacy_capacitance_unit: pF
+pvt:
+  reference_temperature_c: 25.0
+  reference_supply_v: 5.0
+  sample_id_column: sample_id
+  scenarios:
+    - {corner: tt, temperature_c: 25.0, supply_v: 5.0}
+  corner_models:
+    tt: {mu_multiplier: 1.0, vth_shift_v: 0.0, resistance_multiplier: 1.0, capacitance_multiplier: 1.0}
 feature_weights:
-  cboot_cload_ratio: 2.0
-  pullup_pulldown_ratio: 2.0
-  drive_to_load_ratio: 1.6
-  ron_pullup_cload_proxy: 1.5
-  ron_pulldown_cload_proxy: 1.5
-  vgh_vth_margin: 1.5
-  vgl_off_margin: 1.5
-  clk_slew_proxy: 1.2
-  area_proxy: 0.8
+  pullup_overdrive_v: 1.0
+  pulldown_overdrive_v: 1.0
+  pullup_effective_resistance_ohm: 1.0
+  pulldown_effective_resistance_ohm: 1.0
+  effective_load_capacitance_f: 0.8
+  pullup_rc_delay_s: 1.5
+  pulldown_rc_delay_s: 1.5
+  critical_rc_delay_s: 1.5
+  bootstrap_coupling_factor_v3: 1.2
+  bootstrap_headroom_v: 1.2
+  drive_balance_log_ratio: 1.0
+  clock_slew_over_rc_ratio: 1.0
 capm_distance:
-  metric_version: v2
+  metric_version: v3
   lambda_barrier: 1.0
   lambda_graph: 1.0
   lambda_missing: 1.0
@@ -92,32 +143,39 @@ capm_distance:
   min_pullup_pulldown_ratio: 0.5
   max_pullup_pulldown_ratio: 2.0
   max_clk_slew_proxy: 2.0
+  min_device_overdrive_v: 0.1
+  max_critical_rc_delay_s: 1.0e-6
+  min_bootstrap_coupling_factor_v3: 0.2
+  min_bootstrap_headroom_v: 0.1
+  max_abs_drive_balance_log_ratio: 2.0
+  max_clock_slew_over_rc_ratio: 5.0
+  pvt_worst_case_weight: 0.5
+  historical_calibration_min_p90_count: 5
   couplings:
-    - {left: ron_pullup_cload_proxy, right: clk_slew_proxy, weight: 0.25, enabled: true}
-    - {left: ron_pulldown_cload_proxy, right: clk_slew_proxy, weight: 0.25, enabled: true}
-    - {left: cboot_cload_ratio, right: vgh_vth_margin, weight: 0.25, enabled: true}
-    - {left: drive_to_load_ratio, right: area_proxy, weight: 0.15, enabled: true}
-    - {left: pullup_pulldown_ratio, right: clk_slew_proxy, weight: 0.10, enabled: true}
+    - {left: pullup_rc_delay_s, right: bootstrap_headroom_v, weight: 0.25, enabled: true}
+    - {left: pulldown_rc_delay_s, right: clock_slew_over_rc_ratio, weight: 0.25, enabled: true}
+    - {left: bootstrap_coupling_factor_v3, right: bootstrap_headroom_v, weight: 0.25, enabled: true}
+    - {left: drive_balance_log_ratio, right: critical_rc_delay_s, weight: 0.15, enabled: true}
   penalty_config:
-    vgh_vth_margin:
+    pullup_overdrive_v:
       type: exponential
       alpha: 2.0
-    vgl_off_margin:
+    pulldown_overdrive_v:
       type: exponential
       alpha: 2.0
-    cboot_cload_ratio:
+    critical_rc_delay_s:
       type: exponential
       alpha: 2.0
-    ron_pullup_cload_proxy:
+    bootstrap_coupling_factor_v3:
       type: exponential
       alpha: 2.0
-    ron_pulldown_cload_proxy:
+    bootstrap_headroom_v:
       type: exponential
       alpha: 2.0
-    clk_slew_proxy:
+    clock_slew_over_rc_ratio:
       type: exponential
       alpha: 2.0
-    pullup_pulldown_ratio:
+    drive_balance_log_ratio:
       type: quadratic
       alpha: 2.0
 labeling:

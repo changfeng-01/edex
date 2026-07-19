@@ -49,9 +49,17 @@ When `--strategy pia_capm_distance` is used, the selected candidate CSV also inc
 - `capm_metric_version`
 - `capm_l1_aggregation_status`
 - `capm_normalization_json`
+- `capm_distance_to_l1_calibrated`
+- `capm_distance_calibration_json`
+- `capm_calibration_status`
+- `capm_electrical_status_json`
+- `capm_pvt_status`
+- `capm_pvt_diagnostics_json`
 - `capm_hard_risk_passed`
 
 These fields are pre-simulation candidate-selection diagnostics. They are not final physical validation evidence, and every selected candidate keeps `must_resimulate = true`.
+
+For `metric_version: v3`, `capm_distance_to_l1_normalized` is the history-calibrated distance. Its scale is fitted from leave-one-out history-to-L1 distances only; candidate rows never participate. V3 electrical inputs are declared under `electrical_model`, `parasitics`, and `pvt`. PVT observations use a long-form CSV keyed by `sample_id`, `corner`, `temperature_c`, and `supply_v`.
 
 ## Adapter Interface
 
