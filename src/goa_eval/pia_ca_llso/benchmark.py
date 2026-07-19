@@ -89,6 +89,7 @@ def run_ablation_benchmark(
     summary = {
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
+        "must_resimulate": True,
         "claim_boundary": "external benchmark over evaluated simulation records",
         "methods": list(strategies),
         "target_score": target_score,
@@ -107,6 +108,7 @@ def render_benchmark_report(results: pd.DataFrame, summary: dict[str, object]) -
         "",
         "- data_source = real_simulation_csv",
         "- engineering_validity = simulation_only",
+        "- must_resimulate = true",
         "- predicted_score cannot prove final algorithm quality",
         "- attention score cannot prove final algorithm quality",
         "",

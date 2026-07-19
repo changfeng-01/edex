@@ -7,7 +7,7 @@ from typing import Any, Iterable
 
 import pandas as pd
 
-from goa_eval.pia_ca_llso.features import extract_physics_features
+from goa_eval.pia_ca_llso.features import extract_physics_features, resolve_physics_feature_config
 from goa_eval.pia_ca_llso.integration import CandidateAdapter
 from goa_eval.pia_ca_llso.io import ensure_output_dir, read_config, write_json, write_markdown
 from goa_eval.pia_ca_llso.labeling import assign_level_labels
@@ -123,7 +123,7 @@ def build_training_data_from_db(
 ) -> TrainingDataArtifacts:
     output_dir = ensure_output_dir(output_dir)
     config = read_config(config_path)
-    profile_config = config.get("physics_features", config)
+    profile_config = resolve_physics_feature_config(config)
 
     missing_rows: list[dict[str, Any]] = []
     parse_errors: list[dict[str, Any]] = []

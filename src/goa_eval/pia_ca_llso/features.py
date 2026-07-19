@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
-from typing import Iterable, Any
+from typing import Iterable, Any, Mapping
 
 import numpy as np
 import pandas as pd
+
+from goa_eval.pia_ca_llso.electrical_model import attach_v3_electrical_features
 
 DEFAULT_FORBIDDEN_METRIC_NAMES = [
     "delay",
@@ -217,6 +219,16 @@ def extract_physics_features(frame: pd.DataFrame, profile_config: dict[str, Any]
                 features["vgl_off_margin"],
             )
 
+    electrical_report: dict[str, Any] = {}
+    electrical_model = config.get("electrical_model", {})
+    if (
+        profile in {"goa", "transistor_level"}
+        and config.get("electrical_features_enabled", True) is not False
+        and isinstance(electrical_model, dict)
+        and str(electrical_model.get("model", "")).lower() == "tft_square_law_v1"
+    ):
+        electrical_report = attach_v3_electrical_features(features, frame, config)
+
     features = features.replace([np.inf, -np.inf], 0.0).fillna(0.0)
     forbidden = config.get("forbidden_metric_names", DEFAULT_FORBIDDEN_METRIC_NAMES)
     leaked = validate_no_leakage(features.columns, forbidden)
@@ -225,8 +237,20 @@ def extract_physics_features(frame: pd.DataFrame, profile_config: dict[str, Any]
     report["electrical_features_enabled"] = bool(
         profile in {"goa", "transistor_level"} and config.get("electrical_features_enabled", True) is not False
     )
+    report.update(electrical_report)
     report["leakage_violations"] = leaked
     return features, report
+
+
+def resolve_physics_feature_config(config: Mapping[str, Any] | None) -> dict[str, Any]:
+    source = dict(config or {})
+    nested = source.get("physics_features", source)
+    resolved = dict(nested) if isinstance(nested, Mapping) else {}
+    for block in ("electrical_model", "parasitics", "pvt"):
+        value = source.get(block)
+        if isinstance(value, Mapping):
+            resolved[block] = dict(value)
+    return resolved
 
 
 def infer_feature_columns(frame: pd.DataFrame, profile: str = "generic") -> list[str]:

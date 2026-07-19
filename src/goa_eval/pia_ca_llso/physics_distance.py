@@ -8,6 +8,8 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
+from goa_eval.pia_ca_llso.electrical_model import V3_CANONICAL_FEATURES
+
 
 GOA_DEFAULT_WEIGHTS = {
     "cboot_cload_ratio": 2.0,
@@ -31,6 +33,21 @@ GOA_V2_WEIGHTS = {
     "clk_slew_proxy": 1.0,
 }
 
+GOA_V3_WEIGHTS = {
+    "pullup_overdrive_v": 1.0,
+    "pulldown_overdrive_v": 1.0,
+    "pullup_effective_resistance_ohm": 1.0,
+    "pulldown_effective_resistance_ohm": 1.0,
+    "effective_load_capacitance_f": 0.8,
+    "pullup_rc_delay_s": 1.5,
+    "pulldown_rc_delay_s": 1.5,
+    "critical_rc_delay_s": 1.5,
+    "bootstrap_coupling_factor_v3": 1.2,
+    "bootstrap_headroom_v": 1.2,
+    "drive_balance_log_ratio": 1.0,
+    "clock_slew_over_rc_ratio": 1.0,
+}
+
 CAPM_COUPLINGS = [
     {"left": "ron_pullup_cload_proxy", "right": "clk_slew_proxy", "weight": 0.25, "enabled": True},
     {"left": "ron_pulldown_cload_proxy", "right": "clk_slew_proxy", "weight": 0.25, "enabled": True},
@@ -40,6 +57,13 @@ CAPM_COUPLINGS = [
     {"left": "cboot_cload_ratio", "right": "holding_droop_proxy", "weight": 0.15, "enabled": True},
     {"left": "pullup_pulldown_ratio", "right": "clk_slew_proxy", "weight": 0.10, "enabled": True},
     {"left": "vgh_vth_margin", "right": "vgl_off_margin", "weight": 0.10, "enabled": True},
+]
+
+CAPM_V3_COUPLINGS = [
+    {"left": "pullup_rc_delay_s", "right": "bootstrap_headroom_v", "weight": 0.25, "enabled": True},
+    {"left": "pulldown_rc_delay_s", "right": "clock_slew_over_rc_ratio", "weight": 0.25, "enabled": True},
+    {"left": "bootstrap_coupling_factor_v3", "right": "bootstrap_headroom_v", "weight": 0.25, "enabled": True},
+    {"left": "drive_balance_log_ratio", "right": "critical_rc_delay_s", "weight": 0.15, "enabled": True},
 ]
 
 CAPM_DEFAULT_CONFIG = {
@@ -70,6 +94,14 @@ CAPM_DEFAULT_CONFIG = {
     "min_pullup_pulldown_ratio": 0.5,
     "max_pullup_pulldown_ratio": 2.0,
     "max_clk_slew_proxy": 2.0,
+    "min_device_overdrive_v": 0.0,
+    "max_critical_rc_delay_s": 1.0,
+    "min_bootstrap_coupling_factor_v3": 0.0,
+    "min_bootstrap_headroom_v": 0.0,
+    "max_abs_drive_balance_log_ratio": 10.0,
+    "max_clock_slew_over_rc_ratio": 1.0e12,
+    "pvt_worst_case_weight": 0.5,
+    "historical_calibration_min_p90_count": 5,
     "couplings": [dict(c) for c in CAPM_COUPLINGS],
     "penalty_config": {},
 }
@@ -97,6 +129,10 @@ FORBIDDEN_DISTANCE_COLUMNS = {
     "undershoot",
     "holding_droop",
     "physics_feature_status_json",
+    "capm_electrical_status_json",
+    "capm_pvt_features_json",
+    "capm_pvt_status",
+    "capm_pvt_diagnostics_json",
 }
 
 
@@ -108,6 +144,10 @@ class CapmDistanceContext:
     scales: dict[str, float]
     weights: dict[str, float]
     config: dict[str, Any]
+    distance_scale: float = 0.0
+    calibration_status: str = "not_applicable"
+    calibration_count: int = 0
+    pvt_scenarios: tuple[str, ...] = ()
 
     def normalization_payload(self) -> dict[str, Any]:
         return {
@@ -117,6 +157,20 @@ class CapmDistanceContext:
             "scales": self.scales,
             "weights": self.weights,
             "normalization_enabled": bool(self.config.get("normalization_enabled", True)),
+            "distance_scale": self.distance_scale,
+            "calibration_status": self.calibration_status,
+            "calibration_count": self.calibration_count,
+            "pvt_scenarios": list(self.pvt_scenarios),
+        }
+
+    def calibration_payload(self) -> dict[str, Any]:
+        return {
+            "metric_version": self.metric_version,
+            "method": "history_leave_one_out_p90",
+            "distance_scale": self.distance_scale,
+            "calibration_status": self.calibration_status,
+            "reference_count": self.calibration_count,
+            "candidate_pool_fitted": False,
         }
 
 def compute_physics_distance(phi_a: Mapping[str, Any], phi_b: Mapping[str, Any], weights: Mapping[str, float] | None = None) -> float:
@@ -140,6 +194,8 @@ def constraint_barrier_score(phi: Mapping[str, Any] | pd.Series, config: Mapping
     cfg = _capm_config(config)
     if cfg.get("barrier_enabled", True) is False:
         return 0.0
+    if str(cfg.get("metric_version", "v2")).lower() == "v3":
+        return _v3_constraint_barrier_score(phi, cfg)
     penalty_config = cfg.get("penalty_config", {})
     total = 0.0
     total += _apply_penalty(_numeric(phi.get("vgh_vth_margin")), float(cfg["min_vgh_vth_margin"]), "low", penalty_config, "vgh_vth_margin")
@@ -155,6 +211,60 @@ def constraint_barrier_score(phi: Mapping[str, Any] | pd.Series, config: Mapping
     return float(total)
 
 
+def _v3_constraint_barrier_score(phi: Mapping[str, Any] | pd.Series, cfg: Mapping[str, Any]) -> float:
+    penalty_config = cfg.get("penalty_config", {})
+    total = 0.0
+    for feature in ("pullup_overdrive_v", "pulldown_overdrive_v"):
+        total += _apply_penalty(
+            _numeric(phi.get(feature)),
+            float(cfg["min_device_overdrive_v"]),
+            "low",
+            penalty_config,
+            feature,
+        )
+    total += _apply_penalty(
+        _numeric(phi.get("critical_rc_delay_s")),
+        float(cfg["max_critical_rc_delay_s"]),
+        "high",
+        penalty_config,
+        "critical_rc_delay_s",
+    )
+    total += _apply_penalty(
+        _numeric(phi.get("bootstrap_coupling_factor_v3")),
+        float(cfg["min_bootstrap_coupling_factor_v3"]),
+        "low",
+        penalty_config,
+        "bootstrap_coupling_factor_v3",
+    )
+    total += _apply_penalty(
+        _numeric(phi.get("bootstrap_headroom_v")),
+        float(cfg["min_bootstrap_headroom_v"]),
+        "low",
+        penalty_config,
+        "bootstrap_headroom_v",
+    )
+    balance = _numeric(phi.get("drive_balance_log_ratio"))
+    total += _apply_penalty(
+        abs(balance) if balance is not None else None,
+        float(cfg["max_abs_drive_balance_log_ratio"]),
+        "high",
+        penalty_config,
+        "drive_balance_log_ratio",
+    )
+    total += _apply_penalty(
+        _numeric(phi.get("clock_slew_over_rc_ratio")),
+        float(cfg["max_clock_slew_over_rc_ratio"]),
+        "high",
+        penalty_config,
+        "clock_slew_over_rc_ratio",
+    )
+    for feature in ("pullup_region_code", "pulldown_region_code"):
+        region = _numeric(phi.get(feature))
+        if region is not None and region == 0.0:
+            total += 1.0
+    return float(total)
+
+
 def build_capm_distance_context(
     history_phi: pd.DataFrame,
     weights: Mapping[str, float] | None = None,
@@ -163,7 +273,13 @@ def build_capm_distance_context(
     cfg = _capm_config(config)
     version = str(cfg.get("metric_version", "v2")).lower()
     explicit_weights = dict(weights or {})
-    if explicit_weights:
+    if version == "v3":
+        preferred_weights = {
+            key: value
+            for key, value in explicit_weights.items()
+            if key in V3_CANONICAL_FEATURES
+        } or dict(GOA_V3_WEIGHTS)
+    elif explicit_weights:
         preferred_weights = explicit_weights
     elif version == "legacy":
         preferred_weights = dict(GOA_DEFAULT_WEIGHTS)
@@ -181,7 +297,7 @@ def build_capm_distance_context(
         for key in preferred_weights
         if key in history_phi.columns and key not in FORBIDDEN_DISTANCE_COLUMNS
     ]
-    if not feature_keys:
+    if not feature_keys and version != "v3":
         feature_keys = [
             key
             for key in history_phi.columns
@@ -209,14 +325,99 @@ def build_capm_distance_context(
             scale = max(abs(fallback), epsilon)
         centers[key] = center
         scales[key] = scale
-    return CapmDistanceContext(
+    pvt_scenarios = tuple(
+        sorted(
+            {
+                scenario
+                for record in history_phi.to_dict("records")
+                for scenario in _pvt_feature_map(record)
+            }
+        )
+    )
+    context = CapmDistanceContext(
         metric_version=version,
         feature_keys=tuple(feature_keys),
         centers=centers,
         scales=scales,
         weights=normalized_weights,
         config=cfg,
+        pvt_scenarios=pvt_scenarios,
     )
+    if version != "v3":
+        return context
+    distance_scale, calibration_status, calibration_count = _fit_history_distance_scale(
+        history_phi,
+        weights,
+        cfg,
+        context,
+    )
+    return CapmDistanceContext(
+        metric_version=context.metric_version,
+        feature_keys=context.feature_keys,
+        centers=context.centers,
+        scales=context.scales,
+        weights=context.weights,
+        config=context.config,
+        distance_scale=distance_scale,
+        calibration_status=calibration_status,
+        calibration_count=calibration_count,
+        pvt_scenarios=context.pvt_scenarios,
+    )
+
+
+def _fit_history_distance_scale(
+    history_phi: pd.DataFrame,
+    weights: Mapping[str, float] | None,
+    cfg: Mapping[str, Any],
+    context: CapmDistanceContext,
+) -> tuple[float, str, int]:
+    records = history_phi.to_dict("records")
+    l1_indices = [index for index, row in enumerate(records) if str(row.get("level_label", "")) == "L1"]
+    references: list[float] = []
+    for index, row in enumerate(records):
+        targets = [target for target in l1_indices if target != index]
+        if not targets:
+            continue
+        distances = [
+            compute_capm_distance(row, records[target], weights, cfg, context).get("distance")
+            for target in targets
+        ]
+        finite = [float(value) for value in distances if value is not None and np.isfinite(float(value))]
+        if finite:
+            references.append(min(finite))
+    positive = [value for value in references if value > 1e-12]
+    count = len(positive)
+    if count == 0:
+        return 0.0, "degenerate_history", 0
+    min_p90_count = max(int(cfg.get("historical_calibration_min_p90_count", 5)), 1)
+    if count >= min_p90_count:
+        return float(np.quantile(np.asarray(positive, dtype=float), 0.9)), "history_p90", count
+    return float(max(positive)), "history_max_small_sample", count
+
+
+def _pvt_feature_map(row: Mapping[str, Any] | pd.Series) -> dict[str, dict[str, Any]]:
+    raw = row.get("capm_pvt_features_json")
+    if not isinstance(raw, str) or not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, Mapping):
+        return {}
+    return {
+        str(key): dict(value)
+        for key, value in payload.items()
+        if isinstance(value, Mapping)
+    }
+
+
+def calibrate_v3_distance(value: float, context: CapmDistanceContext) -> float:
+    if not np.isfinite(value):
+        return 1.0
+    if context.distance_scale > 1e-12:
+        return float(np.clip(value / context.distance_scale, 0.0, 1.0))
+    return 0.0 if value <= 1e-12 else 1.0
 
 
 def compute_capm_distance(
@@ -229,13 +430,38 @@ def compute_capm_distance(
     """Compute constraint-aware physics-manifold distance between two points."""
 
     cfg = _capm_config(config)
-    if str(cfg.get("metric_version", "v2")).lower() == "legacy":
+    version = str(cfg.get("metric_version", "v2")).lower()
+    if version == "legacy":
         return _compute_capm_distance_legacy(phi_a, phi_b, weights, cfg)
     if context is None:
         context = build_capm_distance_context(pd.DataFrame([dict(phi_a), dict(phi_b)]), weights, cfg)
+    if version == "v3":
+        scenario_a = _pvt_feature_map(phi_a)
+        scenario_b = _pvt_feature_map(phi_b)
+        common_scenarios = sorted(set(scenario_a) & set(scenario_b))
+        if common_scenarios:
+            scenario_results = [
+                _compute_context_distance(scenario_a[key], scenario_b[key], cfg, context)
+                for key in common_scenarios
+            ]
+            result = _aggregate_pvt_results(scenario_results, cfg, len(common_scenarios))
+            return _apply_pvt_coverage_penalties(result, phi_a, phi_b, cfg)
+    result = _compute_context_distance(phi_a, phi_b, cfg, context)
+    if version == "v3":
+        result["pvt_status"] = "nominal_only"
+        result = _apply_pvt_coverage_penalties(result, phi_a, phi_b, cfg)
+    return result
+
+
+def _compute_context_distance(
+    phi_a: Mapping[str, Any] | pd.Series,
+    phi_b: Mapping[str, Any] | pd.Series,
+    cfg: Mapping[str, Any],
+    context: CapmDistanceContext,
+) -> dict[str, Any]:
     feature_keys = list(context.feature_keys)
     if not feature_keys:
-        return _unavailable_capm_result("v2")
+        return _unavailable_capm_result(context.metric_version)
 
     transformed_a: dict[str, float] = {}
     transformed_b: dict[str, float] = {}
@@ -286,8 +512,86 @@ def compute_capm_distance(
         "proxy_fallback_penalty": float(proxy_fallback_penalty),
         "feature_count": int(len(feature_keys)),
         "missing_feature_count": int(missing_count),
-        "metric_version": "v2",
+        "metric_version": context.metric_version,
     }
+
+
+def _aggregate_pvt_results(
+    results: Sequence[Mapping[str, Any]],
+    cfg: Mapping[str, Any],
+    scenario_count: int,
+) -> dict[str, Any]:
+    usable = [result for result in results if result.get("distance") is not None]
+    if not usable:
+        result = _unavailable_capm_result("v3")
+        result["pvt_status"] = "unavailable"
+        return result
+    worst_weight = float(np.clip(float(cfg.get("pvt_worst_case_weight", 0.5)), 0.0, 1.0))
+
+    def mean_worst(name: str) -> float:
+        values = np.asarray([float(result.get(name, 0.0)) for result in usable], dtype=float)
+        return float((1.0 - worst_weight) * values.mean() + worst_weight * values.max())
+
+    return {
+        "status": "ok",
+        "distance": mean_worst("distance"),
+        "tensor_distance": mean_worst("tensor_distance"),
+        "similarity_distance": mean_worst("similarity_distance"),
+        "barrier_cost": max(float(result.get("barrier_cost", 0.0)) for result in usable),
+        "path_risk_cost": max(float(result.get("path_risk_cost", 0.0)) for result in usable),
+        "missing_penalty": max(float(result.get("missing_penalty", 0.0)) for result in usable),
+        "proxy_fallback_penalty": float(
+            np.mean([float(result.get("proxy_fallback_penalty", 0.0)) for result in usable])
+        ),
+        "feature_count": max(int(result.get("feature_count", 0)) for result in usable),
+        "missing_feature_count": max(int(result.get("missing_feature_count", 0)) for result in usable),
+        "metric_version": "v3",
+        "pvt_status": f"scenario_aggregated:{scenario_count}",
+    }
+
+
+def _apply_pvt_coverage_penalties(
+    result: dict[str, Any],
+    phi_a: Mapping[str, Any] | pd.Series,
+    phi_b: Mapping[str, Any] | pd.Series,
+    cfg: Mapping[str, Any],
+) -> dict[str, Any]:
+    missing_a, fallback_a = _pvt_coverage_penalty(phi_a)
+    missing_b, fallback_b = _pvt_coverage_penalty(phi_b)
+    missing = max(missing_a, missing_b)
+    fallback = max(fallback_a, fallback_b)
+    result["missing_penalty"] = float(result.get("missing_penalty", 0.0)) + missing
+    result["proxy_fallback_penalty"] = float(result.get("proxy_fallback_penalty", 0.0)) + fallback
+    if result.get("distance") is not None:
+        result["distance"] = (
+            float(result["distance"])
+            + float(cfg.get("lambda_missing", 1.0)) * missing
+            + float(cfg.get("lambda_fallback", 0.25)) * fallback
+        )
+    return result
+
+
+def _pvt_coverage_penalty(row: Mapping[str, Any] | pd.Series) -> tuple[float, float]:
+    raw = row.get("capm_pvt_diagnostics_json")
+    if not isinstance(raw, str) or not raw:
+        return 0.0, 0.0
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return 0.0, 0.0
+    scenarios = payload.get("scenarios", {}) if isinstance(payload, Mapping) else {}
+    if not isinstance(scenarios, Mapping) or not scenarios:
+        return 0.0, 0.0
+    statuses = [
+        str(value.get("status", "missing")) if isinstance(value, Mapping) else "missing"
+        for value in scenarios.values()
+    ]
+    count = len(statuses)
+    missing = sum(status == "missing" for status in statuses) / count
+    projected = sum(status == "proxy_projected" for status in statuses)
+    mixed = sum(status == "mixed_observed_projected" for status in statuses)
+    fallback = 0.25 * (projected + 0.5 * mixed) / count
+    return float(missing), float(fallback)
 
 
 def _compute_capm_distance_legacy(
@@ -371,6 +675,9 @@ def physics_geodesic_distance_to_l1(
         output["capm_metric_version"] = version
         output["capm_l1_aggregation_status"] = "unavailable:no_l1_samples"
         output["capm_normalization_json"] = "{}"
+        output["capm_distance_to_l1_calibrated"] = 1.0
+        output["capm_distance_calibration_json"] = "{}"
+        output["capm_calibration_status"] = "unavailable:no_l1_samples"
         output["capm_status"] = "unavailable:no_l1_samples"
         return output
 
@@ -383,6 +690,7 @@ def physics_geodesic_distance_to_l1(
     l1_indices = [index for index, row in enumerate(history_records) if str(row.get("level_label", "")) == "L1"]
     history_graph = _capm_graph(history_records, weights, cfg, context=context)
     normalization_json = json.dumps(context.normalization_payload(), ensure_ascii=True, sort_keys=True)
+    calibration_json = json.dumps(context.calibration_payload(), ensure_ascii=True, sort_keys=True)
     rows: list[dict[str, Any]] = []
     for row in candidate_records:
         direct_results = [
@@ -416,9 +724,16 @@ def physics_geodesic_distance_to_l1(
                 "capm_path_risk_cost": direct["barrier_cost"],
                 "capm_missing_penalty": direct["missing_penalty"],
                 "capm_proxy_fallback_penalty": direct["proxy_fallback_penalty"],
-                "capm_metric_version": "v2",
+                "capm_metric_version": version,
                 "capm_l1_aggregation_status": aggregation_status,
                 "capm_normalization_json": normalization_json,
+                "capm_distance_to_l1_calibrated": (
+                    calibrate_v3_distance(geodesic_distance, context)
+                    if version == "v3"
+                    else float("nan")
+                ),
+                "capm_distance_calibration_json": calibration_json if version == "v3" else "{}",
+                "capm_calibration_status": context.calibration_status if version == "v3" else "not_applicable",
                 "capm_status": direct["status"],
             }
         )
@@ -454,6 +769,9 @@ def _legacy_geodesic_distance_to_l1(
                 "capm_metric_version": "legacy",
                 "capm_l1_aggregation_status": "nearest:legacy",
                 "capm_normalization_json": "{}",
+                "capm_distance_to_l1_calibrated": float("nan"),
+                "capm_distance_calibration_json": "{}",
+                "capm_calibration_status": "not_applicable",
                 "capm_status": direct["status"],
             }
         )
@@ -507,10 +825,13 @@ def normalize_distance(values: Sequence[float]) -> np.ndarray:
 
 def _capm_config(config: Mapping[str, Any] | None = None) -> dict[str, Any]:
     cfg = dict(CAPM_DEFAULT_CONFIG)
+    nested: Mapping[str, Any] = {}
     if config:
         nested = config.get("capm_distance", config)
         if isinstance(nested, Mapping):
             cfg.update(nested)
+    if str(cfg.get("metric_version", "v2")).lower() == "v3" and "couplings" not in nested:
+        cfg["couplings"] = [dict(coupling) for coupling in CAPM_V3_COUPLINGS]
     return cfg
 
 
