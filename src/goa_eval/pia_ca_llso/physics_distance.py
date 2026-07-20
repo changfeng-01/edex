@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from heapq import heappop, heappush
 from typing import Any, Mapping, Sequence
@@ -8,7 +9,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from goa_eval.pia_ca_llso.electrical_model import V3_CANONICAL_FEATURES
+from goa_eval.pia_ca_llso.electrical_model import V3_CANONICAL_FEATURES, V3_GEOMETRY_FEATURES
 
 
 GOA_DEFAULT_WEIGHTS = {
@@ -48,6 +49,16 @@ GOA_V3_WEIGHTS = {
     "clock_slew_over_rc_ratio": 1.0,
 }
 
+GOA_V3_GEOMETRY_WEIGHTS = {
+    "pullup_overdrive_supply_ratio": 1.0,
+    "pulldown_overdrive_supply_ratio": 1.0,
+    "pullup_rc_to_clock_slew_ratio": 1.5,
+    "pulldown_rc_to_clock_slew_ratio": 1.5,
+    "bootstrap_coupling_factor_v3": 1.2,
+    "bootstrap_headroom_supply_ratio": 1.2,
+    "drive_balance_log_ratio": 1.0,
+}
+
 CAPM_COUPLINGS = [
     {"left": "ron_pullup_cload_proxy", "right": "clk_slew_proxy", "weight": 0.25, "enabled": True},
     {"left": "ron_pulldown_cload_proxy", "right": "clk_slew_proxy", "weight": 0.25, "enabled": True},
@@ -59,12 +70,10 @@ CAPM_COUPLINGS = [
     {"left": "vgh_vth_margin", "right": "vgl_off_margin", "weight": 0.10, "enabled": True},
 ]
 
-CAPM_V3_COUPLINGS = [
-    {"left": "pullup_rc_delay_s", "right": "bootstrap_headroom_v", "weight": 0.25, "enabled": True},
-    {"left": "pulldown_rc_delay_s", "right": "clock_slew_over_rc_ratio", "weight": 0.25, "enabled": True},
-    {"left": "bootstrap_coupling_factor_v3", "right": "bootstrap_headroom_v", "weight": 0.25, "enabled": True},
-    {"left": "drive_balance_log_ratio", "right": "critical_rc_delay_s", "weight": 0.15, "enabled": True},
-]
+# V3 physical interactions are encoded once in the dimensionless state (RC to
+# slew, normalized headroom, and drive balance), so no basis-dependent product
+# terms are added to the metric tensor.
+CAPM_V3_COUPLINGS: list[dict[str, Any]] = []
 
 CAPM_DEFAULT_CONFIG = {
     "metric_version": "v2",
@@ -101,6 +110,12 @@ CAPM_DEFAULT_CONFIG = {
     "max_abs_drive_balance_log_ratio": 10.0,
     "max_clock_slew_over_rc_ratio": 1.0e12,
     "pvt_worst_case_weight": 0.5,
+    "pvt_cvar_quantile": 0.9,
+    "pvt_cvar_weight": 0.5,
+    "pvt_uncertainty_z": 1.0,
+    "pvt_max_violation_probability": 0.0,
+    "metric_covariance_shrinkage": 0.25,
+    "metric_covariance_ridge": 1.0e-6,
     "historical_calibration_min_p90_count": 5,
     "couplings": [dict(c) for c in CAPM_COUPLINGS],
     "penalty_config": {},
@@ -148,6 +163,9 @@ class CapmDistanceContext:
     calibration_status: str = "not_applicable"
     calibration_count: int = 0
     pvt_scenarios: tuple[str, ...] = ()
+    precision_matrix: tuple[tuple[float, ...], ...] = ()
+    covariance_shrinkage: float = 0.0
+    metric_basis: str = "diagonal_weighted_euclidean"
 
     def normalization_payload(self) -> dict[str, Any]:
         return {
@@ -161,6 +179,9 @@ class CapmDistanceContext:
             "calibration_status": self.calibration_status,
             "calibration_count": self.calibration_count,
             "pvt_scenarios": list(self.pvt_scenarios),
+            "metric_basis": self.metric_basis,
+            "covariance_shrinkage": self.covariance_shrinkage,
+            "precision_matrix": [list(row) for row in self.precision_matrix],
         }
 
     def calibration_payload(self) -> dict[str, Any]:
@@ -274,11 +295,24 @@ def build_capm_distance_context(
     version = str(cfg.get("metric_version", "v2")).lower()
     explicit_weights = dict(weights or {})
     if version == "v3":
-        preferred_weights = {
+        filtered_geometry = {
+            key: value
+            for key, value in explicit_weights.items()
+            if key in V3_GEOMETRY_FEATURES
+        }
+        filtered_canonical = {
             key: value
             for key, value in explicit_weights.items()
             if key in V3_CANONICAL_FEATURES
-        } or dict(GOA_V3_WEIGHTS)
+        }
+        if filtered_geometry:
+            preferred_weights = filtered_geometry
+        elif filtered_canonical:
+            preferred_weights = filtered_canonical
+        elif all(key in history_phi.columns for key in V3_GEOMETRY_FEATURES):
+            preferred_weights = dict(GOA_V3_GEOMETRY_WEIGHTS)
+        else:
+            preferred_weights = dict(GOA_V3_WEIGHTS)
     elif explicit_weights:
         preferred_weights = explicit_weights
     elif version == "legacy":
@@ -334,6 +368,15 @@ def build_capm_distance_context(
             }
         )
     )
+    precision_matrix, covariance_shrinkage, metric_basis = _fit_metric_tensor(
+        history_phi,
+        tuple(feature_keys),
+        centers,
+        scales,
+        normalized_weights,
+        cfg,
+        version,
+    )
     context = CapmDistanceContext(
         metric_version=version,
         feature_keys=tuple(feature_keys),
@@ -342,6 +385,9 @@ def build_capm_distance_context(
         weights=normalized_weights,
         config=cfg,
         pvt_scenarios=pvt_scenarios,
+        precision_matrix=precision_matrix,
+        covariance_shrinkage=covariance_shrinkage,
+        metric_basis=metric_basis,
     )
     if version != "v3":
         return context
@@ -362,6 +408,59 @@ def build_capm_distance_context(
         calibration_status=calibration_status,
         calibration_count=calibration_count,
         pvt_scenarios=context.pvt_scenarios,
+        precision_matrix=context.precision_matrix,
+        covariance_shrinkage=context.covariance_shrinkage,
+        metric_basis=context.metric_basis,
+    )
+
+
+def _fit_metric_tensor(
+    history: pd.DataFrame,
+    feature_keys: tuple[str, ...],
+    centers: Mapping[str, float],
+    scales: Mapping[str, float],
+    weights: Mapping[str, float],
+    cfg: Mapping[str, Any],
+    version: str,
+) -> tuple[tuple[tuple[float, ...], ...], float, str]:
+    size = len(feature_keys)
+    if version != "v3" or size == 0 or cfg.get("normalization_enabled", True) is False:
+        return (), 0.0, "diagonal_weighted_euclidean"
+    rows: list[list[float]] = []
+    clip = max(float(cfg.get("normalization_clip", 8.0)), 0.0)
+    for record in history.to_dict("records"):
+        values: list[float] = []
+        for key in feature_keys:
+            value = _numeric(record.get(key))
+            if value is None:
+                transformed = 0.0
+            else:
+                transformed = float(np.arcsinh((value - centers[key]) / max(scales[key], 1e-12)))
+                if clip > 0.0:
+                    transformed = float(np.clip(transformed, -clip, clip))
+            values.append(math.sqrt(max(float(weights.get(key, 0.0)), 0.0)) * transformed)
+        rows.append(values)
+    if len(rows) < 2:
+        return (), 0.0, "diagonal_weighted_euclidean"
+    matrix = np.asarray(rows, dtype=float)
+    covariance = np.atleast_2d(np.cov(matrix, rowvar=False, ddof=1))
+    if covariance.shape != (size, size) or not np.isfinite(covariance).all():
+        return (), 0.0, "diagonal_weighted_euclidean"
+    shrinkage = float(np.clip(float(cfg.get("metric_covariance_shrinkage", 0.25)), 0.0, 1.0))
+    diagonal = np.diag(np.maximum(np.diag(covariance), 1.0e-12))
+    shrunk = (1.0 - shrinkage) * covariance + shrinkage * diagonal
+    ridge = max(float(cfg.get("metric_covariance_ridge", 1.0e-6)), 0.0)
+    shrunk += ridge * np.eye(size)
+    precision = np.linalg.pinv(shrunk, hermitian=True)
+    mean_diagonal = float(np.mean(np.diag(precision)))
+    if mean_diagonal > 0.0:
+        precision /= mean_diagonal
+    return (
+        tuple(tuple(float(value) for value in row) for row in precision),
+        shrinkage,
+        "dimensionless_shrinkage_mahalanobis"
+        if feature_keys == V3_GEOMETRY_FEATURES
+        else "shrinkage_mahalanobis",
     )
 
 
@@ -440,10 +539,23 @@ def compute_capm_distance(
         scenario_b = _pvt_feature_map(phi_b)
         common_scenarios = sorted(set(scenario_a) & set(scenario_b))
         if common_scenarios:
-            scenario_results = [
-                _compute_context_distance(scenario_a[key], scenario_b[key], cfg, context)
-                for key in common_scenarios
-            ]
+            scenario_results = []
+            for key in common_scenarios:
+                scenario_result = _compute_context_distance(scenario_a[key], scenario_b[key], cfg, context)
+                metadata_a = _pvt_scenario_metadata(phi_a, key)
+                metadata_b = _pvt_scenario_metadata(phi_b, key)
+                scenario_result["scenario_key"] = key
+                scenario_result["scenario_weight"] = max(
+                    float(metadata_a.get("weight", 1.0)),
+                    float(metadata_b.get("weight", 1.0)),
+                    0.0,
+                )
+                scenario_result["distance_uncertainty"] = max(
+                    float(metadata_a.get("distance_uncertainty", 0.0)),
+                    float(metadata_b.get("distance_uncertainty", 0.0)),
+                    0.0,
+                )
+                scenario_results.append(scenario_result)
             result = _aggregate_pvt_results(scenario_results, cfg, len(common_scenarios))
             return _apply_pvt_coverage_penalties(result, phi_a, phi_b, cfg)
     result = _compute_context_distance(phi_a, phi_b, cfg, context)
@@ -481,29 +593,41 @@ def _compute_context_distance(
         if "proxy_fallback" in {_feature_status(phi_a, key), _feature_status(phi_b, key)}:
             fallback_weight += weight
 
-    tensor_total = sum(
-        float(context.weights.get(key, 0.0)) * (transformed_a[key] - transformed_b[key]) ** 2
-        for key in transformed_a.keys() & transformed_b.keys()
+    common_keys = [key for key in feature_keys if key in transformed_a and key in transformed_b]
+    differences = np.asarray(
+        [
+            math.sqrt(max(float(context.weights.get(key, 0.0)), 0.0))
+            * (transformed_a[key] - transformed_b[key])
+            for key in common_keys
+        ],
+        dtype=float,
     )
+    if context.precision_matrix and common_keys:
+        indices = [feature_keys.index(key) for key in common_keys]
+        precision = np.asarray(context.precision_matrix, dtype=float)[np.ix_(indices, indices)]
+        tensor_total = float(differences @ precision @ differences)
+    else:
+        tensor_total = float(differences @ differences)
     couplings = _resolve_couplings(cfg) if cfg.get("coupling_enabled", True) is not False else []
     tensor_total += _normalized_coupling_distance(transformed_a, transformed_b, couplings, cfg)
     similarity_distance = float(np.sqrt(max(tensor_total, 0.0)))
-    midpoint = _midpoint_features(phi_a, phi_b, feature_keys)
     barrier_a = constraint_barrier_score(phi_a, cfg)
     barrier_b = constraint_barrier_score(phi_b, cfg)
-    barrier_mid = constraint_barrier_score(midpoint, cfg)
-    barrier_cost = (barrier_a + 4.0 * barrier_mid + barrier_b) / 6.0
+    barrier_cost = max(barrier_a, barrier_b)
     missing_penalty = missing_weight if cfg.get("missing_penalty_enabled", True) is not False else 0.0
     proxy_fallback_penalty = fallback_weight if cfg.get("missing_penalty_enabled", True) is not False else 0.0
-    distance = (
-        similarity_distance
+    point_risk_cost = (
         + float(cfg["lambda_barrier"]) * barrier_cost
         + float(cfg["lambda_missing"]) * missing_penalty
         + float(cfg.get("lambda_fallback", 0.25)) * proxy_fallback_penalty
     )
+    reported_distance = similarity_distance if context.metric_version == "v3" else similarity_distance + point_risk_cost
     return {
         "status": "ok",
-        "distance": float(distance),
+        "distance": float(reported_distance),
+        "geometric_distance": similarity_distance,
+        "decision_cost": float(similarity_distance + point_risk_cost),
+        "point_risk_cost": float(point_risk_cost),
         "tensor_distance": similarity_distance,
         "similarity_distance": similarity_distance,
         "barrier_cost": float(barrier_cost),
@@ -526,28 +650,74 @@ def _aggregate_pvt_results(
         result = _unavailable_capm_result("v3")
         result["pvt_status"] = "unavailable"
         return result
-    worst_weight = float(np.clip(float(cfg.get("pvt_worst_case_weight", 0.5)), 0.0, 1.0))
-
-    def mean_worst(name: str) -> float:
-        values = np.asarray([float(result.get(name, 0.0)) for result in usable], dtype=float)
-        return float((1.0 - worst_weight) * values.mean() + worst_weight * values.max())
+    raw_weights = np.asarray([max(float(result.get("scenario_weight", 1.0)), 0.0) for result in usable], dtype=float)
+    weights = raw_weights / raw_weights.sum() if raw_weights.sum() > 0.0 else np.full(len(usable), 1.0 / len(usable))
+    distances = np.asarray([float(result.get("distance", 0.0)) for result in usable], dtype=float)
+    uncertainties = np.asarray([max(float(result.get("distance_uncertainty", 0.0)), 0.0) for result in usable])
+    upper_distances = distances + max(float(cfg.get("pvt_uncertainty_z", 1.0)), 0.0) * uncertainties
+    weighted_mean_distance = float(np.dot(weights, distances))
+    cvar_distance = _weighted_cvar(
+        upper_distances,
+        weights,
+        float(cfg.get("pvt_cvar_quantile", 0.9)),
+    )
+    cvar_weight = float(np.clip(float(cfg.get("pvt_cvar_weight", cfg.get("pvt_worst_case_weight", 0.5))), 0.0, 1.0))
+    geometric_distance = (1.0 - cvar_weight) * weighted_mean_distance + cvar_weight * cvar_distance
+    violation_probability = float(
+        sum(weight for weight, result in zip(weights, usable) if float(result.get("barrier_cost", 0.0)) > 0.0)
+    )
+    allowed_probability = float(np.clip(float(cfg.get("pvt_max_violation_probability", 0.0)), 0.0, 1.0))
+    chance_excess = max(violation_probability - allowed_probability, 0.0)
+    barrier_cost = max(float(result.get("barrier_cost", 0.0)) for result in usable)
+    missing_penalty = max(float(result.get("missing_penalty", 0.0)) for result in usable)
+    fallback_penalty = float(np.dot(weights, [float(result.get("proxy_fallback_penalty", 0.0)) for result in usable]))
+    point_risk = (
+        float(cfg.get("lambda_barrier", 1.0)) * barrier_cost
+        + float(cfg.get("lambda_missing", 1.0)) * missing_penalty
+        + float(cfg.get("lambda_fallback", 0.25)) * fallback_penalty
+        + chance_excess
+    )
 
     return {
         "status": "ok",
-        "distance": mean_worst("distance"),
-        "tensor_distance": mean_worst("tensor_distance"),
-        "similarity_distance": mean_worst("similarity_distance"),
-        "barrier_cost": max(float(result.get("barrier_cost", 0.0)) for result in usable),
+        "distance": float(geometric_distance),
+        "geometric_distance": float(geometric_distance),
+        "decision_cost": float(geometric_distance + point_risk),
+        "point_risk_cost": float(point_risk),
+        "tensor_distance": float(geometric_distance),
+        "similarity_distance": float(geometric_distance),
+        "barrier_cost": barrier_cost,
         "path_risk_cost": max(float(result.get("path_risk_cost", 0.0)) for result in usable),
-        "missing_penalty": max(float(result.get("missing_penalty", 0.0)) for result in usable),
-        "proxy_fallback_penalty": float(
-            np.mean([float(result.get("proxy_fallback_penalty", 0.0)) for result in usable])
-        ),
+        "missing_penalty": missing_penalty,
+        "proxy_fallback_penalty": fallback_penalty,
         "feature_count": max(int(result.get("feature_count", 0)) for result in usable),
         "missing_feature_count": max(int(result.get("missing_feature_count", 0)) for result in usable),
         "metric_version": "v3",
         "pvt_status": f"scenario_aggregated:{scenario_count}",
+        "pvt_weighted_mean_distance": weighted_mean_distance,
+        "pvt_cvar_distance": float(cvar_distance),
+        "pvt_violation_probability": violation_probability,
+        "chance_constraint_excess": float(chance_excess),
     }
+
+
+def _weighted_cvar(values: np.ndarray, weights: np.ndarray, quantile: float) -> float:
+    if values.size == 0:
+        return float("inf")
+    tail_mass = max(1.0 - float(np.clip(quantile, 0.0, 1.0)), 1.0e-12)
+    order = np.argsort(values)[::-1]
+    remaining = tail_mass
+    total = 0.0
+    used = 0.0
+    for index in order:
+        take = min(float(weights[index]), remaining)
+        if take > 0.0:
+            total += take * float(values[index])
+            used += take
+            remaining -= take
+        if remaining <= 1.0e-12:
+            break
+    return float(total / used) if used > 0.0 else float(np.max(values))
 
 
 def _apply_pvt_coverage_penalties(
@@ -562,13 +732,24 @@ def _apply_pvt_coverage_penalties(
     fallback = max(fallback_a, fallback_b)
     result["missing_penalty"] = float(result.get("missing_penalty", 0.0)) + missing
     result["proxy_fallback_penalty"] = float(result.get("proxy_fallback_penalty", 0.0)) + fallback
+    added_risk = float(cfg.get("lambda_missing", 1.0)) * missing + float(cfg.get("lambda_fallback", 0.25)) * fallback
+    result["point_risk_cost"] = float(result.get("point_risk_cost", 0.0)) + added_risk
     if result.get("distance") is not None:
-        result["distance"] = (
-            float(result["distance"])
-            + float(cfg.get("lambda_missing", 1.0)) * missing
-            + float(cfg.get("lambda_fallback", 0.25)) * fallback
-        )
+        result["decision_cost"] = float(result["distance"]) + float(result["point_risk_cost"])
     return result
+
+
+def _pvt_scenario_metadata(row: Mapping[str, Any] | pd.Series, key: str) -> dict[str, Any]:
+    raw = row.get("capm_pvt_diagnostics_json")
+    if not isinstance(raw, str) or not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    scenarios = payload.get("scenarios", {}) if isinstance(payload, Mapping) else {}
+    value = scenarios.get(key, {}) if isinstance(scenarios, Mapping) else {}
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _pvt_coverage_penalty(row: Mapping[str, Any] | pd.Series) -> tuple[float, float]:
@@ -640,6 +821,9 @@ def _unavailable_capm_result(metric_version: str) -> dict[str, Any]:
         "distance": None,
         "tensor_distance": None,
         "similarity_distance": None,
+        "geometric_distance": None,
+        "decision_cost": None,
+        "point_risk_cost": 0.0,
         "barrier_cost": 0.0,
         "path_risk_cost": 0.0,
         "missing_penalty": 1.0,
@@ -670,6 +854,8 @@ def physics_geodesic_distance_to_l1(
         output["capm_similarity_distance_to_l1"] = float("inf")
         output["capm_barrier_score"] = [constraint_barrier_score(row, cfg) for _, row in output.iterrows()]
         output["capm_path_risk_cost"] = output["capm_barrier_score"]
+        output["capm_point_risk_cost"] = output["capm_barrier_score"]
+        output["capm_decision_cost_to_l1"] = float("inf")
         output["capm_missing_penalty"] = 1.0
         output["capm_proxy_fallback_penalty"] = 0.0
         output["capm_metric_version"] = version
@@ -722,6 +908,8 @@ def physics_geodesic_distance_to_l1(
                 "capm_similarity_distance_to_l1": direct["similarity_distance"],
                 "capm_barrier_score": constraint_barrier_score(row, cfg),
                 "capm_path_risk_cost": direct["barrier_cost"],
+                "capm_point_risk_cost": direct["point_risk_cost"],
+                "capm_decision_cost_to_l1": direct["decision_cost"],
                 "capm_missing_penalty": direct["missing_penalty"],
                 "capm_proxy_fallback_penalty": direct["proxy_fallback_penalty"],
                 "capm_metric_version": version,
@@ -764,6 +952,8 @@ def _legacy_geodesic_distance_to_l1(
                 "capm_similarity_distance_to_l1": direct.get("similarity_distance", direct["distance"]),
                 "capm_barrier_score": constraint_barrier_score(row, cfg),
                 "capm_path_risk_cost": direct.get("barrier_cost", 0.0),
+                "capm_point_risk_cost": direct.get("point_risk_cost", 0.0),
+                "capm_decision_cost_to_l1": direct.get("decision_cost", direct["distance"]),
                 "capm_missing_penalty": direct["missing_penalty"],
                 "capm_proxy_fallback_penalty": 0.0,
                 "capm_metric_version": "legacy",
@@ -1095,6 +1285,13 @@ def _aggregate_l1_results(
         for result in results
     ]
     similarity, _ = _aggregate_l1_values(similarities, l1_records, config)
+    decisions = [
+        float(result.get("decision_cost", result["distance"]))
+        if result.get("distance") is not None
+        else float("inf")
+        for result in results
+    ]
+    decision_cost, _ = _aggregate_l1_values(decisions, l1_records, config)
     finite_results = [result for result in results if result.get("distance") is not None and np.isfinite(float(result["distance"]))]
     if not finite_results:
         return {
@@ -1102,6 +1299,8 @@ def _aggregate_l1_results(
             "distance": float("inf"),
             "similarity_distance": float("inf"),
             "barrier_cost": 0.0,
+            "point_risk_cost": 0.0,
+            "decision_cost": float("inf"),
             "missing_penalty": 1.0,
             "proxy_fallback_penalty": 0.0,
             "aggregation_status": status,
@@ -1112,6 +1311,8 @@ def _aggregate_l1_results(
         "distance": distance,
         "similarity_distance": similarity,
         "barrier_cost": float(nearest.get("barrier_cost", 0.0)),
+        "point_risk_cost": float(nearest.get("point_risk_cost", 0.0)),
+        "decision_cost": float(decision_cost),
         "missing_penalty": float(nearest.get("missing_penalty", 0.0)),
         "proxy_fallback_penalty": float(nearest.get("proxy_fallback_penalty", 0.0)),
         "aggregation_status": status,

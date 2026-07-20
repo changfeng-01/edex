@@ -44,6 +44,8 @@ When `--strategy pia_capm_distance` is used, the selected candidate CSV also inc
 - `capm_similarity_distance_to_l1`
 - `capm_barrier_score`
 - `capm_path_risk_cost`
+- `capm_point_risk_cost`
+- `capm_decision_cost_to_l1`
 - `capm_missing_penalty`
 - `capm_proxy_fallback_penalty`
 - `capm_metric_version`
@@ -59,7 +61,7 @@ When `--strategy pia_capm_distance` is used, the selected candidate CSV also inc
 
 These fields are pre-simulation candidate-selection diagnostics. They are not final physical validation evidence, and every selected candidate keeps `must_resimulate = true`.
 
-For `metric_version: v3`, `capm_distance_to_l1_normalized` is the history-calibrated distance. Its scale is fitted from leave-one-out history-to-L1 distances only; candidate rows never participate. V3 electrical inputs are declared under `electrical_model`, `parasitics`, and `pvt`. PVT observations use a long-form CSV keyed by `sample_id`, `corner`, `temperature_c`, and `supply_v`.
+For `metric_version: v3`, `capm_distance_to_l1_normalized` is the history-calibrated geometric distance. Its scale is fitted from leave-one-out history-to-L1 distances only; candidate rows never participate. Point risk and the combined decision cost are reported separately, so a risky point still has zero geometric self-distance. V3 electrical inputs are declared under `electrical_model`, `parasitics`, and `pvt`. PVT observations use a long-form CSV keyed by `sample_id`, `corner`, `temperature_c`, and `supply_v`; scenario diagnostics may additionally carry weights and distance uncertainty for CVaR aggregation.
 
 ## Adapter Interface
 

@@ -22,6 +22,24 @@ V3_CANONICAL_FEATURES = (
     "bootstrap_headroom_v",
     "drive_balance_log_ratio",
     "clock_slew_over_rc_ratio",
+    "pullup_overdrive_supply_ratio",
+    "pulldown_overdrive_supply_ratio",
+    "pullup_rc_to_clock_slew_ratio",
+    "pulldown_rc_to_clock_slew_ratio",
+    "bootstrap_headroom_supply_ratio",
+)
+
+# Default V3 geometry is deliberately dimensionless and avoids carrying both
+# R, C, and their algebraic product RC into the same state vector.  The SI
+# features above remain the single source for barriers and diagnostics.
+V3_GEOMETRY_FEATURES = (
+    "pullup_overdrive_supply_ratio",
+    "pulldown_overdrive_supply_ratio",
+    "pullup_rc_to_clock_slew_ratio",
+    "pulldown_rc_to_clock_slew_ratio",
+    "bootstrap_coupling_factor_v3",
+    "bootstrap_headroom_supply_ratio",
+    "drive_balance_log_ratio",
 )
 
 _CAPACITANCE_FACTORS = {"f": 1.0, "pf": 1e-12, "ff": 1e-15, "nf": 1e-9, "uf": 1e-6}
@@ -98,27 +116,48 @@ def _compute_electrical_row(
 
     devices = model_config.get("devices", {}) if isinstance(model_config, Mapping) else {}
     device_results: dict[str, dict[str, Any]] = {}
+    model_name = str(model_config.get("model", "tft_square_law_v1"))
     for role in ("pullup", "pulldown", "bootstrap", "reset"):
         role_config = devices.get(role)
         if isinstance(role_config, Mapping):
-            device_results[role] = _evaluate_device(row, role_config, role)
+            device_results[role] = _evaluate_device(row, role_config, role, model_name=model_name)
 
     pullup = device_results.get("pullup", _missing_device())
     pulldown = device_results.get("pulldown", _missing_device())
     bootstrap = device_results.get("bootstrap", _missing_device())
+    denominator = c_boot + effective_load + parasitics["bootstrap_loss_capacitance_f"]
+    coupling = c_boot / denominator if denominator > 0 else 0.0
+    clk_amp = max(_number(row.get("CLK_amp")) or 0.0, 0.0)
+    bootstrap_solver = _solve_bootstrap_operating_point(
+        row,
+        model_config,
+        devices,
+        device_results,
+        c_boot,
+        effective_load,
+        parasitics["bootstrap_loss_capacitance_f"],
+        clk_amp,
+    )
+    coupling = float(bootstrap_solver.get("coupling_factor", coupling))
+    target_role = str(bootstrap_solver.get("target_role", "pullup"))
+    target_result = bootstrap_solver.get("target_device")
+    if isinstance(target_result, Mapping) and target_role in device_results:
+        device_results[target_role] = dict(target_result)
+    pullup = device_results.get("pullup", _missing_device())
+    pulldown = device_results.get("pulldown", _missing_device())
     pullup_r = max(float(pullup["resistance_ohm"]) + parasitics["pullup_resistance_ohm"], 0.0)
     pulldown_r = max(float(pulldown["resistance_ohm"]) + parasitics["pulldown_resistance_ohm"], 0.0)
     pullup_tau = pullup_r * effective_load
     pulldown_tau = pulldown_r * effective_load
     critical_tau = max(pullup_tau, pulldown_tau)
-    denominator = c_boot + effective_load + parasitics["bootstrap_loss_capacitance_f"]
-    coupling = c_boot / denominator if denominator > 0 else 0.0
-    clk_amp = max(_number(row.get("CLK_amp")) or 0.0, 0.0)
-    bootstrap_headroom = float(bootstrap["overdrive_v"]) + coupling * clk_amp
+    bootstrap_headroom = float(bootstrap_solver.get("boosted_overdrive_v", float(bootstrap["overdrive_v"]) + coupling * clk_amp))
     resistance_floor = 1e-30
     drive_balance = math.log(max(pullup_r, resistance_floor) / max(pulldown_r, resistance_floor))
     slew = max((_number(row.get("CLK_rise_time")) or 0.0) + (_number(row.get("CLK_fall_time")) or 0.0), 0.0) * time_factor
     slew_ratio = slew / max(critical_tau, 1e-30)
+    supply = abs((_number(row.get("VDD")) or 0.0) - (_number(row.get("VSS")) or 0.0))
+    if supply <= 0.0:
+        supply = max(float(_pvt_config(profile_config).get("reference_supply_v", 1.0)), 1e-30)
 
     canonical = {
         "pullup_overdrive_v": float(pullup["overdrive_v"]),
@@ -133,6 +172,11 @@ def _compute_electrical_row(
         "bootstrap_headroom_v": bootstrap_headroom,
         "drive_balance_log_ratio": drive_balance,
         "clock_slew_over_rc_ratio": slew_ratio,
+        "pullup_overdrive_supply_ratio": float(pullup["overdrive_v"]) / supply,
+        "pulldown_overdrive_supply_ratio": float(pulldown["overdrive_v"]) / supply,
+        "pullup_rc_to_clock_slew_ratio": pullup_tau / max(slew, 1e-30),
+        "pulldown_rc_to_clock_slew_ratio": pulldown_tau / max(slew, 1e-30),
+        "bootstrap_headroom_supply_ratio": bootstrap_headroom / supply,
         "pullup_region_code": _REGION_CODES[str(pullup["region"])],
         "pulldown_region_code": _REGION_CODES[str(pulldown["region"])],
         "bootstrap_region_code": _REGION_CODES[str(bootstrap["region"])],
@@ -150,6 +194,11 @@ def _compute_electrical_row(
         "bootstrap_headroom_v": _combine_status(str(bootstrap["status"]), str(parasitic_status["status"])),
         "drive_balance_log_ratio": _combine_status(str(pullup["status"]), str(pulldown["status"])),
         "clock_slew_over_rc_ratio": _combine_status(str(pullup["status"]), str(pulldown["status"])),
+        "pullup_overdrive_supply_ratio": str(pullup["status"]),
+        "pulldown_overdrive_supply_ratio": str(pulldown["status"]),
+        "pullup_rc_to_clock_slew_ratio": _combine_status(str(pullup["status"]), str(parasitic_status["status"])),
+        "pulldown_rc_to_clock_slew_ratio": _combine_status(str(pulldown["status"]), str(parasitic_status["status"])),
+        "bootstrap_headroom_supply_ratio": _combine_status(str(bootstrap["status"]), str(parasitic_status["status"])),
     }
     electrical_status = {
         "model": str(model_config.get("model", "tft_square_law_v1")),
@@ -160,11 +209,19 @@ def _compute_electrical_row(
             for role, result in device_results.items()
         },
         "parasitics": parasitic_status,
+        "bootstrap_solver": {key: value for key, value in bootstrap_solver.items() if key != "target_device"},
     }
     return canonical, electrical_status
 
 
-def _evaluate_device(row: Mapping[str, Any], config: Mapping[str, Any], role: str) -> dict[str, Any]:
+def _evaluate_device(
+    row: Mapping[str, Any],
+    config: Mapping[str, Any],
+    role: str,
+    *,
+    model_name: str = "tft_square_law_v1",
+    normalized_vgs_override: float | None = None,
+) -> dict[str, Any]:
     polarity = str(config.get("polarity", "n")).strip().lower()
     sign = -1.0 if polarity.startswith("p") else 1.0
     width = _column_number(row, config.get("width_column"))
@@ -181,7 +238,7 @@ def _evaluate_device(row: Mapping[str, Any], config: Mapping[str, Any], role: st
     threshold_magnitude = abs(threshold) if threshold is not None else 0.0
     bias_available = vgs_raw is not None and vds_raw is not None and threshold is not None
     if bias_available:
-        vgs = sign * float(vgs_raw)
+        vgs = float(normalized_vgs_override) if normalized_vgs_override is not None else sign * float(vgs_raw)
         vds = max(sign * float(vds_raw), 0.0)
         overdrive = vgs - threshold_magnitude
         if overdrive <= 0.0:
@@ -195,18 +252,27 @@ def _evaluate_device(row: Mapping[str, Any], config: Mapping[str, Any], role: st
         overdrive = 0.0
         region = "unknown"
 
+    current = 0.0
     if observed_r is not None and observed_r >= 0.0:
         resistance = float(observed_r)
+        current = vds / max(resistance, 1e-30) if vds > 0.0 else 0.0
         status = "observed"
     elif None not in {width, length, mobility, cox} and float(length) > 0.0 and bias_available:
         beta = max(float(mobility) * float(cox) * float(width) / float(length), 0.0)
         if region == "off":
-            current = 0.0
+            current = max(_number(config.get("off_current_floor_a")) or 0.0, 0.0)
+        elif model_name == "tft_charge_sheet_v2":
+            smoothing = max(_number(config.get("smoothing_voltage_v")) or 1.0e-6, 1.0e-12)
+            vds_effective = 0.5 * (vds + overdrive - math.sqrt((vds - overdrive) ** 2 + smoothing**2))
+            vds_effective = min(max(vds_effective, 0.0), overdrive)
+            current = beta * (overdrive * vds_effective - 0.5 * vds_effective**2)
+            current *= 1.0 + channel_lambda * vds
         elif region == "linear":
             current = beta * (overdrive * vds - 0.5 * vds**2)
         else:
             current = 0.5 * beta * overdrive**2 * (1.0 + channel_lambda * vds)
-        resistance = vds / max(current, 1e-30) if vds > 0.0 else 1.0 / max(beta * max(overdrive, 0.0), 1e-30)
+        intrinsic = vds / max(current, 1e-30) if vds > 0.0 else 1.0 / max(beta * max(overdrive, 0.0), 1e-30)
+        resistance = intrinsic + max(_number(config.get("series_resistance_ohm")) or 0.0, 0.0)
         status = "physical"
     else:
         ratio = max((float(width) / float(length)) if width is not None and length not in {None, 0.0} else 1.0, 1e-12)
@@ -219,7 +285,86 @@ def _evaluate_device(row: Mapping[str, Any], config: Mapping[str, Any], role: st
         "region": region,
         "overdrive_v": float(overdrive),
         "resistance_ohm": float(max(resistance, 0.0)),
+        "drain_current_a": float(max(current, 0.0)),
+        "model": model_name,
         "status": status,
+    }
+
+
+def _solve_bootstrap_operating_point(
+    row: Mapping[str, Any],
+    model_config: Mapping[str, Any],
+    devices: Mapping[str, Any],
+    device_results: Mapping[str, Mapping[str, Any]],
+    c_boot: float,
+    effective_load: float,
+    parasitic_loss: float,
+    clk_amp: float,
+) -> dict[str, Any]:
+    solver = model_config.get("bootstrap_solver", {})
+    solver = solver if isinstance(solver, Mapping) else {}
+    target_role = str(solver.get("target_role", "pullup"))
+    target_config = devices.get(target_role) if isinstance(devices, Mapping) else None
+    bootstrap = device_results.get("bootstrap", _missing_device())
+    base_denominator = c_boot + effective_load + parasitic_loss
+    base_coupling = c_boot / base_denominator if base_denominator > 0.0 else 0.0
+    if solver.get("enabled", False) is not True or not isinstance(target_config, Mapping):
+        return {
+            "status": "disabled",
+            "target_role": target_role,
+            "iterations": 0,
+            "charge_residual_v": 0.0,
+            "coupling_factor": base_coupling,
+            "boosted_overdrive_v": float(bootstrap["overdrive_v"]) + base_coupling * clk_amp,
+        }
+
+    polarity = str(target_config.get("polarity", "n")).lower()
+    sign = -1.0 if polarity.startswith("p") else 1.0
+    raw_vgs = _column_number(row, target_config.get("vgs_column"))
+    if raw_vgs is None:
+        return {
+            "status": "missing_bias",
+            "target_role": target_role,
+            "iterations": 0,
+            "charge_residual_v": float("inf"),
+            "coupling_factor": base_coupling,
+            "boosted_overdrive_v": float(bootstrap["overdrive_v"]) + base_coupling * clk_amp,
+        }
+    base_vgs = sign * raw_vgs
+    gate_cap = max(_number(solver.get("gate_capacitance_f")) or 0.0, 0.0)
+    voltage_coefficient = max(_number(solver.get("gate_capacitance_voltage_coefficient_per_v")) or 0.0, 0.0)
+    tolerance = max(_number(solver.get("tolerance_v")) or 1.0e-9, 1.0e-15)
+    relaxation = float(np.clip(_number(solver.get("relaxation")) or 1.0, 1.0e-3, 1.0))
+    max_iterations = max(int(solver.get("max_iterations", 25)), 1)
+    boosted_vgs = base_vgs
+    residual = float("inf")
+    coupling = base_coupling
+    for iteration in range(1, max_iterations + 1):
+        effective_gate_cap = gate_cap * (1.0 + voltage_coefficient * abs(boosted_vgs - base_vgs))
+        denominator = base_denominator + effective_gate_cap
+        coupling = c_boot / denominator if denominator > 0.0 else 0.0
+        fixed_point = base_vgs + coupling * clk_amp
+        next_vgs = boosted_vgs + relaxation * (fixed_point - boosted_vgs)
+        residual = abs(fixed_point - next_vgs)
+        boosted_vgs = next_vgs
+        if residual <= tolerance:
+            break
+    target = _evaluate_device(
+        row,
+        target_config,
+        target_role,
+        model_name=str(model_config.get("model", "tft_square_law_v1")),
+        normalized_vgs_override=boosted_vgs,
+    )
+    return {
+        "status": "converged" if residual <= tolerance else "not_converged",
+        "target_role": target_role,
+        "iterations": iteration,
+        "charge_residual_v": float(residual),
+        "coupling_factor": float(coupling),
+        "boosted_gate_v": float(boosted_vgs),
+        "boosted_overdrive_v": float(target["overdrive_v"]),
+        "target_device": target,
     }
 
 
@@ -293,20 +438,49 @@ def _compute_pvt_features(
     if not isinstance(scenarios, list) or not scenarios:
         return {}, "nominal_only", {"status": "nominal_only", "scenarios": {}}
     scenario_features: dict[str, dict[str, float]] = {}
-    diagnostics: dict[str, Any] = {"scenarios": {}}
+    diagnostics: dict[str, Any] = {"scenarios": {}, "duplicate_scenario_count": 0}
     statuses: list[str] = []
     sample_column = str(pvt.get("sample_id_column", "sample_id"))
     sample_value = row.get(sample_column)
+    seen: set[str] = set()
     for scenario in scenarios:
         if not isinstance(scenario, Mapping):
             continue
         key = _scenario_key(scenario)
+        if key in seen:
+            diagnostics["duplicate_scenario_count"] += 1
+            continue
+        seen.add(key)
         corner = str(scenario.get("corner", "tt"))
         observed = _matching_observation(observations, sample_column, sample_value, scenario)
         corner_models = pvt.get("corner_models", {})
         corner_model = corner_models.get(corner) if isinstance(corner_models, Mapping) else None
-        if observed is None and not isinstance(corner_model, Mapping):
-            diagnostics["scenarios"][key] = {"status": "missing", "reason": "corner_model_and_observation_missing"}
+        if observed is not None and all(_number(observed.get(name)) is not None for name in V3_CANONICAL_FEATURES):
+            scenario_features[key] = {name: float(observed[name]) for name in V3_CANONICAL_FEATURES}
+            diagnostics["scenarios"][key] = {
+                "status": "observed",
+                "corner": corner,
+                "weight": max(float(scenario.get("weight", 1.0)), 0.0),
+                "distance_uncertainty": max(
+                    float(observed.get("distance_uncertainty", scenario.get("distance_uncertainty", 0.0))),
+                    0.0,
+                ),
+            }
+            statuses.append("observed")
+            continue
+        if not isinstance(corner_model, Mapping):
+            diagnostics["scenarios"][key] = {"status": "missing", "reason": "complete_corner_model_missing"}
+            statuses.append("missing")
+            continue
+        missing_coefficients = _missing_pvt_coefficients(pvt, scenario, corner_model)
+        if missing_coefficients:
+            diagnostics["scenarios"][key] = {
+                "status": "missing",
+                "reason": "incomplete_projection_coefficients",
+                "missing_coefficients": missing_coefficients,
+                "corner": corner,
+                "weight": max(float(scenario.get("weight", 1.0)), 0.0),
+            }
             statuses.append("missing")
             continue
         projected = dict(row)
@@ -322,12 +496,47 @@ def _compute_pvt_features(
             status = "observed"
         else:
             status = "proxy_projected"
-        diagnostics["scenarios"][key] = {"status": status, "corner": corner}
+        diagnostics["scenarios"][key] = {
+            "status": status,
+            "corner": corner,
+            "weight": max(float(scenario.get("weight", 1.0)), 0.0),
+            "distance_uncertainty": max(
+                float(
+                    observed.get("distance_uncertainty", scenario.get("distance_uncertainty", 0.0))
+                    if observed is not None
+                    else scenario.get("distance_uncertainty", 0.0)
+                ),
+                0.0,
+            ),
+        }
         statuses.append(status)
     overall = _aggregate_pvt_status(statuses)
     diagnostics["status"] = overall
     diagnostics["scenario_count"] = len(scenario_features)
     return scenario_features, overall, diagnostics
+
+
+def _missing_pvt_coefficients(
+    pvt: Mapping[str, Any],
+    scenario: Mapping[str, Any],
+    corner: Any,
+) -> list[str]:
+    reference_temperature = float(pvt.get("reference_temperature_c", 25.0))
+    reference_supply = float(pvt.get("reference_supply_v", scenario.get("supply_v", 1.0)))
+    temperature = float(scenario.get("temperature_c", reference_temperature))
+    supply = float(scenario.get("supply_v", reference_supply))
+    missing: list[str] = []
+    if not math.isclose(temperature, reference_temperature):
+        for key in ("mobility_temperature_exponent", "vth_temperature_coefficient_v_per_c"):
+            if _number(pvt.get(key)) is None:
+                missing.append(key)
+    if not math.isclose(supply, reference_supply) and _number(pvt.get("supply_bias_exponent")) is None:
+        missing.append("supply_bias_exponent")
+    if isinstance(corner, Mapping):
+        for key in ("mu_multiplier", "vth_shift_v", "resistance_multiplier", "capacitance_multiplier"):
+            if _number(corner.get(key)) is None:
+                missing.append(f"corner.{key}")
+    return sorted(missing)
 
 
 def _project_pvt_row(
@@ -347,7 +556,8 @@ def _project_pvt_row(
     threshold_shift = float(corner.get("vth_shift_v", 0.0)) + float(
         pvt.get("vth_temperature_coefficient_v_per_c", 0.0)
     ) * (temperature - reference_temperature)
-    supply_scale = supply / reference_supply
+    supply_exponent = float(pvt.get("supply_bias_exponent", 1.0))
+    supply_scale = (supply / reference_supply) ** supply_exponent
     model = profile_config.get("electrical_model", {})
     devices = model.get("devices", {}) if isinstance(model, Mapping) else {}
     for device in devices.values() if isinstance(devices, Mapping) else []:

@@ -213,6 +213,8 @@ def select_capm_distance(
         "capm_similarity_distance_to_l1",
         "capm_barrier_score",
         "capm_path_risk_cost",
+        "capm_point_risk_cost",
+        "capm_decision_cost_to_l1",
         "capm_missing_penalty",
         "capm_proxy_fallback_penalty",
         "capm_metric_version",
