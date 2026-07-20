@@ -290,6 +290,7 @@ def test_v3_pvt_projection_and_observation_precedence(tmp_path) -> None:
         "reference_supply_v": 5.0,
         "mobility_temperature_exponent": 1.5,
         "vth_temperature_coefficient_v_per_c": 0.001,
+        "supply_bias_exponent": 1.0,
         "sample_id_column": "sample_id",
         "observations_csv": str(observation_path),
         "scenarios": [
@@ -397,7 +398,8 @@ def test_v3_pvt_missing_and_proxy_coverage_feed_distance_penalties() -> None:
 
     assert result["missing_penalty"] == pytest.approx(0.5)
     assert result["proxy_fallback_penalty"] == pytest.approx(0.125)
-    assert result["distance"] > 0.5
+    assert result["distance"] == pytest.approx(0.0)
+    assert result["decision_cost"] > 0.5
 
 
 def test_v3_parasitic_summary_maps_nets_and_converts_units(tmp_path) -> None:
@@ -555,7 +557,7 @@ def test_transistor_profile_enables_v3_contract_without_unverified_corner_coeffi
     profile = yaml.safe_load(Path("config/pia_ca_llso_transistor_profile.yaml").read_text(encoding="utf-8"))
 
     assert profile["capm_distance"]["metric_version"] == "v3"
-    assert profile["electrical_model"]["model"] == "tft_square_law_v1"
+    assert profile["electrical_model"]["model"] == "tft_charge_sheet_v2"
     assert profile["pvt"]["corner_models"]["tt"]["mu_multiplier"] == 1.0
     assert set(profile["pvt"]["corner_models"]) == {"tt"}
     assert profile["metadata"] == {

@@ -55,7 +55,7 @@ physics_features:
   profile: transistor_level
   electrical_features_enabled: true
 electrical_model:
-  model: tft_square_law_v1
+  model: tft_charge_sheet_v2
   units:
     geometry: um
     capacitance: pF
@@ -90,6 +90,13 @@ electrical_model:
       threshold_column: Vth_shift
       vgs_column: bootstrap_vgs_v
       vds_column: bootstrap_vds_v
+  bootstrap_solver:
+    enabled: true
+    target_role: pullup
+    max_iterations: 25
+    tolerance_v: 1.0e-9
+    relaxation: 0.7
+    gate_capacitance_f: 0.0
 parasitics:
   summary_path_column: parasitic_summary_path
   net_role_map: {}
@@ -97,24 +104,22 @@ parasitics:
 pvt:
   reference_temperature_c: 25.0
   reference_supply_v: 5.0
+  mobility_temperature_exponent: 1.5
+  vth_temperature_coefficient_v_per_c: 0.0
+  supply_bias_exponent: 1.0
   sample_id_column: sample_id
   scenarios:
     - {corner: tt, temperature_c: 25.0, supply_v: 5.0}
   corner_models:
     tt: {mu_multiplier: 1.0, vth_shift_v: 0.0, resistance_multiplier: 1.0, capacitance_multiplier: 1.0}
 feature_weights:
-  pullup_overdrive_v: 1.0
-  pulldown_overdrive_v: 1.0
-  pullup_effective_resistance_ohm: 1.0
-  pulldown_effective_resistance_ohm: 1.0
-  effective_load_capacitance_f: 0.8
-  pullup_rc_delay_s: 1.5
-  pulldown_rc_delay_s: 1.5
-  critical_rc_delay_s: 1.5
+  pullup_overdrive_supply_ratio: 1.0
+  pulldown_overdrive_supply_ratio: 1.0
+  pullup_rc_to_clock_slew_ratio: 1.5
+  pulldown_rc_to_clock_slew_ratio: 1.5
   bootstrap_coupling_factor_v3: 1.2
-  bootstrap_headroom_v: 1.2
+  bootstrap_headroom_supply_ratio: 1.2
   drive_balance_log_ratio: 1.0
-  clock_slew_over_rc_ratio: 1.0
 capm_distance:
   metric_version: v3
   lambda_barrier: 1.0
@@ -126,7 +131,7 @@ capm_distance:
   normalization_min_history_rows: 4
   normalization_floor_fraction: 0.05
   normalization_clip: 8.0
-  coupling_enabled: true
+  coupling_enabled: false
   coupling_budget: 0.25
   barrier_enabled: true
   geodesic_enabled: true
@@ -150,12 +155,14 @@ capm_distance:
   max_abs_drive_balance_log_ratio: 2.0
   max_clock_slew_over_rc_ratio: 5.0
   pvt_worst_case_weight: 0.5
+  pvt_cvar_quantile: 0.9
+  pvt_cvar_weight: 0.5
+  pvt_uncertainty_z: 1.0
+  pvt_max_violation_probability: 0.0
+  metric_covariance_shrinkage: 0.25
+  metric_covariance_ridge: 1.0e-6
   historical_calibration_min_p90_count: 5
-  couplings:
-    - {left: pullup_rc_delay_s, right: bootstrap_headroom_v, weight: 0.25, enabled: true}
-    - {left: pulldown_rc_delay_s, right: clock_slew_over_rc_ratio, weight: 0.25, enabled: true}
-    - {left: bootstrap_coupling_factor_v3, right: bootstrap_headroom_v, weight: 0.25, enabled: true}
-    - {left: drive_balance_log_ratio, right: critical_rc_delay_s, weight: 0.15, enabled: true}
+  couplings: []
   penalty_config:
     pullup_overdrive_v:
       type: exponential

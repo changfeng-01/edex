@@ -61,18 +61,15 @@ FORMULAS = {
     "primary_outcome": "tau_T = min { t | t <= B, S(x_t) >= T, H(x_t)=1 }",
     "physics_feature_map": "phi: X -> R^d",
     "physics_normalization": "z_k(x) = clip(asinh((phi_k(x)-median_k)/scale_k), -8, 8)",
-    "capm_tensor": (
-        "D_tensor(x,y) = sqrt(sum_k w_k (z_k(x)-z_k(y))^2 "
-        "+ gamma sum_(a,b) rho_ab (z_a(x)z_b(x)-z_a(y)z_b(y))^2)"
-    ),
+    "capm_tensor": "D_geo(x,y) = sqrt((z(x)-z(y))^T Sigma_shrink^-1 (z(x)-z(y)))",
     "barrier": "B(phi(x)) = sum_j p_j(phi_j(x); theta_j)",
-    "path_risk": "R_path(x,y) = (B(phi(x)) + 4 B((phi(x)+phi(y))/2) + B(phi(y))) / 6",
+    "path_risk": "R_point(x,y) = max(B(phi(x)), B(phi(y)))",
     "capm_pair": (
-        "D_pair(x,y) = D_tensor(x,y) + lambda_barrier * R_path(x,y) "
-        "+ lambda_missing * M(x,y) + lambda_fallback * F(x,y)"
+        "D_pair(x,y) = D_geo(x,y); C_decision = D_geo + lambda_barrier R_point "
+        "+ lambda_missing M + lambda_fallback F"
     ),
     "l1_geodesic": "D_geodesic(x,L1) = softmin_top_k { shortest_path_G_history(x,z) | z in L1 }",
-    "pvt_aggregation": "D_pvt(x,y) = 0.5 mean_s D_s(x,y) + 0.5 max_s D_s(x,y)",
+    "pvt_aggregation": "D_pvt = (1-alpha) weighted_mean_s D_s + alpha CVaR_q(D_s + z sigma_s)",
     "history_distance_calibration": "D_cal(x,L1) = clip(D_geodesic(x,L1) / P90(D_history_to_L1), 0, 1)",
     "capm_acquisition": (
         "A_capm(x) = alpha_d (1 - D_cal(x,L1)) + alpha_v diversity(x) "

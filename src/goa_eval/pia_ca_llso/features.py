@@ -225,7 +225,7 @@ def extract_physics_features(frame: pd.DataFrame, profile_config: dict[str, Any]
         profile in {"goa", "transistor_level"}
         and config.get("electrical_features_enabled", True) is not False
         and isinstance(electrical_model, dict)
-        and str(electrical_model.get("model", "")).lower() == "tft_square_law_v1"
+        and str(electrical_model.get("model", "")).lower() in {"tft_square_law_v1", "tft_charge_sheet_v2"}
     ):
         electrical_report = attach_v3_electrical_features(features, frame, config)
 
