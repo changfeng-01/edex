@@ -5,6 +5,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import pandas as pd
 
+from goa_eval.domain import CircuitDomain, domain_distance
 from goa_eval.pia_ca_llso.acquisition import attach_acquisition_scores, compute_diversity, explain_acquisition
 from goa_eval.pia_ca_llso.electrical_model import V3_CANONICAL_FEATURES
 from goa_eval.pia_ca_llso.features import extract_physics_features, resolve_physics_feature_config
@@ -13,6 +14,7 @@ from goa_eval.pia_ca_llso.physics_distance import (
     FORBIDDEN_DISTANCE_COLUMNS,
     GOA_DEFAULT_WEIGHTS,
     build_capm_distance_context,
+    classify_v4_constraint_risks,
     compute_capm_distance,
     distance_to_l1_physics,
     normalize_distance,
@@ -23,6 +25,7 @@ from goa_eval.pia_ca_llso.raw_distance import select_by_raw_distance
 from goa_eval.pia_ca_llso.schema import SelectionResult
 from goa_eval.pia_ca_llso.sklearn_baseline import predict_candidates, train_baseline_models
 from goa_eval.pia_ca_llso.value_coercion import strict_bool
+from goa_eval.transfer import TransferGateInput, evaluate_transfer_gate
 from goa_eval.pia_ca_llso.selector_weights import (
     ACTIVE_INFLUENCE_ON_DEMAND_WEIGHTS,
     ACTIVE_UNCERTAINTY_DIVERSITY_WEIGHTS,
@@ -226,7 +229,7 @@ def select_capm_distance(
         "capm_status",
     ]:
         output[column] = scored[column].values
-    if str(distance_context.metric_version).lower() == "v3":
+    if str(distance_context.metric_version).lower() in {"v3", "v4"}:
         output["capm_distance_to_l1_normalized"] = output["capm_distance_to_l1_calibrated"].astype(float)
         if "capm_pvt_status" not in output:
             output["capm_pvt_status"] = "nominal_only"
@@ -242,11 +245,23 @@ def select_capm_distance(
         return float(result.get("distance", float("inf")))
 
     output = _attach_diversity(output, feature_cols, distance_fn=_capm_distance_fn)
-    output["capm_hard_risk_passed"] = pd.Series(
-        [bool(value <= 0.0) for value in output["capm_barrier_score"].astype(float)],
-        index=output.index,
-        dtype="object",
-    )
+    if str(distance_context.metric_version).lower() == "v4":
+        risk_reports = [classify_v4_constraint_risks(row, config) for _, row in output.iterrows()]
+        output["capm_hard_risk_passed"] = pd.Series(
+            [bool(report["hard_constraint_passed"]) for report in risk_reports], index=output.index, dtype="object"
+        )
+        output["capm_hard_violation_score"] = [report["hard_violation_score"] for report in risk_reports]
+        output["capm_validated_risk_score"] = [report["validated_risk_score"] for report in risk_reports]
+        output["capm_heuristic_warning_score"] = [report["heuristic_warning_score"] for report in risk_reports]
+        output["capm_constraint_diagnostics_json"] = [
+            json.dumps(report, ensure_ascii=True, sort_keys=True) for report in risk_reports
+        ]
+    else:
+        output["capm_hard_risk_passed"] = pd.Series(
+            [bool(value <= 0.0) for value in output["capm_barrier_score"].astype(float)],
+            index=output.index,
+            dtype="object",
+        )
     active_weights = _normalize_acquisition_weights(acquisition_weights or CAPM_ACQUISITION_WEIGHTS)
     output["acquisition_score"] = (
         active_weights["distance"] * (1.0 - output["capm_distance_to_l1_normalized"].astype(float))
@@ -274,6 +289,8 @@ def select_capm_distance(
     output["data_source"] = "real_simulation_csv"
     output["engineering_validity"] = "simulation_only"
     output["must_resimulate"] = True
+    if str(distance_context.metric_version).lower() == "v4":
+        output = _attach_cross_circuit_transfer_diagnostics(output, history, config)
     if weights is not None:
         output["adaptive_capm_weights_json"] = weights_json
         output["adaptive_acquisition_weights_json"] = acquisition_weights_json
@@ -301,7 +318,7 @@ def _prepare_capm_v3_frames(
         feature in output.columns and feature in distance_history.columns
         for feature in V3_CANONICAL_FEATURES
     )
-    if version != "v3" or has_canonical:
+    if version not in {"v3", "v4"} or has_canonical:
         return output, distance_history
     feature_config = resolve_physics_feature_config(config)
     candidate_features, _ = extract_physics_features(output, feature_config)
@@ -311,6 +328,72 @@ def _prepare_capm_v3_frames(
     for column in history_features.columns:
         distance_history[column] = history_features[column].values
     return output, distance_history
+
+
+def _attach_cross_circuit_transfer_diagnostics(
+    output: pd.DataFrame,
+    history: pd.DataFrame,
+    config: Mapping[str, Any] | None,
+) -> pd.DataFrame:
+    root = config or {}
+    transfer = root.get("transfer", {}) if isinstance(root, Mapping) else {}
+    transfer = transfer if isinstance(transfer, Mapping) else {}
+    source = CircuitDomain.from_mapping(transfer.get("source_domain"))
+    target = CircuitDomain.from_mapping(transfer.get("target_domain"))
+    distance = domain_distance(source, target)
+    gate_config = transfer.get("trust_gate", {})
+    gate_config = gate_config if isinstance(gate_config, Mapping) else {}
+    effective_samples = float(transfer.get("effective_source_samples", len(history)))
+    feature_ood = float(transfer.get("feature_ood_score", distance.total))
+    predictive_std = float(transfer.get("predictive_std", distance.total))
+    payloads: list[str] = []
+    statuses: list[str] = []
+    trusts: list[float] = []
+    for _, row in output.iterrows():
+        coverage = 1.0 - min(max(float(row.get("capm_missing_penalty", 1.0)), 0.0), 1.0)
+        decision = evaluate_transfer_gate(
+            TransferGateInput(
+                domain_distance=distance.total,
+                feature_ood_score=feature_ood,
+                predictive_std=predictive_std,
+                effective_source_samples=effective_samples,
+                physics_coverage=coverage,
+            ),
+            gate_config,
+        )
+        payloads.append(
+            json.dumps(
+                {
+                    "model": "hierarchical_physics_residual_v1",
+                    "domain_distance": {
+                        "total": distance.total,
+                        "topology": distance.topology,
+                        "technology": distance.technology,
+                        "operating_scale": distance.operating_scale,
+                        "role_mismatch": distance.role_mismatch,
+                        "missing_fraction": distance.missing_fraction,
+                    },
+                    "gate": {
+                        "allowed": decision.allowed,
+                        "trust_score": decision.trust_score,
+                        "reasons": list(decision.reasons),
+                        "action": decision.action,
+                    },
+                    "selection_bias": {
+                        "method": "inverse_propensity_weighting",
+                        "status": str(transfer.get("selection_bias_status", "not_fitted")),
+                    },
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+            )
+        )
+        statuses.append(decision.action)
+        trusts.append(decision.trust_score)
+    output["capm_transfer_diagnostics_json"] = payloads
+    output["capm_transfer_status"] = statuses
+    output["capm_transfer_trust_score"] = trusts
+    return output
 
 
 def select_adaptive_capm_distance(

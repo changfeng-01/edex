@@ -126,6 +126,7 @@ export interface OptimizationCandidate {
   parameter_changes: Record<string, unknown>;
   strategy: string;
   reason_codes: string[];
+  selection_scores?: Record<string, unknown>;
   selection_score?: number | null;
   evaluated_score?: number | null;
   status: string;

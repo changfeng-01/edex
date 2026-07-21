@@ -230,7 +230,7 @@ class CandidateRecord:
     parameter_changes: dict[str, Any]
     strategy: str
     reason_codes: tuple[str, ...] = ()
-    selection_scores: dict[str, float] = field(default_factory=dict)
+    selection_scores: dict[str, Any] = field(default_factory=dict)
     selection_score: float | None = None
     evaluated_score: float | None = None
     status: CandidateStatus = CandidateStatus.PROPOSED

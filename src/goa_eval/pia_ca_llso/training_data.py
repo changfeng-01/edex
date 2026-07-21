@@ -20,6 +20,12 @@ MUST_RESIMULATE = True
 
 PIA_HISTORY_COLUMNS = [
     "sample_id",
+    "circuit_domain_id",
+    "topology_family",
+    "technology_family",
+    "process_family",
+    "fidelity_level",
+    "selection_propensity",
     "TFT_pullup_W",
     "TFT_pullup_L",
     "TFT_pulldown_W",
@@ -92,6 +98,15 @@ SAFE_COLUMN_MAP = {
     "TFT_bootstrap_W": "TFT_bootstrap_W",
     "TFT_bootstrap_L": "TFT_bootstrap_L",
 }
+
+TRANSFER_METADATA_COLUMNS = (
+    "circuit_domain_id",
+    "topology_family",
+    "technology_family",
+    "process_family",
+    "fidelity_level",
+    "selection_propensity",
+)
 
 ROLE_AMBIGUOUS_COLUMNS = {"transistor_width", "transistor_length"}
 PAPER_DB_FILES = [
@@ -295,6 +310,12 @@ def _map_history_row(raw: dict[str, Any], *, sample_id: str, source_path: Path) 
     row["must_resimulate"] = MUST_RESIMULATE
     row["training_eligible"] = True
     row["missing_reason"] = ""
+
+    for column in TRANSFER_METADATA_COLUMNS:
+        if column in raw and not _is_missing(raw.get(column)):
+            row[column] = _value(raw[column])
+    if _is_missing(row.get("fidelity_level")):
+        row["fidelity_level"] = 3
 
     for source_column, target_column in SAFE_COLUMN_MAP.items():
         if source_column in raw and not _is_missing(raw.get(source_column)) and _is_missing(row.get(target_column)):

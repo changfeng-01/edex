@@ -1,0 +1,150 @@
+problem_name: pia_ca_llso_cross_circuit_transfer_v4
+target_score: 80
+
+parameter_columns:
+  - M_pullup_W
+  - M_pullup_L
+  - M_pulldown_W
+  - M_pulldown_L
+  - M_reset_W
+  - M_reset_L
+  - M_bootstrap_W
+  - M_bootstrap_L
+  - C_load
+  - C_boot
+  - VDD
+  - VSS
+  - CLK_rise_time
+  - CLK_fall_time
+
+physics_features:
+  profile: transistor_level
+  electrical_features_enabled: true
+
+electrical_model:
+  model: tft_phase_charge_v1
+  units: {geometry: um, capacitance: pF, time: ns}
+  devices:
+    pullup:
+      polarity: n
+      width_column: M_pullup_W
+      length_column: M_pullup_L
+      mobility_column: mu_pullup_cm2_v_s
+      cox_column: cox_f_per_cm2
+      threshold_column: pullup_vth_v
+      vgs_column: pullup_vgs_v
+      vds_column: pullup_vds_v
+      observed_resistance_column: pullup_observed_r_ohm
+      channel_length_modulation_per_v: 0.0
+      subthreshold_slope_v: 0.08
+    pulldown:
+      polarity: n
+      width_column: M_pulldown_W
+      length_column: M_pulldown_L
+      mobility_column: mu_pulldown_cm2_v_s
+      cox_column: cox_f_per_cm2
+      threshold_column: pulldown_vth_v
+      vgs_column: pulldown_vgs_v
+      vds_column: pulldown_vds_v
+      observed_resistance_column: pulldown_observed_r_ohm
+      channel_length_modulation_per_v: 0.0
+      subthreshold_slope_v: 0.08
+    bootstrap:
+      polarity: n
+      width_column: M_bootstrap_W
+      length_column: M_bootstrap_L
+      mobility_column: mu_bootstrap_cm2_v_s
+      cox_column: cox_f_per_cm2
+      threshold_column: bootstrap_vth_v
+      vgs_column: bootstrap_vgs_v
+      vds_column: bootstrap_vds_v
+      channel_length_modulation_per_v: 0.0
+      subthreshold_slope_v: 0.08
+  bootstrap_solver:
+    target_role: pullup
+    gate_capacitance_f: 0.0
+    leakage_charge_c: 0.0
+
+parasitics:
+  summary_path_column: parasitic_summary_path
+  net_role_map: {}
+  legacy_capacitance_unit: pF
+  direct_columns: {}
+
+pvt:
+  sample_id_column: sample_id
+  observations_csv: null
+  observation_match_tolerance: 1.0e-8
+  reference_temperature_c: 25.0
+  reference_supply_v: 5.0
+  mobility_temperature_exponent: 1.5
+  vth_temperature_coefficient_v_per_c: 0.0
+  supply_bias_exponent: 1.0
+  scenarios:
+    - {corner: tt, temperature_c: 25.0, supply_v: 5.0, kind: deterministic_corner}
+  corner_models:
+    tt: {mu_multiplier: 1.0, vth_shift_v: 0.0, resistance_multiplier: 1.0, capacitance_multiplier: 1.0}
+
+capm_distance:
+  metric_version: v4
+  normalization_enabled: true
+  normalization_min_history_rows: 4
+  normalization_floor_fraction: 0.05
+  normalization_clip: 8.0
+  metric_covariance_shrinkage: 0.25
+  metric_covariance_ridge: 1.0e-6
+  historical_calibration_min_p90_count: 5
+  coupling_enabled: false
+  barrier_enabled: true
+  geodesic_enabled: true
+  missing_penalty_enabled: true
+  lambda_barrier: 1.0
+  lambda_missing: 1.0
+  lambda_fallback: 0.25
+  pvt_worst_case_weight: 0.5
+  pvt_statistical_weight: 0.0
+  pvt_max_violation_probability: 0.0
+  min_device_overdrive_v: 0.1
+  max_critical_rc_delay_s: 1.0e-6
+  min_bootstrap_coupling_factor_v3: 0.2
+  min_bootstrap_headroom_v: 0.1
+  max_abs_drive_balance_log_ratio: 2.0
+  max_clock_slew_over_rc_ratio: 5.0
+
+constraint_classes:
+  hard: []
+  validated_risk:
+    - {feature: critical_rc_delay_s, direction: high, threshold: 1.0e-6}
+    - {feature: bootstrap_headroom_v, direction: low, threshold: 0.1}
+  heuristic_warning:
+    - {feature: drive_balance_log_ratio, direction: abs_high, threshold: 2.0}
+
+transfer:
+  model: hierarchical_physics_residual_v1
+  domain_id_column: circuit_domain_id
+  fidelity_column: fidelity_level
+  propensity_column: selection_propensity
+  source_domain: {topology_family: unknown, technology_family: unknown}
+  target_domain: {topology_family: unknown, technology_family: unknown}
+  source_temperature: 0.25
+  trust_gate:
+    max_domain_distance: 0.35
+    max_feature_ood: 0.50
+    max_predictive_std: 0.25
+    min_effective_samples: 5
+    min_physics_coverage: 0.80
+  action_decoder:
+    role_parameter_map: {}
+    bounds: {}
+
+transfer_validation:
+  protocol: leave_one_circuit_out
+  required_domains: 3
+  compare_target_only_baseline: true
+  report_calibration: true
+  report_negative_transfer_rate: true
+
+metadata:
+  data_source: real_simulation_csv
+  engineering_validity: simulation_only
+  must_resimulate: true
