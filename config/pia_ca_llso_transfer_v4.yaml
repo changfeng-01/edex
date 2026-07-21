@@ -121,6 +121,10 @@ constraint_classes:
 
 transfer:
   model: hierarchical_physics_residual_v1
+  # Switching this profile changes both the task metric head and the local
+  # optimizable parameter space; the transfer kernel itself remains shared.
+  target_circuit_profile: transistor_level_goa
+  task_acquisition_weight: 0.25
   domain_id_column: circuit_domain_id
   fidelity_column: fidelity_level
   propensity_column: selection_propensity
@@ -136,6 +140,8 @@ transfer:
   action_decoder:
     role_parameter_map: {}
     bounds: {}
+  parameter_transfer:
+    minimum_parameter_coverage: 0.80
 
 transfer_validation:
   protocol: leave_one_circuit_out

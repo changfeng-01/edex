@@ -143,3 +143,42 @@ negative-transfer rate 未恶化时，才可声称“具备经验证的跨电路
 能力框架，任何具体电路族仍需真实仿真数据完成上述验收。
 
 完整配置模板见 `config/pia_ca_llso_transfer_v4.yaml`。
+
+## 8. 跨电路参数空间与任务头
+
+跨电路迁移不要求 GOA、OTA、像素存储驱动等电路共享原始参数列。每个
+`circuit_profile` 同时声明两类电路本地契约：
+
+- `metrics + objective`：定义该电路真正关心的输出指标、方向、阈值和权重；
+- `parameter_profile`：定义本地参数列到 `role.property` 的语义映射、单位、变量类型、可优化性、边界、量化和耦合组。
+
+参数被明确分成 `design`、`environment`、`model`、`parasitic` 和 `derived`。
+只有 `design && optimizable=true` 可以被搜索器修改；供电、温度、负载、工艺模型和提取寄生不得作为普通设计旋钮被误扰动。LLSO offspring 从同一 learner
+继承这些条件列，并对设计变量执行 profile 边界和量化。`keep_ratio` 与
+`must_change_together` 参数组使用同一乘性步长，量化或边界导致组约束无法满足时丢弃该 offspring。
+
+同一个规范物理状态会分别送入目标电路任务头。例如 GOA 可提高
+`voh_min_v`、bootstrap 余量和时序权重，OTA 可提高增益、相位裕度、带宽与功耗权重；任务分数不会被误当成通用物理距离，而是作为可配置 acquisition 分量。
+
+局部灵敏度在无量纲变换坐标中计算：正值输入/输出使用 log，有符号量使用 asinh。
+对目标电路任务头，参数重要度为
+
+\[
+I_j \propto \sum_k w_k\,(1+\text{violation}_k)
+\left|\frac{\partial \tilde y_k}{\partial \tilde x_j}\right|.
+\]
+
+源电路的动作优先迁移为期望物理效应向量，而不是参数名或固定百分比。目标电路根据自己的局部 Jacobian 求带岭项的最小二乘投影：
+
+\[
+\Delta \tilde x^*=\arg\min_{\Delta \tilde x}
+\|W^{1/2}(J_t\Delta\tilde x-\Delta\tilde y)\|_2^2
++\lambda\|\Delta\tilde x\|_2^2.
+\]
+
+实现使用可处理秩亏 Jacobian 的 least-squares 求解，并在边界/量化后重新计算实际效应。只有效应方向余弦和相对残差同时通过门限时，参数动作才可执行；否则退化为 `state_transfer_only`，继续推荐目标域探索点但不迁移动作。
+
+选择结果新增 `capm_parameter_profile_status`、`capm_parameter_coverage`、
+`capm_optimizable_parameter_coverage`、`capm_action_transfer_status`、
+`capm_task_head_status`、`capm_task_alignment_score` 以及对应 JSON 诊断。示例配置通过
+`transfer.target_circuit_profile: transistor_level_goa` 同时选择 GOA 参数空间和任务头；切换电路应新增或选择另一个 profile，而不是修改共享 CAPM/transfer 内核。

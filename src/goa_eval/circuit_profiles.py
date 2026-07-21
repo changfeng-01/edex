@@ -6,6 +6,7 @@ from typing import Any
 
 import yaml
 
+from goa_eval.domain.parameter_profiles import CircuitParameterProfile
 from goa_eval.parameter_semantics import load_parameter_semantics, semantic_tag_index
 from goa_eval.topology_profiles import DEFAULT_PROFILE_PATH, load_eval_profiles
 from goa_eval.units import normalize_numeric_fields, parse_unit_value
@@ -96,6 +97,14 @@ def _validate_profile_collection(profiles: dict[str, dict[str, Any]]) -> None:
                 )
             else:
                 aliases[normalized_alias] = profile_name
+
+        if profile.get("parameter_profile") is not None:
+            try:
+                CircuitParameterProfile.from_circuit_profile(
+                    {"name": profile_name, **profile}
+                )
+            except ValueError as error:
+                errors.append(f"{profile_name}.parameter_profile: {error}")
 
         supported_analyses = {
             _normalize(analysis)

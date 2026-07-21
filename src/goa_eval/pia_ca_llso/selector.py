@@ -5,7 +5,15 @@ from typing import Any, Callable, Mapping, Sequence
 
 import pandas as pd
 
-from goa_eval.domain import CircuitDomain, domain_distance
+from goa_eval.circuit_profiles import load_circuit_profiles, resolve_circuit_profile
+from goa_eval.domain import (
+    CircuitDomain,
+    CircuitParameterProfile,
+    CircuitTaskHead,
+    audit_parameter_profile,
+    domain_distance,
+    evaluate_task_head,
+)
 from goa_eval.pia_ca_llso.acquisition import attach_acquisition_scores, compute_diversity, explain_acquisition
 from goa_eval.pia_ca_llso.electrical_model import V3_CANONICAL_FEATURES
 from goa_eval.pia_ca_llso.features import extract_physics_features, resolve_physics_feature_config
@@ -25,6 +33,7 @@ from goa_eval.pia_ca_llso.raw_distance import select_by_raw_distance
 from goa_eval.pia_ca_llso.schema import SelectionResult
 from goa_eval.pia_ca_llso.sklearn_baseline import predict_candidates, train_baseline_models
 from goa_eval.pia_ca_llso.value_coercion import strict_bool
+from goa_eval.transfer.action_projection import project_physical_effect
 from goa_eval.transfer import TransferGateInput, evaluate_transfer_gate
 from goa_eval.pia_ca_llso.selector_weights import (
     ACTIVE_INFLUENCE_ON_DEMAND_WEIGHTS,
@@ -256,6 +265,7 @@ def select_capm_distance(
         output["capm_constraint_diagnostics_json"] = [
             json.dumps(report, ensure_ascii=True, sort_keys=True) for report in risk_reports
         ]
+        output = _attach_parameter_task_diagnostics(output, config)
     else:
         output["capm_hard_risk_passed"] = pd.Series(
             [bool(value <= 0.0) for value in output["capm_barrier_score"].astype(float)],
@@ -269,6 +279,14 @@ def select_capm_distance(
         + active_weights["hard_mask"] * output["capm_hard_risk_passed"].astype(float)
         + active_weights["missing_feature_confidence"] * (1.0 - output["capm_missing_penalty"].astype(float).clip(0.0, 1.0))
     ).clip(0.0, 1.0)
+    task_weight = _task_acquisition_weight(config)
+    if task_weight > 0.0 and "capm_task_alignment_score" in output:
+        task_scores = pd.to_numeric(output["capm_task_alignment_score"], errors="coerce")
+        usable = task_scores.notna()
+        output.loc[usable, "acquisition_score"] = (
+            (1.0 - task_weight) * output.loc[usable, "acquisition_score"].astype(float)
+            + task_weight * task_scores.loc[usable].clip(0.0, 1.0)
+        )
     weights_json = json.dumps(dict(weights or {}), ensure_ascii=False, sort_keys=True)
     acquisition_weights_json = json.dumps(active_weights, ensure_ascii=False, sort_keys=True)
     output["acquisition_components_json"] = [
@@ -278,6 +296,12 @@ def select_capm_distance(
                 "diversity": float(row["diversity_score"]),
                 "hard_mask": bool(row["capm_hard_risk_passed"]),
                 "missing_feature_confidence": float(1.0 - min(max(row["capm_missing_penalty"], 0.0), 1.0)),
+                "task_alignment": (
+                    None
+                    if pd.isna(row.get("capm_task_alignment_score"))
+                    else float(row.get("capm_task_alignment_score"))
+                ),
+                "task_acquisition_weight": task_weight,
                 "diagnostic_status": diagnostic_status,
             },
             ensure_ascii=False,
@@ -361,6 +385,7 @@ def _attach_cross_circuit_transfer_diagnostics(
             ),
             gate_config,
         )
+        action_transfer_allowed = str(row.get("capm_action_transfer_status", "state_transfer_only")) == "eligible"
         payloads.append(
             json.dumps(
                 {
@@ -383,6 +408,14 @@ def _attach_cross_circuit_transfer_diagnostics(
                         "method": "inverse_propensity_weighting",
                         "status": str(transfer.get("selection_bias_status", "not_fitted")),
                     },
+                    "parameter_transfer": {
+                        "profile_status": str(row.get("capm_parameter_profile_status", "not_configured")),
+                        "declared_coverage": float(row.get("capm_parameter_coverage", 0.0)),
+                        "optimizable_coverage": float(row.get("capm_optimizable_parameter_coverage", 0.0)),
+                        "task_head_status": str(row.get("capm_task_head_status", "not_configured")),
+                        "action_transfer_allowed": action_transfer_allowed,
+                        "action_status": str(row.get("capm_action_transfer_status", "state_transfer_only")),
+                    },
                 },
                 ensure_ascii=True,
                 sort_keys=True,
@@ -394,6 +427,177 @@ def _attach_cross_circuit_transfer_diagnostics(
     output["capm_transfer_status"] = statuses
     output["capm_transfer_trust_score"] = trusts
     return output
+
+
+def _attach_parameter_task_diagnostics(
+    output: pd.DataFrame,
+    config: Mapping[str, Any] | None,
+) -> pd.DataFrame:
+    root = config or {}
+    transfer = root.get("transfer", {}) if isinstance(root, Mapping) else {}
+    transfer = transfer if isinstance(transfer, Mapping) else {}
+    profile_raw = transfer.get("target_parameter_profile")
+    task_raw = transfer.get("task_head")
+    circuit_profile = _target_circuit_profile(transfer, profile_raw)
+    if isinstance(profile_raw, Mapping):
+        profile = CircuitParameterProfile.from_mapping(profile_raw)
+    elif circuit_profile is not None and circuit_profile.get("parameter_profile"):
+        profile = CircuitParameterProfile.from_circuit_profile(circuit_profile)
+    else:
+        profile = None
+    if isinstance(task_raw, Mapping):
+        task = CircuitTaskHead.from_mapping(task_raw)
+    elif circuit_profile is not None and circuit_profile.get("metrics"):
+        task = CircuitTaskHead.from_circuit_profile(circuit_profile)
+    else:
+        task = None
+    parameter_transfer = transfer.get("parameter_transfer", {})
+    parameter_transfer = parameter_transfer if isinstance(parameter_transfer, Mapping) else {}
+    action_projection_config = transfer.get("action_projection", {})
+    action_projection_config = (
+        action_projection_config if isinstance(action_projection_config, Mapping) else {}
+    )
+    minimum_coverage = min(
+        max(float(parameter_transfer.get("minimum_parameter_coverage", 1.0)), 0.0),
+        1.0,
+    )
+
+    parameter_statuses: list[str] = []
+    parameter_coverages: list[float] = []
+    optimizable_coverages: list[float] = []
+    action_statuses: list[str] = []
+    action_projection_payloads: list[str] = []
+    parameter_payloads: list[str] = []
+    task_statuses: list[str] = []
+    task_scores: list[float] = []
+    task_payloads: list[str] = []
+    for _, row in output.iterrows():
+        if profile is None:
+            parameter_status = "not_configured"
+            declared_coverage = 0.0
+            optimizable_coverage = 0.0
+            action_status = "state_transfer_only"
+            action_projection_payload = {
+                "status": "parameter_profile_required",
+                "accepted": False,
+            }
+            parameter_payload = {
+                "status": parameter_status,
+                "profile_name": None,
+                "action_transfer_allowed": False,
+            }
+        else:
+            audit = audit_parameter_profile(row, profile)
+            parameter_status = audit.status
+            declared_coverage = audit.declared_coverage
+            optimizable_coverage = audit.optimizable_coverage
+            action_allowed = (
+                declared_coverage >= minimum_coverage
+                and optimizable_coverage >= minimum_coverage
+                and audit.optimizable_count > 0
+            )
+            target_effect = action_projection_config.get("target_effect")
+            target_jacobian = action_projection_config.get("target_jacobian")
+            projection_configured = isinstance(target_effect, Mapping) and isinstance(
+                target_jacobian, Mapping
+            )
+            if not action_allowed:
+                action_status = "state_transfer_only"
+                action_projection_payload = {
+                    "status": "parameter_coverage_insufficient",
+                    "accepted": False,
+                }
+            elif not projection_configured:
+                action_allowed = False
+                action_status = "projection_required"
+                action_projection_payload = {
+                    "status": "projection_required",
+                    "accepted": False,
+                }
+            else:
+                projection = project_physical_effect(
+                    target_effect,
+                    target_jacobian,
+                    profile,
+                    row,
+                    feature_weights=action_projection_config.get("feature_weights"),
+                    regularization=float(action_projection_config.get("regularization", 1.0e-3)),
+                    minimum_alignment=float(
+                        action_projection_config.get("minimum_alignment", 0.5)
+                    ),
+                    max_log_step=float(action_projection_config.get("max_log_step", 0.5)),
+                    maximum_relative_residual=float(
+                        action_projection_config.get("maximum_relative_residual", 0.5)
+                    ),
+                )
+                action_allowed = projection.accepted
+                action_status = "eligible" if projection.accepted else projection.status
+                action_projection_payload = projection.as_dict()
+            parameter_payload = {
+                "profile_name": profile.name,
+                "task_type": profile.task_type,
+                **audit.as_dict(),
+                "minimum_parameter_coverage": minimum_coverage,
+                "action_transfer_allowed": action_allowed,
+                "action_projection": action_projection_payload,
+            }
+        if task is None:
+            task_status = "not_configured"
+            task_score = float("nan")
+            task_payload = {"status": task_status, "task_name": None, "score": None}
+        else:
+            evaluation = evaluate_task_head(row, task)
+            task_status = evaluation.status
+            task_score = float(evaluation.score) if evaluation.score is not None else float("nan")
+            task_payload = {"task_name": task.name, **evaluation.as_dict()}
+        parameter_statuses.append(parameter_status)
+        parameter_coverages.append(declared_coverage)
+        optimizable_coverages.append(optimizable_coverage)
+        action_statuses.append(action_status)
+        action_projection_payloads.append(
+            json.dumps(action_projection_payload, ensure_ascii=True, sort_keys=True)
+        )
+        parameter_payloads.append(json.dumps(parameter_payload, ensure_ascii=True, sort_keys=True))
+        task_statuses.append(task_status)
+        task_scores.append(task_score)
+        task_payloads.append(json.dumps(task_payload, ensure_ascii=True, sort_keys=True))
+
+    output["capm_parameter_profile_status"] = parameter_statuses
+    output["capm_parameter_coverage"] = parameter_coverages
+    output["capm_optimizable_parameter_coverage"] = optimizable_coverages
+    output["capm_action_transfer_status"] = action_statuses
+    output["capm_action_projection_json"] = action_projection_payloads
+    output["capm_parameter_diagnostics_json"] = parameter_payloads
+    output["capm_task_head_status"] = task_statuses
+    output["capm_task_alignment_score"] = task_scores
+    output["capm_task_head_diagnostics_json"] = task_payloads
+    return output
+
+
+def _task_acquisition_weight(config: Mapping[str, Any] | None) -> float:
+    root = config or {}
+    transfer = root.get("transfer", {}) if isinstance(root, Mapping) else {}
+    transfer = transfer if isinstance(transfer, Mapping) else {}
+    task = transfer.get("task_head", {})
+    task = task if isinstance(task, Mapping) else {}
+    value = task.get("acquisition_weight", transfer.get("task_acquisition_weight", 0.0))
+    return min(max(float(value), 0.0), 1.0)
+
+
+def _target_circuit_profile(
+    transfer: Mapping[str, Any],
+    parameter_profile: object,
+) -> dict[str, Any] | None:
+    reference = transfer.get("target_circuit_profile")
+    if isinstance(reference, Mapping):
+        return dict(reference)
+    name = reference if isinstance(reference, str) else parameter_profile if isinstance(parameter_profile, str) else None
+    if not name:
+        return None
+    resolved = resolve_circuit_profile(str(name), load_circuit_profiles())
+    if resolved.get("name") == "default" and str(name).strip().lower() != "default":
+        raise ValueError(f"unknown target circuit profile: {name}")
+    return resolved
 
 
 def select_adaptive_capm_distance(
