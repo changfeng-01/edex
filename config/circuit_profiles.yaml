@@ -122,6 +122,22 @@ profiles:
     reference:
       source: "local_fixture_contract"
       note: "Template and CSV fixture define the next-run simulation interface only; external simulation results remain required."
+    parameter_profile:
+      parameters:
+        pullup_width: {column: M_pullup_W, role: pullup, property: width, kind: design, unit: um, optimizable: true, mapping_fidelity: exact}
+        pullup_length: {column: M_pullup_L, role: pullup, property: length, kind: design, unit: um, optimizable: true, mapping_fidelity: exact}
+        pulldown_width: {column: M_pulldown_W, role: pulldown, property: width, kind: design, unit: um, optimizable: true, mapping_fidelity: exact}
+        pulldown_length: {column: M_pulldown_L, role: pulldown, property: length, kind: design, unit: um, optimizable: true, mapping_fidelity: exact}
+        reset_width: {column: M_reset_W, role: reset, property: width, kind: design, unit: um, optimizable: true, mapping_fidelity: exact}
+        reset_length: {column: M_reset_L, role: reset, property: length, kind: design, unit: um, optimizable: true, mapping_fidelity: exact}
+        bootstrap_width: {column: M_bootstrap_W, role: bootstrap, property: width, kind: design, unit: um, optimizable: true, mapping_fidelity: exact}
+        bootstrap_length: {column: M_bootstrap_L, role: bootstrap, property: length, kind: design, unit: um, optimizable: true, mapping_fidelity: exact}
+        bootstrap_capacitance: {column: C_boot, role: bootstrap, property: capacitance, kind: design, unit: pF, optimizable: true, mapping_fidelity: exact}
+        load_capacitance: {column: C_load, role: output_load, property: capacitance, kind: environment, unit: pF, optimizable: false, mapping_fidelity: exact}
+        positive_supply: {column: VDD, role: supply, property: positive_voltage, kind: environment, unit: V, optimizable: false, mapping_fidelity: exact}
+        negative_supply: {column: VSS, role: supply, property: negative_voltage, kind: environment, unit: V, optimizable: false, mapping_fidelity: exact}
+        clock_rise_time: {column: CLK_rise_time, role: clock, property: rise_time, kind: environment, unit: ns, optimizable: false, mapping_fidelity: exact}
+        clock_fall_time: {column: CLK_fall_time, role: clock, property: fall_time, kind: environment, unit: ns, optimizable: false, mapping_fidelity: exact}
     required_analyses:
       - tran
     metrics:
@@ -188,6 +204,15 @@ profiles:
       data_source: "real_simulation_csv"
       engineering_validity: "simulation_only"
       must_resimulate: true
+    parameter_profile:
+      parameters:
+        input_pair_m1_width: {column: m1_width, role: input_pair, property: width, kind: design, unit: um, optimizable: true, group: input_pair, mapping_fidelity: exact}
+        input_pair_m2_width: {column: m2_width, role: input_pair, property: width, kind: design, unit: um, optimizable: true, group: input_pair, mapping_fidelity: exact}
+        bias_current: {column: ibias, role: bias, property: current, kind: design, unit: A, optimizable: true, mapping_fidelity: exact}
+        compensation_capacitance: {column: ccomp, role: compensation, property: capacitance, kind: design, unit: F, optimizable: true, mapping_fidelity: exact}
+      parameter_groups:
+        input_pair:
+          constraint: keep_ratio
     required_analyses:
       - op
       - ac

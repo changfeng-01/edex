@@ -211,3 +211,27 @@ profiles:
 
     assert "missing_metric" in str(error.value)
     assert "2mV" in str(error.value)
+
+
+def test_load_circuit_profiles_rejects_invalid_parameter_profile(tmp_path):
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        """
+profiles:
+  ota:
+    aliases: []
+    metrics: {}
+    parameter_profile:
+      parameters:
+        temperature:
+          column: TEMP
+          role: environment
+          property: temperature_c
+          kind: invented_kind
+          optimizable: false
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsupported kind: invented_kind"):
+        load_circuit_profiles(profile_file)

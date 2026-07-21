@@ -158,3 +158,100 @@ def test_llso_offspring_falls_back_when_l1_missing() -> None:
 
     assert len(offspring) > 0
     assert all(offspring["source"] == "llso_offspring")
+
+
+def test_llso_offspring_only_mutates_optimizable_design_parameters() -> None:
+    history = _make_labeled_history().assign(
+        vdd_v=[3.3, 2.7, 3.3, 2.7, 3.3, 2.7, 3.3, 2.7, 3.3, 2.7]
+    )
+    candidates = _make_seed_candidates().assign(vdd_v=[3.3, 2.7, 3.3, 2.7, 3.3, 2.7])
+    config = _make_default_config()
+    config["parameter_columns"] = ["x1", "vdd_v"]
+    config["transfer"] = {
+        "target_parameter_profile": {
+            "name": "goa_parameter_space",
+            "task_type": "goa",
+            "parameters": {
+                "pullup_width": {
+                    "column": "x1",
+                    "role": "pullup",
+                    "property": "width",
+                    "kind": "design",
+                    "optimizable": True,
+                    "bounds": [2.0, 8.0],
+                    "quantization": 0.5,
+                    "mapping_fidelity": "exact",
+                },
+                "supply": {
+                    "column": "vdd_v",
+                    "role": "environment",
+                    "property": "supply_v",
+                    "kind": "environment",
+                    "optimizable": False,
+                    "mapping_fidelity": "exact",
+                },
+            },
+        }
+    }
+
+    offspring = generate_llso_offspring(
+        history=history,
+        seed_candidates=candidates,
+        config=config,
+        generation=1,
+        offspring_count=12,
+        random_seed=42,
+    )
+
+    assert len(offspring) > 0
+    assert offspring["x1"].between(2.0, 8.0).all()
+    assert (((offspring["x1"] - 2.0) / 0.5).round(10) % 1 == 0).all()
+    assert set(offspring["vdd_v"]).issubset({2.7, 3.3})
+    assert offspring["vdd_v"].notna().all()
+
+
+def test_llso_offspring_preserves_keep_ratio_parameter_groups() -> None:
+    history = _make_labeled_history()
+    history["x2"] = 2.0 * history["x1"]
+    candidates = _make_seed_candidates()
+    candidates["x2"] = 2.0 * candidates["x1"]
+    config = _make_default_config()
+    config["transfer"] = {
+        "target_parameter_profile": {
+            "name": "matched_pair",
+            "task_type": "ota",
+            "parameters": {
+                "left_width": {
+                    "column": "x1",
+                    "role": "input_pair",
+                    "property": "width",
+                    "kind": "design",
+                    "optimizable": True,
+                    "group": "input_pair",
+                    "mapping_fidelity": "exact",
+                },
+                "right_width": {
+                    "column": "x2",
+                    "role": "input_pair",
+                    "property": "width",
+                    "kind": "design",
+                    "optimizable": True,
+                    "group": "input_pair",
+                    "mapping_fidelity": "exact",
+                },
+            },
+            "parameter_groups": {"input_pair": {"constraint": "keep_ratio"}},
+        }
+    }
+
+    offspring = generate_llso_offspring(
+        history=history,
+        seed_candidates=candidates,
+        config=config,
+        generation=1,
+        offspring_count=12,
+        random_seed=42,
+    )
+
+    assert len(offspring) > 0
+    assert np.allclose(offspring["x2"] / offspring["x1"], 2.0, rtol=1e-9, atol=1e-9)
