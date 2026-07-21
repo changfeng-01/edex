@@ -116,7 +116,7 @@ class CandidateORM(Base):
     parameter_changes: Mapped[dict[str, Any]] = mapped_column(JSON)
     strategy: Mapped[str] = mapped_column(String(128))
     reason_codes: Mapped[list[str]] = mapped_column(JSON)
-    selection_scores: Mapped[dict[str, float]] = mapped_column(JSON)
+    selection_scores: Mapped[dict[str, Any]] = mapped_column(JSON)
     selection_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     evaluated_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(32), index=True)

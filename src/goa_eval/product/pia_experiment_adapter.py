@@ -367,6 +367,20 @@ class PiaExperimentAdapter:
         changes = {column: _json_scalar(row[column], column) for column in parameters}
         score = row.get("selection_score")
         selection_score = None if score is None or pd.isna(score) else float(score)
+        selection_scores: dict[str, Any] = {}
+        for key, value in row.items():
+            if not str(key).startswith("capm_"):
+                continue
+            if value is None or (not isinstance(value, (dict, list, tuple)) and pd.isna(value)):
+                continue
+            output_key = str(key).removesuffix("_json")
+            if str(key).endswith("_json") and isinstance(value, str):
+                try:
+                    selection_scores[output_key] = json.loads(value)
+                except json.JSONDecodeError:
+                    selection_scores[output_key] = value
+            else:
+                selection_scores[output_key] = _json_scalar(value, str(key))
         return CandidateRecord(
             candidate_id=f"candidate_{identity}",
             experiment_id=experiment.experiment_id,
@@ -374,6 +388,7 @@ class PiaExperimentAdapter:
             parameter_changes=changes,
             strategy="pia",
             reason_codes=(f"pia_generation:{generation}", f"pia_source:{source_id}"),
+            selection_scores=selection_scores,
             selection_score=selection_score,
             must_resimulate=True,
         )

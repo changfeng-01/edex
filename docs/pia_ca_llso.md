@@ -1,5 +1,8 @@
 # PIA-CA-LLSO
 
+跨电路迁移与 CAPM V4 的物理、数学、数据和验证契约见
+[`pia_cross_circuit_transfer_v4_zh.md`](pia_cross_circuit_transfer_v4_zh.md)。
+
 PIA-CA-LLSO is an experimental optimizer module inside the existing EDA repository. It emits next-run simulation suggestions for expensive circuit optimization.
 
 ## 1. Method Background

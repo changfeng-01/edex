@@ -8,6 +8,8 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
+from goa_eval.physics import BootstrapNetwork, DeviceBias, DeviceSpec, conserve_bootstrap_charge, evaluate_tft_phase_charge
+
 
 V3_CANONICAL_FEATURES = (
     "pullup_overdrive_v",
@@ -45,7 +47,8 @@ V3_GEOMETRY_FEATURES = (
 _CAPACITANCE_FACTORS = {"f": 1.0, "pf": 1e-12, "ff": 1e-15, "nf": 1e-9, "uf": 1e-6}
 _RESISTANCE_FACTORS = {"ohm": 1.0, "kohm": 1e3, "mohm": 1e6}
 _TIME_FACTORS = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9, "ps": 1e-12}
-_REGION_CODES = {"unknown": -1.0, "off": 0.0, "linear": 1.0, "saturation": 2.0}
+_LENGTH_FACTORS = {"m": 1.0, "mm": 1e-3, "um": 1e-6, "nm": 1e-9}
+_REGION_CODES = {"unknown": -1.0, "off": 0.0, "cutoff": 0.0, "subthreshold": 0.5, "linear": 1.0, "saturation": 2.0}
 
 
 def attach_v3_electrical_features(
@@ -95,7 +98,9 @@ def attach_v3_electrical_features(
     for column in attached.columns:
         features[column] = attached[column]
     return {
-        "electrical_model_version": "v3",
+        "electrical_model_version": (
+            "v4" if str(model_config.get("model", "")).lower() == "tft_phase_charge_v1" else "v3"
+        ),
         "canonical_feature_names": list(V3_CANONICAL_FEATURES),
         "pvt_enabled": bool(_pvt_config(profile_config).get("scenarios")),
     }
@@ -120,7 +125,9 @@ def _compute_electrical_row(
     for role in ("pullup", "pulldown", "bootstrap", "reset"):
         role_config = devices.get(role)
         if isinstance(role_config, Mapping):
-            device_results[role] = _evaluate_device(row, role_config, role, model_name=model_name)
+            resolved_role_config = dict(role_config)
+            resolved_role_config.setdefault("geometry_unit", units.get("geometry", "um"))
+            device_results[role] = _evaluate_device(row, resolved_role_config, role, model_name=model_name)
 
     pullup = device_results.get("pullup", _missing_device())
     pulldown = device_results.get("pulldown", _missing_device())
@@ -150,7 +157,12 @@ def _compute_electrical_row(
     pullup_tau = pullup_r * effective_load
     pulldown_tau = pulldown_r * effective_load
     critical_tau = max(pullup_tau, pulldown_tau)
-    bootstrap_headroom = float(bootstrap_solver.get("boosted_overdrive_v", float(bootstrap["overdrive_v"]) + coupling * clk_amp))
+    bootstrap_headroom = float(
+        bootstrap_solver.get(
+            "target_headroom_v",
+            bootstrap_solver.get("boosted_overdrive_v", float(bootstrap["overdrive_v"]) + coupling * clk_amp),
+        )
+    )
     resistance_floor = 1e-30
     drive_balance = math.log(max(pullup_r, resistance_floor) / max(pulldown_r, resistance_floor))
     slew = max((_number(row.get("CLK_rise_time")) or 0.0) + (_number(row.get("CLK_fall_time")) or 0.0), 0.0) * time_factor
@@ -181,24 +193,41 @@ def _compute_electrical_row(
         "pulldown_region_code": _REGION_CODES[str(pulldown["region"])],
         "bootstrap_region_code": _REGION_CODES[str(bootstrap["region"])],
     }
+    parasitic_components = parasitic_status.get("components", {})
+    output_cap_status = str(parasitic_components.get("output_capacitance_f", {}).get("status", parasitic_status["status"]))
+    boot_loss_status = str(
+        parasitic_components.get("bootstrap_loss_capacitance_f", {}).get("status", parasitic_status["status"])
+    )
+    pullup_path_status = str(
+        parasitic_components.get("pullup_resistance_ohm", {}).get("status", parasitic_status["status"])
+    )
+    pulldown_path_status = str(
+        parasitic_components.get("pulldown_resistance_ohm", {}).get("status", parasitic_status["status"])
+    )
+    if model_name != "tft_phase_charge_v1":
+        legacy_parasitic_status = "physical" if parasitic_status["source"] in {"direct", "summary"} else "proxy_fallback"
+        output_cap_status = legacy_parasitic_status
+        boot_loss_status = legacy_parasitic_status
+        pullup_path_status = legacy_parasitic_status
+        pulldown_path_status = legacy_parasitic_status
     feature_status = {
         "pullup_overdrive_v": str(pullup["status"]),
         "pulldown_overdrive_v": str(pulldown["status"]),
         "pullup_effective_resistance_ohm": str(pullup["status"]),
         "pulldown_effective_resistance_ohm": str(pulldown["status"]),
-        "effective_load_capacitance_f": str(parasitic_status["status"]),
-        "pullup_rc_delay_s": _combine_status(str(pullup["status"]), str(parasitic_status["status"])),
-        "pulldown_rc_delay_s": _combine_status(str(pulldown["status"]), str(parasitic_status["status"])),
+        "effective_load_capacitance_f": output_cap_status,
+        "pullup_rc_delay_s": _combine_status(str(pullup["status"]), output_cap_status, pullup_path_status),
+        "pulldown_rc_delay_s": _combine_status(str(pulldown["status"]), output_cap_status, pulldown_path_status),
         "critical_rc_delay_s": _combine_status(str(pullup["status"]), str(pulldown["status"])),
-        "bootstrap_coupling_factor_v3": str(parasitic_status["status"]),
-        "bootstrap_headroom_v": _combine_status(str(bootstrap["status"]), str(parasitic_status["status"])),
+        "bootstrap_coupling_factor_v3": _combine_status(output_cap_status, boot_loss_status),
+        "bootstrap_headroom_v": _combine_status(str(bootstrap["status"]), output_cap_status, boot_loss_status),
         "drive_balance_log_ratio": _combine_status(str(pullup["status"]), str(pulldown["status"])),
         "clock_slew_over_rc_ratio": _combine_status(str(pullup["status"]), str(pulldown["status"])),
         "pullup_overdrive_supply_ratio": str(pullup["status"]),
         "pulldown_overdrive_supply_ratio": str(pulldown["status"]),
-        "pullup_rc_to_clock_slew_ratio": _combine_status(str(pullup["status"]), str(parasitic_status["status"])),
-        "pulldown_rc_to_clock_slew_ratio": _combine_status(str(pulldown["status"]), str(parasitic_status["status"])),
-        "bootstrap_headroom_supply_ratio": _combine_status(str(bootstrap["status"]), str(parasitic_status["status"])),
+        "pullup_rc_to_clock_slew_ratio": _combine_status(str(pullup["status"]), output_cap_status, pullup_path_status),
+        "pulldown_rc_to_clock_slew_ratio": _combine_status(str(pulldown["status"]), output_cap_status, pulldown_path_status),
+        "bootstrap_headroom_supply_ratio": _combine_status(str(bootstrap["status"]), output_cap_status, boot_loss_status),
     }
     electrical_status = {
         "model": str(model_config.get("model", "tft_square_law_v1")),
@@ -235,8 +264,58 @@ def _evaluate_device(
     channel_lambda = max(_number(config.get("channel_length_modulation_per_v")) or 0.0, 0.0)
     if threshold is None:
         threshold = _number(row.get("Vth_shift"))
+        if threshold is not None and sign < 0.0:
+            threshold = -abs(threshold)
     threshold_magnitude = abs(threshold) if threshold is not None else 0.0
     bias_available = vgs_raw is not None and vds_raw is not None and threshold is not None
+    if (
+        model_name == "tft_phase_charge_v1"
+        and None not in {width, length, mobility, cox}
+        and float(length) > 0.0
+        and bias_available
+    ):
+        geometry_factor = _unit_factor(config.get("geometry_unit", "um"), _LENGTH_FACTORS)
+        normalized_override_raw = sign * float(normalized_vgs_override) if normalized_vgs_override is not None else float(vgs_raw)
+        evaluation = evaluate_tft_phase_charge(
+            DeviceSpec(
+                role=role,
+                polarity="p" if sign < 0.0 else "n",
+                width_m=float(width) * geometry_factor,
+                length_m=float(length) * geometry_factor,
+                mobility_m2_v_s=float(mobility) * 1.0e-4,
+                cox_f_m2=float(cox) * 1.0e4,
+                threshold_v=float(threshold),
+                channel_length_modulation_per_v=channel_lambda,
+                series_resistance_ohm=max(_number(config.get("series_resistance_ohm")) or 0.0, 0.0),
+                subthreshold_slope_v=max(_number(config.get("subthreshold_slope_v")) or 0.08, 1.0e-6),
+                subthreshold_current_scale_a=max(
+                    _number(config.get("subthreshold_current_scale_a")) or 1.0e-12,
+                    0.0,
+                ),
+            ),
+            DeviceBias(
+                vgs_v=normalized_override_raw,
+                vds_v=float(vds_raw),
+                temperature_c=float(_number(row.get("temperature_c")) or 25.0),
+            ),
+        )
+        resistance = float(observed_r) if observed_r is not None and observed_r > 0.0 else evaluation.trajectory_resistance_ohm
+        status = "observed" if observed_r is not None and observed_r > 0.0 else "physical"
+        return {
+            "role": role,
+            "polarity": evaluation.polarity,
+            "region": evaluation.region,
+            "overdrive_v": evaluation.overdrive_v,
+            "resistance_ohm": float(resistance),
+            "large_signal_resistance_ohm": evaluation.large_signal_resistance_ohm,
+            "small_signal_resistance_ohm": evaluation.small_signal_resistance_ohm,
+            "trajectory_resistance_ohm": evaluation.trajectory_resistance_ohm,
+            "drain_current_a": evaluation.drain_current_a,
+            "source_drain_swapped": evaluation.source_drain_swapped,
+            "fidelity": int(evaluation.fidelity),
+            "model": model_name,
+            "status": status,
+        }
     if bias_available:
         vgs = float(normalized_vgs_override) if normalized_vgs_override is not None else sign * float(vgs_raw)
         vds = max(sign * float(vds_raw), 0.0)
@@ -308,6 +387,50 @@ def _solve_bootstrap_operating_point(
     bootstrap = device_results.get("bootstrap", _missing_device())
     base_denominator = c_boot + effective_load + parasitic_loss
     base_coupling = c_boot / base_denominator if base_denominator > 0.0 else 0.0
+    if str(model_config.get("model", "")).lower() == "tft_phase_charge_v1" and isinstance(target_config, Mapping):
+        polarity = str(target_config.get("polarity", "n")).lower()
+        sign = -1.0 if polarity.startswith("p") else 1.0
+        raw_vgs = _column_number(row, target_config.get("vgs_column"))
+        threshold = _column_number(row, target_config.get("threshold_column"))
+        if threshold is None and _number(row.get("Vth_shift")) is not None:
+            threshold = sign * abs(float(row["Vth_shift"]))
+        if raw_vgs is not None and threshold is not None:
+            gate_cap = max(_number(solver.get("gate_capacitance_f")) or 0.0, 0.0)
+            conservation = conserve_bootstrap_charge(
+                BootstrapNetwork(
+                    boot_capacitance_f=c_boot,
+                    target_gate_capacitance_f=gate_cap,
+                    output_load_capacitance_f=effective_load,
+                    parasitic_loss_capacitance_f=parasitic_loss,
+                    clock_step_v=sign * clk_amp,
+                    initial_gate_v=float(raw_vgs),
+                    leakage_charge_c=max(_number(solver.get("leakage_charge_c")) or 0.0, 0.0),
+                ),
+                target_threshold_v=float(threshold),
+                polarity=polarity,
+            )
+            resolved_target = dict(target_config)
+            units = model_config.get("units", {}) if isinstance(model_config.get("units"), Mapping) else {}
+            resolved_target.setdefault("geometry_unit", units.get("geometry", "um"))
+            target = _evaluate_device(
+                row,
+                resolved_target,
+                target_role,
+                model_name="tft_phase_charge_v1",
+                normalized_vgs_override=sign * conservation.boosted_gate_v,
+            )
+            return {
+                "status": "analytic_charge_conservation",
+                "target_role": target_role,
+                "iterations": 1,
+                "charge_residual_c": conservation.charge_residual_c,
+                "coupling_factor": conservation.coupling_factor,
+                "boosted_gate_v": conservation.boosted_gate_v,
+                "boosted_overdrive_v": target["overdrive_v"],
+                "target_headroom_v": conservation.target_headroom_v,
+                "fidelity": int(conservation.fidelity),
+                "target_device": target,
+            }
     if solver.get("enabled", False) is not True or not isinstance(target_config, Mapping):
         return {
             "status": "disabled",
@@ -376,7 +499,7 @@ def _resolve_parasitics(row: Mapping[str, Any], config: Any) -> tuple[dict[str, 
         "pullup_resistance_ohm": 0.0,
         "pulldown_resistance_ohm": 0.0,
     }
-    found: set[str] = set()
+    sources = {name: "zero_fallback" for name in values}
     direct = config.get("direct_columns", {})
     semantic_map = {
         "output_capacitance": ("output_capacitance_f", _CAPACITANCE_FACTORS),
@@ -393,8 +516,7 @@ def _resolve_parasitics(row: Mapping[str, Any], config: Any) -> tuple[dict[str, 
             if raw is None:
                 continue
             values[target] = max(raw * _unit_factor(spec.get("unit", "F" if "capacitance" in semantic else "ohm"), factors), 0.0)
-            found.add(target)
-    source = "direct" if found else "zero_fallback"
+            sources[target] = "direct"
     summary_column = config.get("summary_path_column")
     summary_path = row.get(summary_column) if isinstance(summary_column, str) else None
     if summary_path:
@@ -407,25 +529,45 @@ def _resolve_parasitics(row: Mapping[str, Any], config: Any) -> tuple[dict[str, 
                 role = role_map.get(str(entry.get("net"))) if isinstance(role_map, Mapping) else None
                 target_r = {"pullup_path": "pullup_resistance_ohm", "pulldown_path": "pulldown_resistance_ohm"}.get(role)
                 target_c = {"output": "output_capacitance_f", "bootstrap_loss": "bootstrap_loss_capacitance_f"}.get(role)
-                if target_r and target_r not in found and _number(entry.get("resistance")) is not None:
+                if target_r and sources[target_r] == "zero_fallback" and _number(entry.get("resistance")) is not None:
                     values[target_r] += max(float(entry["resistance"]) * r_factor, 0.0)
-                if target_c and target_c not in found and _number(entry.get("capacitance")) is not None:
+                    sources[target_r] = "summary"
+                if target_c and sources[target_c] == "zero_fallback" and _number(entry.get("capacitance")) is not None:
                     values[target_c] += max(float(entry["capacitance"]) * c_factor, 0.0)
-            source = "direct" if found else "summary"
+                    sources[target_c] = "summary"
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
-            source = "invalid_summary" if not found else source
-    if values["output_capacitance_f"] == 0.0 and _number(row.get("C_parasitic")) is not None:
+            for name, source in sources.items():
+                if source == "zero_fallback":
+                    sources[name] = "invalid_summary"
+    if sources["output_capacitance_f"] in {"zero_fallback", "invalid_summary"} and _number(row.get("C_parasitic")) is not None:
         legacy_unit = config.get("legacy_capacitance_unit", "F")
         values["output_capacitance_f"] = max(float(row["C_parasitic"]) * _unit_factor(legacy_unit, _CAPACITANCE_FACTORS), 0.0)
-        source = "legacy" if not found else source
+        sources["output_capacitance_f"] = "legacy"
     resistance_multiplier = max(_number(row.get("__pvt_resistance_multiplier")) or 1.0, 0.0)
     capacitance_multiplier = max(_number(row.get("__pvt_capacitance_multiplier")) or 1.0, 0.0)
     values["pullup_resistance_ohm"] *= resistance_multiplier
     values["pulldown_resistance_ohm"] *= resistance_multiplier
     values["output_capacitance_f"] *= capacitance_multiplier
     values["bootstrap_loss_capacitance_f"] *= capacitance_multiplier
-    status = "physical" if source in {"direct", "summary"} else "proxy_fallback"
-    return values, {"source": source, "status": status, **values}
+    component_status = {
+        name: {
+            "value_si": values[name],
+            "source": source,
+            "status": (
+                "physical"
+                if source in {"direct", "summary"}
+                else "proxy_fallback"
+                if source == "legacy"
+                else "missing"
+            ),
+        }
+        for name, source in sources.items()
+    }
+    statuses = [component["status"] for component in component_status.values()]
+    overall_status = "missing" if "missing" in statuses else "proxy_fallback" if "proxy_fallback" in statuses else "physical"
+    used_sources = sorted({source for source in sources.values() if source not in {"zero_fallback", "invalid_summary"}})
+    source = used_sources[0] if len(used_sources) == 1 else "mixed" if used_sources else "zero_fallback"
+    return values, {"source": source, "status": overall_status, "components": component_status, **values}
 
 
 def _compute_pvt_features(
@@ -452,7 +594,23 @@ def _compute_pvt_features(
             continue
         seen.add(key)
         corner = str(scenario.get("corner", "tt"))
-        observed = _matching_observation(observations, sample_column, sample_value, scenario)
+        observed = _matching_observation(observations, sample_column, sample_value, scenario, pvt)
+        electrical_model = profile_config.get("electrical_model", {})
+        if (
+            observed is not None
+            and int(observed.get("__match_count", 1)) > 1
+            and isinstance(electrical_model, Mapping)
+            and str(electrical_model.get("model", "")).lower() == "tft_phase_charge_v1"
+        ):
+            diagnostics["scenarios"][key] = {
+                "status": "missing",
+                "reason": "ambiguous_duplicate_observations",
+                "observation_match_count": int(observed["__match_count"]),
+                "corner": corner,
+                "kind": str(scenario.get("kind", "deterministic_corner")),
+            }
+            statuses.append("missing")
+            continue
         corner_models = pvt.get("corner_models", {})
         corner_model = corner_models.get(corner) if isinstance(corner_models, Mapping) else None
         if observed is not None and all(_number(observed.get(name)) is not None for name in V3_CANONICAL_FEATURES):
@@ -460,6 +618,8 @@ def _compute_pvt_features(
             diagnostics["scenarios"][key] = {
                 "status": "observed",
                 "corner": corner,
+                "kind": str(scenario.get("kind", "deterministic_corner")),
+                "probability": scenario.get("probability"),
                 "weight": max(float(scenario.get("weight", 1.0)), 0.0),
                 "distance_uncertainty": max(
                     float(observed.get("distance_uncertainty", scenario.get("distance_uncertainty", 0.0))),
@@ -479,6 +639,8 @@ def _compute_pvt_features(
                 "reason": "incomplete_projection_coefficients",
                 "missing_coefficients": missing_coefficients,
                 "corner": corner,
+                "kind": str(scenario.get("kind", "deterministic_corner")),
+                "probability": scenario.get("probability"),
                 "weight": max(float(scenario.get("weight", 1.0)), 0.0),
             }
             statuses.append("missing")
@@ -489,16 +651,31 @@ def _compute_pvt_features(
         if observed is not None:
             projected.update({name: value for name, value in observed.items() if pd.notna(value)})
         canonical, _ = _compute_electrical_row(projected, profile_config)
+        observed_fields = []
+        if observed is not None:
+            observed_fields = [name for name in V3_CANONICAL_FEATURES if _number(observed.get(name)) is not None]
+            for name in observed_fields:
+                canonical[name] = float(observed[name])
         scenario_features[key] = canonical
-        if observed is not None and isinstance(corner_model, Mapping):
+        observed_payload_fields = []
+        if observed is not None:
+            observed_payload_fields = [
+                name
+                for name, value in observed.items()
+                if name not in {sample_column, "corner", "temperature_c", "supply_v", "distance_uncertainty", "__match_count"}
+                and _number(value) is not None
+            ]
+        if observed_payload_fields and isinstance(corner_model, Mapping):
             status = "mixed_observed_projected"
-        elif observed is not None:
+        elif observed_payload_fields:
             status = "observed"
         else:
             status = "proxy_projected"
         diagnostics["scenarios"][key] = {
             "status": status,
             "corner": corner,
+            "kind": str(scenario.get("kind", "deterministic_corner")),
+            "probability": scenario.get("probability"),
             "weight": max(float(scenario.get("weight", 1.0)), 0.0),
             "distance_uncertainty": max(
                 float(
@@ -508,6 +685,8 @@ def _compute_pvt_features(
                 ),
                 0.0,
             ),
+            "observed_fields": sorted(observed_fields),
+            "observation_match_count": int(observed.get("__match_count", 1)) if observed is not None else 0,
         }
         statuses.append(status)
     overall = _aggregate_pvt_status(statuses)
@@ -560,19 +739,38 @@ def _project_pvt_row(
     supply_scale = (supply / reference_supply) ** supply_exponent
     model = profile_config.get("electrical_model", {})
     devices = model.get("devices", {}) if isinstance(model, Mapping) else {}
+    phase_charge_model = str(model.get("model", "")).lower() == "tft_phase_charge_v1" if isinstance(model, Mapping) else False
+    scaled_mobility_columns: set[str] = set()
+    shifted_threshold_columns: set[str] = set()
+    scaled_bias_columns: set[str] = set()
     for device in devices.values() if isinstance(devices, Mapping) else []:
         if not isinstance(device, Mapping):
             continue
         mobility_column = device.get("mobility_column")
         threshold_column = device.get("threshold_column")
-        if isinstance(mobility_column, str) and _number(row.get(mobility_column)) is not None:
+        if (
+            isinstance(mobility_column, str)
+            and mobility_column not in scaled_mobility_columns
+            and _number(row.get(mobility_column)) is not None
+        ):
             row[mobility_column] = float(row[mobility_column]) * mobility_scale
-        if isinstance(threshold_column, str) and _number(row.get(threshold_column)) is not None:
-            row[threshold_column] = max(abs(float(row[threshold_column])) + threshold_shift, 0.0)
+            scaled_mobility_columns.add(mobility_column)
+        if (
+            isinstance(threshold_column, str)
+            and threshold_column not in shifted_threshold_columns
+            and _number(row.get(threshold_column)) is not None
+        ):
+            if phase_charge_model:
+                polarity_sign = -1.0 if str(device.get("polarity", "n")).lower().startswith("p") else 1.0
+                row[threshold_column] = float(row[threshold_column]) + polarity_sign * threshold_shift
+            else:
+                row[threshold_column] = max(abs(float(row[threshold_column])) + threshold_shift, 0.0)
+            shifted_threshold_columns.add(threshold_column)
         for bias_key in ("vgs_column", "vds_column"):
             column = device.get(bias_key)
-            if isinstance(column, str) and _number(row.get(column)) is not None:
+            if isinstance(column, str) and column not in scaled_bias_columns and _number(row.get(column)) is not None:
                 row[column] = float(row[column]) * supply_scale
+                scaled_bias_columns.add(column)
     if _number(row.get("CLK_amp")) is not None:
         row["CLK_amp"] = float(row["CLK_amp"]) * supply_scale
     row["__pvt_resistance_multiplier"] = float(corner.get("resistance_multiplier", 1.0))
@@ -596,6 +794,7 @@ def _matching_observation(
     sample_column: str,
     sample_value: Any,
     scenario: Mapping[str, Any],
+    pvt: Mapping[str, Any],
 ) -> dict[str, Any] | None:
     if observations.empty or sample_column not in observations.columns:
         return None
@@ -606,9 +805,21 @@ def _matching_observation(
         if column == "corner":
             mask &= observations[column].astype(str) == str(scenario.get(column))
         else:
-            mask &= pd.to_numeric(observations[column], errors="coerce") == float(scenario.get(column))
+            tolerance = max(float(pvt.get("observation_match_tolerance", 1.0e-9)), 0.0)
+            observed_values = pd.to_numeric(observations[column], errors="coerce")
+            mask &= np.isclose(
+                observed_values.to_numpy(dtype=float),
+                float(scenario.get(column)),
+                rtol=tolerance,
+                atol=tolerance,
+                equal_nan=False,
+            )
     matches = observations.loc[mask]
-    return None if matches.empty else matches.iloc[0].to_dict()
+    if matches.empty:
+        return None
+    result = matches.iloc[0].to_dict()
+    result["__match_count"] = int(len(matches))
+    return result
 
 
 def _pvt_config(profile_config: Mapping[str, Any]) -> Mapping[str, Any]:
