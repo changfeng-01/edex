@@ -38,13 +38,13 @@ def test_real_waveform_outputs_external_csv_evidence_metadata(tmp_path: Path):
         assert payload["evidence_level"] == "level_1_external_csv"
         assert payload["simulation_backend"] == "external_csv"
         assert payload["mock_used"] is False
-        assert payload["pdk_available"] is False
-        assert payload["ngspice_available"] is False
-        assert payload["reportable_as_real_ngspice"] is False
+        assert "pdk_available" not in payload
+        assert "ngspice_available" not in payload
+        assert "reportable_as_real_ngspice" not in payload
         assert payload["optimizer_claim_level"] == "candidate_generated"
 
 
-def test_score_real_evaluation_preserves_evidence_metadata_from_summary():
+def test_score_real_evaluation_ignores_retired_backend_metadata_from_legacy_summary():
     summary = {
         "All_pulses_exist": True,
         "Seq_pass": True,
@@ -74,6 +74,6 @@ def test_score_real_evaluation_preserves_evidence_metadata_from_summary():
 
     score = score_real_evaluation(summary, [], spec)
 
-    assert score["evidence_level"] == "level_3_real_ngspice_sky130_pdk"
-    assert score["simulation_backend"] == "ngspice"
-    assert score["reportable_as_real_ngspice"] is True
+    assert score["evidence_level"] == "level_1_external_csv"
+    assert score["simulation_backend"] == "external_csv"
+    assert "reportable_as_real_ngspice" not in score

@@ -5,6 +5,15 @@ from .trust import evaluate_transfer_gate
 from .sensitivity import compute_task_parameter_importance, estimate_local_elasticities, estimate_local_sensitivity_matrix
 from .engine import CrossCircuitTransferEngine, TransferAssessment
 from .validation import leave_one_circuit_out
+from .physics_protocol import (
+    BarrierResult,
+    DomainPhysicsAdapter,
+    LocalElectricalState,
+    PhysicalEffect,
+    PhysicalEffectPacket,
+    SensitivityArtifact,
+)
+from .goa_effects import build_goa_effect_packet
 
 __all__ = [
     "HierarchicalPhysicsResidual",
@@ -20,4 +29,11 @@ __all__ = [
     "CrossCircuitTransferEngine",
     "TransferAssessment",
     "leave_one_circuit_out",
+    "BarrierResult",
+    "DomainPhysicsAdapter",
+    "LocalElectricalState",
+    "PhysicalEffect",
+    "PhysicalEffectPacket",
+    "SensitivityArtifact",
+    "build_goa_effect_packet",
 ]

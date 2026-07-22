@@ -163,7 +163,7 @@ def _plot_evidence_card(artifacts: ProductDemoArtifacts, case_id: str, path: Pat
         f"evidence_level: {evidence.get('evidence_level')}",
         f"simulation_backend: {evidence.get('simulation_backend')}",
         f"mock_used: {evidence.get('mock_used')}",
-        f"reportable_as_real_ngspice: {evidence.get('reportable_as_real_ngspice')}",
+        f"simulation_backend: {evidence.get('simulation_backend')}",
         f"optimizer_claim_level: {evidence.get('optimizer_claim_level')}",
         f"validation_status: {artifacts.validation_status}",
     ]

@@ -154,7 +154,7 @@ def rank_physics_guided_points(
     """Rank sweep points using the physical prior engine.
 
     Returns ``(point, metadata)`` pairs that can be fed into the existing
-    multi-round optimizer metadata path.  The function does not run ngspice and
+    multi-round optimizer metadata path.  The function does not run an external simulator and
     does not upgrade evidence level.
     """
 

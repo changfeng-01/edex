@@ -23,6 +23,8 @@ def create_simulation_job(
             record = container.simulation_job_service.create_manual_job(payload.candidate_ids)
         else:
             availability = container.simulator_registry.availability(payload.adapter_type)
+            if not availability.available:
+                raise SimulationJobConflict("adapter_unavailable")
             if availability.execution_enabled:
                 record = container.simulation_job_service.create_execution_job(
                     payload.candidate_ids,

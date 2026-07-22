@@ -15,9 +15,6 @@ class EvidenceBoundary(FlexibleModel):
     evidence_level: str | None = None
     simulation_backend: str | None = None
     mock_used: bool | str | None = None
-    pdk_available: bool | str | None = None
-    ngspice_available: bool | str | None = None
-    reportable_as_real_ngspice: bool | str | None = None
     optimizer_claim_level: str | None = None
 
 

@@ -176,7 +176,7 @@ def test_critic_checks_current_main_artifact_risks(tmp_path):
     )
     validation = tmp_path / "validation_summary.csv"
     validation.write_text("target.status\nfailed\n", encoding="utf-8")
-    report = tmp_path / "sky130_mainline_report.md"
+    report = tmp_path / "diagnosis_report.md"
     report.write_text("This is physical validation.", encoding="utf-8")
     candidates = tmp_path / "next_candidates.csv"
     candidates.write_text("candidate_id,parameter,candidate_values\ncand_001,load_cap,[1p]\n", encoding="utf-8")
@@ -189,7 +189,7 @@ def test_critic_checks_current_main_artifact_risks(tmp_path):
             "param_space": str(param_space),
         },
         "tool_results": {},
-        "handoff_records": [{"from_agent": "SKY130Agent", "to_agent": "CriticAgent"}],
+        "handoff_records": [{"from_agent": "GOAAgent", "to_agent": "CriticAgent"}],
         "data_source": "real_simulation_csv",
         "engineering_validity": "simulation_only",
     }

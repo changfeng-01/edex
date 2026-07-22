@@ -13,9 +13,6 @@ const evidenceFields: Array<keyof EvidenceBoundary> = [
   "evidence_level",
   "simulation_backend",
   "mock_used",
-  "pdk_available",
-  "ngspice_available",
-  "reportable_as_real_ngspice",
   "optimizer_claim_level",
 ];
 
@@ -25,9 +22,6 @@ const evidenceFieldLabels: Record<keyof EvidenceBoundary, string> = {
   evidence_level: "证据等级",
   simulation_backend: "仿真后端",
   mock_used: "是否使用 mock",
-  pdk_available: "PDK 是否可用",
-  ngspice_available: "ngspice 是否可用",
-  reportable_as_real_ngspice: "是否可报告为真实 ngspice",
   optimizer_claim_level: "优化器声明等级",
 };
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from typing import Callable
 
-from goa_eval.cli_commands import core_eval, demo_agents, pia_ca_llso, real_analysis, sky130
+from goa_eval.cli_commands import core_eval, demo_agents, pia_ca_llso, real_analysis, simulation
 
 
 CommandHandler = Callable[[argparse.Namespace], int]
@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="goa-eval")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for module in [core_eval, real_analysis, sky130, demo_agents, pia_ca_llso]:
+    for module in [core_eval, real_analysis, simulation, demo_agents, pia_ca_llso]:
         module.register(subparsers)
     return parser
 

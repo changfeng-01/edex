@@ -33,6 +33,6 @@ The CSVs under `examples/product_profiles/` are explicitly labelled `synthetic_f
 - Invalid result contract: use the stable `RESULT_CONTRACT_INVALID` response, repair candidate IDs or parameter hashes, and retry the job. Invalid imports must not create result design versions.
 - Interrupted PIA execution: resume the existing experiment; do not regenerate already persisted candidates or consume imported results twice.
 - Insufficient comparison evidence: re-run analysis for both versions and confirm only after required evidence and matching boundaries are present.
-- Mock or unavailable simulator: retain `reportable_as_real_ngspice = false`; switch to a configured real adapter or export the manual contract.
+- Unavailable simulator: return `adapter_unavailable`; switch to a configured adapter or export the manual contract.
 
 Before release, run the full Python suite, frontend tests and build, the product demo builder, `git diff --check`, and review `origin/main..HEAD` for private or unrelated files.

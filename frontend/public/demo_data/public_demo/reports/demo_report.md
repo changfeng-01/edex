@@ -7,9 +7,6 @@
 - evidence_level: level_1_external_csv
 - simulation_backend: external_csv
 - mock_used: False
-- pdk_available: False
-- ngspice_available: False
-- reportable_as_real_ngspice: False
 - optimizer_claim_level: candidate_generated
 
 ## What To Read

@@ -46,4 +46,4 @@ The output package is written to `outputs/product_demo/public_demo/`.
 - `06_dashboard_data/`: dashboard JSON and presentation manifest.
 - `07_report/`: executive summary, demo report, and handoff notes.
 
-This workflow organizes existing artifacts. It does not rerun ngspice, fetch a PDK, or perform physical validation.
+This workflow organizes existing artifacts. It does not execute a local simulator or perform physical validation.

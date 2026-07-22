@@ -4,5 +4,5 @@
   "data_source": "synthetic_fixture_csv",
   "engineering_validity": "test_only",
   "must_resimulate": true,
-  "reportable_as_real_ngspice": false
+  "optimizer_claim_level": "candidate_generated"
 }

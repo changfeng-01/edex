@@ -17,10 +17,9 @@ CURRENT_MAIN_ARTIFACTS = {
     "optimization_leaderboard": "optimization_leaderboard.csv",
     "validation_summary": "validation_summary.csv",
     "run_manifest_real": "run_manifest_real.json",
-    "sky130_mainline_report": "sky130_mainline_report.md",
 }
 
-ARTIFACT_DIR_KEYS = {"artifact_dir", "run_dir", "baseline_run_dir", "sky130_mainline_dir", "optimization_dir"}
+ARTIFACT_DIR_KEYS = {"artifact_dir", "run_dir", "baseline_run_dir", "optimization_dir"}
 
 
 def normalize_artifact_inputs(inputs: dict[str, Any], output_dir: str | Path | None = None) -> dict[str, Any]:

@@ -1,5 +1,4 @@
 from goa_eval.multi_agent.agents.goa_agent import run_goa_agent
-from goa_eval.multi_agent.agents.sky130_agent import run_sky130_agent
 
 
 def _state() -> dict:
@@ -23,7 +22,7 @@ def _state() -> dict:
         },
         "leaderboard_summary": {
             "best_candidate": {
-                "candidate_id": "sky_cand_001",
+                "candidate_id": "candidate_001",
                 "overall_score": 0.82,
                 "load_cap": 1e-12,
                 "drive_resistance": 1000,
@@ -76,15 +75,3 @@ def test_goa_agent_reads_goa_benchmark_analysis_metrics(tmp_path):
     assert diagnosis["goa_benchmark"]["fall_time_s"] == 8.2e-7
     assert diagnosis["goa_benchmark"]["reference_tfall_s"] == 9.7e-7
     assert diagnosis["analysis_metrics"]["topology_profile"] == "goa_8k_lcd_reference"
-
-
-def test_sky130_agent_writes_sky130_specific_diagnosis():
-    state = run_sky130_agent(_state())
-
-    diagnosis = state["domain_diagnosis"]
-
-    assert diagnosis["domain"] == "SKY130"
-    assert "sky130_timing" in diagnosis
-    assert "parameter_focus" in diagnosis
-    assert "hard_constraints" in diagnosis
-    assert "cascade_stage_risk" not in diagnosis

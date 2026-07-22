@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import random
 import shutil
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import numpy as np
@@ -23,7 +24,6 @@ from goa_eval.multi_round_strategy import (
 )
 from goa_eval.multi_round_decisions import should_stop_optimization, target_metric_status
 from goa_eval.physics_engine import rank_physics_guided_points
-from goa_eval.sky130_sweep import run_sky130_sweep
 
 
 def build_adaptive_sweep_config(
@@ -211,24 +211,16 @@ def run_multi_round_optimization(
     output_root: Path,
     rounds: int,
     max_runs_per_round: int,
+    sweep_runner: Callable[..., list[dict]],
     patience: int = 2,
     min_improvement: float = 0.0,
     exploration_ratio: float = 0.25,
-    pdk_root: Path | None = None,
-    split: str = "train",
-    max_rows: int = 5,
-    topology: str | None = None,
-    source_dataset: str | None = None,
-    dataset_name: str = "pphilip/analog-circuits-sky130",
-    mock_dataset_json: Path | None = None,
-    mock_ngspice: bool = False,
-    ngspice_cmd: str = "ngspice",
-    spec_path: Path = Path("config/sky130_transient_spec.yaml"),
     param_space_path: Path = Path("examples/sample_params.yaml"),
     max_candidates: int = 10,
     seed: int = 42,
     strategy: str = "adaptive",
     validation_config_path: Path | None = None,
+    runner_kwargs: Mapping[str, Any] | None = None,
 ) -> list[dict]:
     output_root.mkdir(parents=True, exist_ok=True)
     base_config = yaml.safe_load(sweep_path.read_text(encoding="utf-8")) or {}
@@ -271,23 +263,14 @@ def run_multi_round_optimization(
         round_sweep_path = output_root / f"round_{round_index:03d}_sweep.yaml"
         round_sweep_path.write_text(yaml.safe_dump(current_config, sort_keys=False, allow_unicode=True), encoding="utf-8")
         round_param_space_path = _write_round_param_space(output_root / f"round_{round_index:03d}_param_space.yaml", current_config, fallback=param_space_path)
-        summaries = run_sky130_sweep(
+        summaries = sweep_runner(
             sweep_path=round_sweep_path,
             output_root=round_dir,
-            pdk_root=pdk_root,
-            split=split,
-            max_rows=max_rows,
-            topology=topology,
-            source_dataset=source_dataset,
-            dataset_name=dataset_name,
-            mock_dataset_json=mock_dataset_json,
-            mock_ngspice=mock_ngspice,
-            ngspice_cmd=ngspice_cmd,
-            spec_path=spec_path,
             param_space_path=round_param_space_path,
-            max_candidates=max_candidates,
             seed=seed + round_index - 1,
             max_runs=max_runs_per_round,
+            max_candidates=max_candidates,
+            **dict(runner_kwargs or {}),
         )
         for row in summaries:
             absolute_run_dir = round_dir / str(row.get("run_dir", ""))

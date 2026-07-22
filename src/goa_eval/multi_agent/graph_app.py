@@ -8,14 +8,17 @@ import yaml
 from goa_eval.multi_agent.availability import LANGGRAPH_REQUIRED_MESSAGE, check_langgraph_availability
 from goa_eval.multi_agent.agents.critic_agent import run_critic_agent
 from goa_eval.multi_agent.agents.evaluation_agent import run_evaluation_agent
-from goa_eval.multi_agent.agents.generic_waveform_agent import run_generic_waveform_agent
-from goa_eval.multi_agent.agents.goa_agent import run_goa_agent
-from goa_eval.multi_agent.agents.netlist_agent import run_netlist_agent
 from goa_eval.multi_agent.agents.optimization_agent import run_optimization_agent
 from goa_eval.multi_agent.agents.report_agent import run_report_agent
 from goa_eval.multi_agent.agents.router_agent import run_router_agent
-from goa_eval.multi_agent.agents.sky130_agent import run_sky130_agent
 from goa_eval.multi_agent.agents.supervisor_agent import run_supervisor_agent
+from goa_eval.multi_agent.agents.transfer_coordinator_agent import (
+    run_transfer_coordinator_agent,
+)
+from goa_eval.multi_agent.domain_registry import (
+    DomainAgentRegistry,
+    default_domain_agent_registry,
+)
 from goa_eval.multi_agent.memory import write_memory
 from goa_eval.multi_agent.evidence_index import write_evidence_index
 from goa_eval.multi_agent.schemas import MultiAgentTask
@@ -44,15 +47,16 @@ def build_multi_agent_graph():
     from langgraph.graph import END, StateGraph
 
     graph = StateGraph(dict)
+    registry = default_domain_agent_registry()
     graph.add_node("supervisor", run_supervisor_agent)
     graph.add_node("router", run_router_agent)
-    graph.add_node("goa", run_goa_agent)
-    graph.add_node("sky130", run_sky130_agent)
-    graph.add_node("generic_waveform", run_generic_waveform_agent)
-    graph.add_node("netlist", run_netlist_agent)
+    for spec in registry.specs():
+        graph.add_node(spec.node_name, spec.runner)
     graph.add_node("critic_after_domain", run_critic_agent)
     graph.add_node("evaluation", run_evaluation_agent)
     graph.add_node("critic_after_evaluation", run_critic_agent)
+    graph.add_node("transfer_coordinator", run_transfer_coordinator_agent)
+    graph.add_node("critic_after_transfer", run_critic_agent)
     graph.add_node("optimization", run_optimization_agent)
     graph.add_node("critic_after_optimization", run_critic_agent)
     graph.add_node("report", run_report_agent)
@@ -62,25 +66,23 @@ def build_multi_agent_graph():
     graph.add_conditional_edges(
         "router",
         _route_from_state,
-        {
-            "GOAAgent": "goa",
-            "SKY130Agent": "sky130",
-            "GenericWaveformAgent": "generic_waveform",
-            "NetlistAgent": "netlist",
-            "unsupported": "critic_after_domain",
-        },
+        _domain_route_map(registry),
     )
-    graph.add_edge("goa", "critic_after_domain")
-    graph.add_edge("sky130", "critic_after_domain")
-    graph.add_edge("generic_waveform", "critic_after_domain")
-    graph.add_edge("netlist", "critic_after_domain")
+    for spec in registry.specs():
+        graph.add_edge(spec.node_name, "critic_after_domain")
     graph.add_conditional_edges(
         "critic_after_domain",
         _after_domain,
         {"evaluation": "evaluation", "report": "report"},
     )
     graph.add_edge("evaluation", "critic_after_evaluation")
-    graph.add_edge("critic_after_evaluation", "optimization")
+    graph.add_conditional_edges(
+        "critic_after_evaluation",
+        _after_evaluation,
+        {"transfer_coordinator": "transfer_coordinator", "optimization": "optimization"},
+    )
+    graph.add_edge("transfer_coordinator", "critic_after_transfer")
+    graph.add_edge("critic_after_transfer", "optimization")
     graph.add_edge("optimization", "critic_after_optimization")
     graph.add_edge("critic_after_optimization", "report")
     graph.add_edge("report", END)
@@ -181,7 +183,20 @@ def _route_from_state(state: dict) -> str:
     return state.get("selected_domain_agent") or "unsupported"
 
 
+def _domain_route_map(registry: DomainAgentRegistry) -> dict[str, str]:
+    return {
+        **{spec.agent_name: spec.node_name for spec in registry.specs()},
+        "unsupported": "critic_after_domain",
+    }
+
+
 def _after_domain(state: dict) -> str:
     if state.get("selected_domain_agent") in {"unsupported", "NetlistAgent"}:
         return "report"
     return "evaluation"
+
+
+def _after_evaluation(state: dict) -> str:
+    if (state.get("inputs") or {}).get("source_effect_packet"):
+        return "transfer_coordinator"
+    return "optimization"

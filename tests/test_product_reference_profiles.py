@@ -34,7 +34,7 @@ def test_reference_profile_runs_generalized_analysis_with_provenance(fixture_nam
     assert metadata["data_source"] == "synthetic_fixture_csv"
     assert metadata["engineering_validity"] == "test_only"
     assert metadata["must_resimulate"] is True
-    assert metadata["reportable_as_real_ngspice"] is False
+    assert metadata["optimizer_claim_level"] == "candidate_generated"
     assert source_lock["fixture_kind"] == "synthetic_contract_fixture"
     assert source_lock["hash_normalization"] == "utf8_lf"
     for filename, expected_sha256 in source_lock["files"].items():

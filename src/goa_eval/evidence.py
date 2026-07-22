@@ -13,9 +13,6 @@ EVIDENCE_FIELDS = [
     "evidence_level",
     "simulation_backend",
     "mock_used",
-    "pdk_available",
-    "ngspice_available",
-    "reportable_as_real_ngspice",
     "optimizer_claim_level",
 ]
 
@@ -24,32 +21,19 @@ def build_evidence_metadata(
     *,
     simulation_backend: str = "external_csv",
     mock_used: bool = False,
-    pdk_available: bool = False,
-    ngspice_available: bool = False,
     optimizer_claim_level: str = "candidate_generated",
     evidence_level: str | None = None,
 ) -> dict[str, Any]:
-    reportable = bool(
-        simulation_backend == "ngspice"
-        and not mock_used
-        and pdk_available
-        and ngspice_available
-    )
     if evidence_level is None:
         evidence_level = infer_evidence_level(
             simulation_backend=simulation_backend,
             mock_used=mock_used,
-            pdk_available=pdk_available,
-            ngspice_available=ngspice_available,
             optimizer_claim_level=optimizer_claim_level,
         )
     return {
         "evidence_level": evidence_level,
         "simulation_backend": simulation_backend,
         "mock_used": bool(mock_used),
-        "pdk_available": bool(pdk_available),
-        "ngspice_available": bool(ngspice_available),
-        "reportable_as_real_ngspice": reportable,
         "optimizer_claim_level": optimizer_claim_level,
     }
 
@@ -58,18 +42,8 @@ def infer_evidence_level(
     *,
     simulation_backend: str,
     mock_used: bool,
-    pdk_available: bool,
-    ngspice_available: bool,
     optimizer_claim_level: str,
 ) -> str:
-    if mock_used or simulation_backend == "mock_ngspice":
-        return "level_2_mock_ngspice"
-    if simulation_backend == "ngspice" and pdk_available and ngspice_available:
-        if optimizer_claim_level == "validation_matrix_passed":
-            return "level_5_validation_matrix"
-        if optimizer_claim_level == "nominal_rerun_passed":
-            return "level_4_multi_round_rerun_evidence"
-        return "level_3_real_ngspice_sky130_pdk"
     if simulation_backend == "public_demo_csv":
         return "level_0_public_demo_csv"
     return "level_1_external_csv"
@@ -84,6 +58,14 @@ def evidence_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     for field in EVIDENCE_FIELDS:
         if field in payload:
             metadata[field] = payload[field]
+    if metadata["evidence_level"] not in {"level_0_public_demo_csv", "level_1_external_csv"}:
+        metadata["evidence_level"] = "level_1_external_csv"
+    if metadata["simulation_backend"] not in {
+        "external_csv",
+        "public_demo_csv",
+        "empyrean_exported_files",
+    }:
+        metadata["simulation_backend"] = "external_csv"
     return metadata
 
 

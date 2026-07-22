@@ -22,16 +22,13 @@ result_version = 1.0
 
 ## Evidence metadata
 
-These additive fields appear in summary, score, manifest, mainline validation, and related SKY130 status outputs.
+These additive fields appear in summary, score, manifest, and imported-run outputs.
 
 | Field | Meaning |
 |---|---|
-| `evidence_level` | `level_0_public_demo_csv`, `level_1_external_csv`, `level_2_mock_ngspice`, `level_3_real_ngspice_sky130_pdk`, `level_4_multi_round_rerun_evidence`, or `level_5_validation_matrix`. |
-| `simulation_backend` | `external_csv`, `public_demo_csv`, `mock_ngspice`, or `ngspice`. |
-| `mock_used` | Whether a mock simulator or mock fallback was used. |
-| `pdk_available` | Whether a SKY130 PDK was detected for this run. |
-| `ngspice_available` | Whether ngspice was detected for this run. |
-| `reportable_as_real_ngspice` | True only for real `ngspice` runs with PDK/ngspice available and `mock_used=false`. |
+| `evidence_level` | `level_0_public_demo_csv` or `level_1_external_csv`. |
+| `simulation_backend` | `external_csv`, `public_demo_csv`, or `empyrean_exported_files`. |
+| `mock_used` | Whether fixture or mock data was used. |
 | `optimizer_claim_level` | `candidate_generated`, `nominal_rerun_passed`, or `validation_matrix_passed`. |
 
 这些字段表示结果来自仿真 CSV，不是物理实验或样机测试结果。
@@ -132,7 +129,7 @@ Topology-aware scoring adds optional fields without changing the existing wavefo
 
 ## circuit_profiles.yaml
 
-Purpose: generic circuit profile configuration for the minimum engineering-generalization loop. `config/sky130_eval_profiles.yaml` remains a compatible fallback for existing SKY130/topology workflows.
+Purpose: generic circuit profile configuration for the engineering-generalization loop. `config/eval_profiles.yaml` provides the shared evaluation profiles.
 
 Stable top-level shape:
 
@@ -184,7 +181,7 @@ Semantic candidates generated from this file keep `requires_user_confirmation = 
 
 ## analysis_metrics.json
 
-Purpose: companion metrics for topology-aware evaluation. This file is written next to `real_summary.json` and `score_summary.json` when `evaluate-real`, `sky130-transient`, or `sky130-sweep` runs.
+Purpose: companion metrics for topology-aware evaluation. This file is written next to `real_summary.json` and `score_summary.json` by `evaluate-real` and the generic CSV-import simulation commands.
 
 Stable top-level fields:
 
@@ -305,7 +302,7 @@ These metrics are simulation-only analysis helpers. Missing OP/AC/DC data should
 | `ai_review_status` | AI 审阅状态，当前默认为 `not_reviewed` 或空。 |
 | `provenance` | JSON 字符串，记录 profile、source_rule 或组合候选来源。 |
 
-候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。当 `score_summary.json` 提供 `metric_penalties` 或 `analysis_metric_penalties` 时，严重超限指标会得到更高搜索权重；两参数组合会保留组合惩罚，避免过早偏向复杂改动。Topology-aware candidate generation uses `config/sky130_eval_profiles.yaml` `candidate_rules` to map active profile metrics such as `dc_gain_db`, `static_power_w`, `switching_threshold_v`, or `frequency_hz` onto parameters that exist in the current parameter space. If a profile rule references parameters that are absent from the current parameter space, those entries are skipped.
+候选参数表只表示下一轮仿真输入建议，不表示自动优化闭环已经完成。默认随机搜索使用固定 seed 以保证可复现。当 `score_summary.json` 提供 `metric_penalties` 或 `analysis_metric_penalties` 时，严重超限指标会得到更高搜索权重；两参数组合会保留组合惩罚，避免过早偏向复杂改动。Topology-aware candidate generation uses `config/eval_profiles.yaml` `candidate_rules` to map active profile metrics such as `dc_gain_db`, `static_power_w`, `switching_threshold_v`, or `frequency_hz` onto parameters that exist in the current parameter space. If a profile rule references parameters that are absent from the current parameter space, those entries are skipped.
 
 When `--profile-file config/circuit_profiles.yaml --params config/parameter_semantics.yaml` is provided, candidate generation first matches `semantic_tags`, expands coupled `parameter_groups`, and writes risk/provenance fields. If no semantic tags or semantic config are available, the old parameter-name fallback remains active.
 
@@ -326,42 +323,9 @@ simulation-only next-run suggestions, not physical-validation evidence.
 - 按优先级列出的候选参数；
 - 明确声明：结果基于仿真 CSV 和规则建议，不是实物测试结果，也不是自动优化闭环完成证明。
 
-## SKY130 transient outputs
-
-`sky130-transient` creates one run directory per public SKY130 dataset row.
-
-| File | Purpose |
-|---|---|
-| `testbench.spice` | ngspice input written from dataset `testbench_spice`. |
-| `source_netlist.spice` | Source SPICE text selected from `netlist`, `spice_netlist`, or `testbench_spice` for structure analysis. |
-| `netlist_structure.json` | AMS-Net-style structure companion data: device counts, models, node degrees, directives, and scalar size features. |
-| `waveform.csv` | Converted `TIME,v(o1),...` waveform for `evaluate-real`. |
-| `analysis_metrics.json` | Topology-aware OP/AC/DC/TRAN companion metrics and `not_evaluable` reasons. |
-| `dataset_row.json` | Snapshot of the source dataset row. |
-| `node_map.json` | Mapping from `o1/o2/...` aliases to original output nodes. |
-| `sky130_metadata.json` | Dataset provenance, topology, PDK, split, original output nodes, and structure companion paths. |
-| `sky130_status.json` | Per-row `evaluated`, `skipped`, or `failed` status. |
-
-`output_root/sky130_runs.csv` summarizes status, `overall_score`, failure reasons, topology, resolved `topology_profile`, selected analysis metrics such as `dc_gain_db`, `bandwidth_3db_hz`, `unity_gain_hz`, `static_power_w`, `switching_threshold_v`, and `frequency_hz`, source, run directory, and compact structure columns such as `mos_count`, `cap_count`, `resistor_count`, `current_source_count`, `model_count`, `node_count`, and `transistor_width_sum`. Structure and analysis data are companion metadata only. This entrypoint still uses `data_source = real_simulation_csv` and `engineering_validity = simulation_only`; it does not represent physical test validation or a completed automatic optimization loop.
-
-## SKY130 sweep outputs
-
-`sky130-sweep` creates one run directory per explicit parameter combination and keeps the same per-run output contract as `sky130-transient`.
-
-| File | Purpose |
-|---|---|
-| `params.yaml` | Parameter values used for this sweep point. |
-| `testbench.spice` | Per-run SPICE copy after parameter rewrite. |
-| `waveform.csv` | Converted transient waveform for `evaluate-real`. |
-| `analysis_metrics.json` | Topology-aware OP/AC/DC/TRAN companion metrics and `not_evaluable` reasons. |
-| `real_summary.json` / `score_summary.json` | Existing waveform evaluation and topology-aware score outputs. |
-| `next_candidates.csv` | Existing constrained-random next-candidate output for the run. |
-
-At the sweep root, `sky130_sweep_runs.csv` summarizes every sweep point, `sky130_sweep_leaderboard.csv` sorts evaluated points by score, `sky130_sweep_sensitivity.csv` reports coarse one-parameter score deltas, and `next_param_space.yaml` preserves a narrowed next-round parameter-space suggestion. These files are simulation-only ranking artifacts, not physical validation and not proof of a completed multi-round optimizer.
-
 ## optimize-rounds outputs
 
-`optimize-rounds` runs `sky130-sweep` repeatedly and adapts each later round from
+`optimize-rounds` reuses the configured sweep runner and adapts each later round from
 the best previous run's `next_candidates.csv`, while skipping parameter points
 already present in the accumulated history. The command is still bounded by
 `engineering_validity = simulation_only`; its outputs are search traces and next
@@ -377,7 +341,7 @@ strategies record a fallback status and choose diverse untried points.
 
 | File | Purpose |
 |---|---|
-| `round_001/`, `round_002/`, ... | Per-round `sky130-sweep` roots, each with the normal sweep outputs. |
+| `round_001/`, `round_002/`, ... | Per-round output roots produced by the configured sweep runner. |
 | `optimization_history.json` | Combined machine-readable round summaries and per-run history rows, including candidate provenance fields when a point came from `next_candidates.csv`. |
 | `optimization_leaderboard.csv` | All attempted runs sorted by stable `rank_status` first and `overall_score` second. |
 | `round_summary.csv` | One row per optimization round with `best_score`, `best_run_dir`, and `stop_reason`. |
@@ -396,35 +360,6 @@ Advanced strategy rows may also include `optimizer_strategy`, `objective_score`,
 `model_status`, and `model_prediction`. The composite objective prioritizes
 fewer hard-constraint failures, then higher `overall_score`, fewer
 not-evaluable metrics, and available profile/analysis scores.
-
-## sky130-mainline outputs
-
-`sky130-mainline` is a lightweight facade over `optimize-rounds` for quick
-SKY130/ngspice smoke closure. By default it runs a small nominal search and
-writes a mainline bundle; `--full-validation` enables configured extended
-validation cases. The command keeps the same boundary:
-`engineering_validity = simulation_only`.
-
-| File | Purpose |
-|---|---|
-| `mainline_validation.json` | Machine-readable preflight, target status, best run, artifact paths, and validation-case statuses. |
-| `sky130_mainline_report.md` | Compact human-readable summary of the same mainline status. |
-| `validation_summary.csv` | One row per configured validation case. Lightweight mode skips full-matrix cases such as `pvt_load`; full mode records executed case status. |
-| `optimization_leaderboard.csv` / `optimization_history.json` | Existing multi-round search outputs reused by the mainline facade. |
-| `best_next_candidates.csv` | Candidate table copied from the best run when available. |
-
-Stable `mainline_validation.json` fields:
-
-| Field | Meaning |
-|---|---|
-| `mode` | `lightweight` or `full_validation`. |
-| `full_validation` | Boolean mirror of `--full-validation`. |
-| `data_source` | `real_simulation_csv`. |
-| `engineering_validity` | `simulation_only`. |
-| `target` | Primary target metric, threshold, value, and pass/status fields. |
-| `best_run` | Best run directory, score, rank status, and candidate provenance. |
-| `preflight` | PDK/ngspice/mock availability and fallback metadata. |
-| `validation_cases` | Per-case status, skip reason, output directory, run count, and target-value range. |
 
 ## params.yaml
 
@@ -591,21 +526,13 @@ Stable outputs:
 Draft files must pass `validate-config` before they are used by scoring or
 candidate generation. AI output remains advisory and simulation-only.
 
-## strategy-benchmark outputs
+## GOA strategy benchmark outputs
 
-`strategy-benchmark` compares `random`, `adaptive`, `genetic`, `bayesian`, `surrogate`, and `hybrid` over fixed seeds, rounds, and max runs per round. The `random` baseline does not read best-candidate replay. The benchmark follows the engineering benchmark rules in `docs/algorithm_benchmark.md`: scenario first, hard constraints before soft scores, same-condition comparison, explicit baseline deltas, and simulation-only boundary labels.
-
-| File | Purpose |
-|---|---|
-| `strategy_benchmark.csv` | One row per strategy/seed run, including rank/target status, hard constraint pass, not-evaluable counts, validation rollup, candidate provenance, changed parameters, and model status. |
-| `strategy_leaderboard.csv` | Per-strategy ranking sorted by hard-constraint pass rate, target pass rate, validation pass rate, mean score, and simulation count. |
-| `strategy_benchmark_summary.json` | Scenario, fairness guarantees, baseline groups, per-strategy scores/rates, not-evaluable rate, simulation efficiency, and improvement fields versus `random`. |
-| `strategy_benchmark_report.md` | Human-readable scenario, summary, strategy leaderboard, and boundary rules. |
-
-GOA literature benchmark metrics may include `baseline_comparisons`, keyed by literature baseline. Each comparison records current value, literature value, direction, relative improvement, status, and not-evaluable reason. Missing power, area, or Vth evidence remains `not_evaluable`.
-
-`benchmark-run` for the multi-agent suite writes per-case `hard_constraints`, `hard_constraint_passed`, `case_status`, summary `status_counts`, `hard_constraint_pass_rate`, and `not_evaluable_count` in addition to the existing metric averages.
-
+`goa-strategy-benchmark` compares GOA candidate generators over fixed seeds and
+candidate budgets using existing history or leaderboard evidence. It writes
+`goa_strategy_benchmark.csv`, `goa_strategy_leaderboard.csv`,
+`goa_strategy_benchmark_summary.json`, and a Markdown report. These artifacts
+are candidate-quality proxies and do not claim simulation or physical validation.
 ## figure_manifest.json
 
 Each local matplotlib PNG under `figures/` is listed in `figures/figure_manifest.json`.
@@ -622,5 +549,3 @@ Each local matplotlib PNG under `figures/` is listed in `figures/figure_manifest
 ## validation matrix rollup
 
 `mainline_validation.json` includes `validation_matrix_summary`. `validation_summary.csv` repeats the same rollup columns on each row: `validation_matrix_pass_rate`, `validation_case_count`, `validation_pass_count`, `validation_fail_count`, `validation_not_evaluable_count`, `worst_case_name`, `worst_case_metric`, and `worst_case_value`.
-
-`--require-real-ngspice` disables mock ngspice and mock fallback for `sky130-mainline`; missing PDK or ngspice is a command failure, not a reportable mock result.

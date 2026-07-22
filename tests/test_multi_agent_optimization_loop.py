@@ -21,9 +21,9 @@ def _state(tmp_path: Path) -> dict:
         ]
     ).to_csv(next_candidates, index=False)
     return {
-        "task_name": "sky130_multi_agent_mvp",
-        "task_type": "sky130_eda_optimization",
-        "profile": "sky130_inverter_chain",
+        "task_name": "goa_multi_agent_mvp",
+        "task_type": "goa_eda_optimization",
+        "profile": "goa_8t1c_720",
         "output_dir": str(tmp_path),
         "objectives": {"primary": "pass_hard_constraints"},
         "inputs": {"leaderboard": "baseline.csv", "param_space": "params.yaml"},

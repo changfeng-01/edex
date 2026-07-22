@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 
-DEFAULT_PROFILE_PATH = Path("config/sky130_eval_profiles.yaml")
+DEFAULT_PROFILE_PATH = Path("config/eval_profiles.yaml")
 
 
 def load_eval_profiles(path: Path = DEFAULT_PROFILE_PATH) -> dict:

@@ -57,9 +57,9 @@ def _write_case(case_dir: Path) -> None:
 
     (case_dir / "task.yaml").write_text(
         f"""
-task_name: benchmark_sky130
-task_type: sky130_eda_optimization
-profile: sky130_inverter_chain
+task_name: benchmark_goa
+task_type: goa_eda_optimization
+profile: goa_8t1c_720
 inputs:
   artifact_dir: {artifacts.as_posix()}
   param_space: examples/sample_params.yaml
@@ -72,7 +72,7 @@ validity:
     (case_dir / "expected.json").write_text(
         json.dumps(
             {
-                "selected_domain_agent": "SKY130Agent",
+                "selected_domain_agent": "GOAAgent",
                 "required_artifacts": ["real_summary", "score_summary", "real_metrics", "optimization_leaderboard", "best_next_candidates"],
                 "expected_risk_types": [],
                 "optimization_loop_status": "awaiting_rerun_results",
@@ -93,7 +93,7 @@ validity:
 @pytest.mark.skipif(not check_langgraph_availability()["available"], reason="LangGraph not installed")
 def test_benchmark_run_cli_writes_summary_results_and_report(tmp_path: Path):
     suite = tmp_path / "suite"
-    case_dir = suite / "sky130_case"
+    case_dir = suite / "goa_case"
     case_dir.mkdir(parents=True)
     _write_case(case_dir)
     output = tmp_path / "benchmark"

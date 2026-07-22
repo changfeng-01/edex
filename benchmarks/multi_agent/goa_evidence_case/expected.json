@@ -1,0 +1,13 @@
+{
+  "selected_domain_agent": "GOAAgent",
+  "required_artifacts": [],
+  "expected_risk_types": [],
+  "optimization_loop_status": "not_started",
+  "forbidden_claims": [
+    "silicon validation",
+    "physical validation",
+    "tape-out proof",
+    "real chip verification",
+    "industrial-grade full automation"
+  ]
+}

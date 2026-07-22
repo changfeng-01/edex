@@ -41,7 +41,7 @@ def test_load_circuit_profiles_resolves_goa_8k_reference_profile():
     assert goa["metrics"]["power_total_w"]["maximum"] == 0.10
 
 
-def test_circuit_profile_loader_falls_back_to_sky130_profiles():
+def test_circuit_profile_loader_falls_back_to_generic_evaluation_profiles():
     profiles = load_circuit_profiles(Path("missing-circuit-profiles.yaml"))
 
     ota = resolve_circuit_profile("two_stage_opamp", profiles)

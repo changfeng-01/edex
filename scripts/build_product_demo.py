@@ -279,7 +279,7 @@ must_resimulate = true
 - Confirmation before import rejected: {str(workflow['confirmation_before_import_rejected']).lower()}
 - Confirmation before evaluation rejected: {str(workflow['confirmation_before_evaluation_rejected']).lower()}
 
-The repeat evaluation is neutral, so confirmation remains rejected. The package contains simulation-only evidence. It does not claim silicon validation or real ngspice execution.
+The repeat evaluation is neutral, so confirmation remains rejected. The package contains simulation-only evidence. It does not claim silicon validation or external-simulator execution.
 """
 
 

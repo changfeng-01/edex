@@ -331,7 +331,7 @@ def _write_dataset_card(frame: pd.DataFrame, path: Path) -> None:
         "- weak_label: paper-digitized waveform rows are weak labels.",
         "- evidence_boundary: engineering_validity = simulation_only",
         "- intended_use: train surrogate, classifier, repair, active-learning, and multi-objective ranking models to reduce invalid simulation attempts.",
-        "- not_intended_use: replacement for final SPICE/SmartSpice/ngspice verification or physical experiment claims.",
+        "- not_intended_use: replacement for final circuit-simulator verification or physical experiment claims.",
     ]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

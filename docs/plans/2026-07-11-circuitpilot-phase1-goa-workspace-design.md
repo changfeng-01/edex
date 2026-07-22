@@ -35,7 +35,7 @@ Phase 1 不包含候选审批、Simulation Job、PIA 多代实验、外部仿真
 
 ## 3. 非目标
 
-- 不自动执行 ngspice、Spectre、HSPICE 或 Empyrean。
+- 不自动执行 local-simulator、Spectre、HSPICE 或 Empyrean。
 - 不在 Phase 1 创建正式 CandidateRecord。
 - 不把只读候选建议标记为已优化。
 - 不引入 Redis、Celery、Kafka 或 Kubernetes。

@@ -4,7 +4,7 @@
 
 ## 1. 背景
 
-CircuitPilot 当前已经从最初的 8T1C / GOA 级联波形评价，扩展到 SKY130/ngspice 数据接入、topology-aware profile 评分、参数扫描、多轮候选搜索和 DeepSeek 参数分析。现有能力证明了软件链路可行，但仍存在一个工程化瓶颈：核心流程虽然逐步泛化，入口、配置和参数推荐仍带有较强的 SKY130 或特定电路痕迹。
+CircuitPilot 当前已经从最初的 8T1C / GOA 级联波形评价，扩展到 retired foundry-specific local-simulator 数据接入、topology-aware profile 评分、参数扫描、多轮候选搜索和 DeepSeek 参数分析。现有能力证明了软件链路可行，但仍存在一个工程化瓶颈：核心流程虽然逐步泛化，入口、配置和参数推荐仍带有较强的 retired foundry flow 或特定电路痕迹。
 
 下一阶段目标不是继续堆叠某几个新电路规则，而是把项目升级为可面向真实工程场景的“通用电路仿真评价与 AI 交互式参数推荐框架”。
 
@@ -39,7 +39,7 @@ engineering_validity = simulation_only
 - 不让 AI 直接无约束修改 netlist。
 - 不自动下载、打包或提交 PDK。
 - 不把所有电路一次性支持完整。
-- 不重写现有 8T1C、SKY130、profile-aware、optimizer 逻辑。
+- 不重写现有 8T1C、retired foundry flow、profile-aware、optimizer 逻辑。
 - 不把当前包名 `goa_eval` 立即改名，避免破坏已有脚本和测试。
 
 ## 4. 核心设计思路
@@ -77,7 +77,7 @@ Existing evaluator / scorer / recommendation / optimizer
 config/circuit_profiles.yaml
 ```
 
-保留 `config/sky130_eval_profiles.yaml` 作为兼容入口，逐步迁移到通用 profile。
+保留 `config/retired_foundry_flow_eval_profiles.yaml` 作为兼容入口，逐步迁移到通用 profile。
 
 示例结构：
 
@@ -214,9 +214,9 @@ metric penalty -> candidate rule -> semantic tag match -> concrete parameter can
 
 ### 6.1 问题
 
-当前 `sky130-transient` 和 `sky130-sweep` 对公开 SKY130/ngspice 数据集非常有效，但真实工程中输入来源更复杂：
+当前 `retired_foundry_flow-transient` 和 `retired_foundry_flow-sweep` 对公开 retired foundry-specific local-simulator 数据集非常有效，但真实工程中输入来源更复杂：
 
-- ngspice
+- local-simulator
 - HSPICE
 - Spectre
 - Xyce
@@ -257,8 +257,8 @@ run_dir/
 | Adapter | 作用 | 优先级 |
 |---|---|---|
 | `csv-import` | 直接导入已有 waveform/metrics 文件 | P0 |
-| `ngspice-local` | 本地 ngspice + SPICE testbench | P1 |
-| `sky130-dataset` | 现有 SKY130 数据集入口兼容层 | P1 |
+| `local-simulator-local` | 本地 local-simulator + SPICE testbench | P1 |
+| `retired_foundry_flow-dataset` | 现有 retired foundry flow 数据集入口兼容层 | P1 |
 | `external-simulator-import` | 导入 HSPICE/Spectre 等外部结果 | P2 |
 
 ### 6.4 CLI 设计
@@ -276,7 +276,7 @@ python -m goa_eval.cli simulate-run `
 
 ```powershell
 python -m goa_eval.cli simulate-sweep `
-  --adapter ngspice-local `
+  --adapter local-simulator-local `
   --sweep config/my_circuit_sweep.yaml `
   --profile comparator_general `
   --output-root outputs/general_sweep
@@ -285,14 +285,14 @@ python -m goa_eval.cli simulate-sweep `
 保留现有命令：
 
 ```text
-sky130-transient
-sky130-sweep
+retired_foundry_flow-transient
+retired_foundry_flow-sweep
 optimize-rounds
 evaluate-real
 analyze-params
 ```
 
-但长期方向是让 `sky130-*` 成为通用命令的预设或 wrapper。
+但长期方向是让 `retired_foundry_flow-*` 成为通用命令的预设或 wrapper。
 
 ## 7. AI 交互设计
 
@@ -664,7 +664,7 @@ AI 生成：
 
 验收：
 
-- 旧 SKY130 示例不破坏。
+- 旧 retired foundry flow 示例不破坏。
 - 无语义标签时仍能按旧参数名匹配。
 - 有语义标签时可以跨参数名生成候选。
 - `simulation_only` 边界字段保持稳定。
@@ -690,20 +690,20 @@ AI 生成：
 
 ### Phase 3：通用 adapter 与 simulate-run
 
-目标：把 SKY130 入口下沉为 adapter，建立通用仿真输入规范。
+目标：把 retired foundry flow 入口下沉为 adapter，建立通用仿真输入规范。
 
 任务：
 
 - 新增 adapter registry。
 - 新增 `csv-import` adapter。
 - 新增 `simulate-run`。
-- 把 `sky130-transient` 输出对齐 adapter run_dir 规范。
+- 把 `retired_foundry_flow-transient` 输出对齐 adapter run_dir 规范。
 - 新增 `simulation_metadata.json` 和 `adapter_status.json`。
 
 验收：
 
 - 已有 waveform CSV 可通过 `csv-import` 进入完整评价流程。
-- SKY130 路径仍可运行。
+- retired foundry flow 路径仍可运行。
 - adapter 失败时输出可读失败原因。
 
 ### Phase 4：通用 simulate-sweep 与 profile objective
@@ -731,9 +731,9 @@ AI 生成：
 控制：
 
 - 所有新字段追加，不删除旧字段。
-- 保留 `sky130-*` 命令。
+- 保留 `retired_foundry_flow-*` 命令。
 - 保留旧 profile 文件兼容读取。
-- 测试覆盖旧 demo、SKY130 mock、profile closed-loop。
+- 测试覆盖旧 demo、retired foundry flow mock、profile closed-loop。
 
 ### 12.2 风险：AI 输出过度自信
 
@@ -765,7 +765,7 @@ AI 生成：
 
 建议下一次实际开发只做 Phase 1：
 
-> 新增通用 `circuit_profiles.yaml` 和参数语义层，让 candidate generation 从“参数名匹配”升级为“语义标签匹配”，同时保持所有现有 SKY130 / 8T1C / public demo 路径兼容。
+> 新增通用 `circuit_profiles.yaml` 和参数语义层，让 candidate generation 从“参数名匹配”升级为“语义标签匹配”，同时保持所有现有 retired foundry flow / 8T1C / public demo 路径兼容。
 
 这是最符合真实工程泛化能力的第一步，因为它解决的是迁移到新电路时最核心的问题：评价目标和可调参数如何从硬编码变成可配置、可解释、可复用。
 

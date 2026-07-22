@@ -1,0 +1,36 @@
+task_name: three_opamp_instrumentation_amplifier_template
+task_type: instrumentation_amplifier_optimization
+profile: instrumentation_amplifier_three_opamp_compensated_v1
+inputs:
+  operating_point:
+    R: 10000.0
+    RG: 2000.0
+    RD: 10000.0
+    KD_plus: 1.2
+    KD_minus: 1.2
+    CF: 1.0e-11
+  opamp_model:
+    A0: 100000.0
+    GBW: 2000000.0
+    SR: 1000000.0
+    Rout: 50.0
+    input_common_min_v: -2.0
+    input_common_max_v: 2.0
+    output_low_v: -4.0
+    output_high_v: 4.0
+  pvt_scenarios:
+    - corner: TT
+      temperature_c: 25.0
+      supply_v: 5.0
+      Vd: 0.1
+      V_CM: 0.0
+      f: 1000.0
+      RL: 10000.0
+objectives:
+  target_differential_gain: 13.2
+limits:
+  max_candidates: 3
+validity:
+  data_source: analytic_model_proxy
+  engineering_validity: simulation_only
+  must_resimulate: true

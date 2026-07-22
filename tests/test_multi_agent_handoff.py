@@ -4,10 +4,10 @@ from goa_eval.multi_agent.handoff import create_handoff_record, write_handoff_tr
 
 
 def test_handoff_record_contains_required_fields(tmp_path):
-    record = create_handoff_record("RouterAgent", "SKY130Agent", "profile match", ["profile", "inputs"])
+    record = create_handoff_record("RouterAgent", "GOAAgent", "profile match", ["profile", "inputs"])
 
     assert record.from_agent == "RouterAgent"
-    assert record.to_agent == "SKY130Agent"
+    assert record.to_agent == "GOAAgent"
     assert record.reason == "profile match"
     assert record.state_keys_passed == ["profile", "inputs"]
     assert record.timestamp

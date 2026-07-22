@@ -68,7 +68,6 @@ def _write_artifact_bundle(root: Path) -> None:
     )
     (root / "diagnosis_report.md").write_text("simulation_only diagnosis", encoding="utf-8")
     (root / "real_waveform_report.md").write_text("real_simulation_csv report", encoding="utf-8")
-    (root / "sky130_mainline_report.md").write_text("simulation_only mainline report", encoding="utf-8")
 
 
 def test_build_evidence_index_discovers_artifact_dir_bundle(tmp_path: Path):
@@ -97,8 +96,8 @@ def test_multi_agent_run_accepts_artifact_dir_only_task(tmp_path: Path):
     task.write_text(
         f"""
 task_name: artifact_dir_only
-task_type: sky130_eda_optimization
-profile: sky130_inverter_chain
+task_type: goa_eda_optimization
+profile: goa_8t1c_720
 inputs:
   artifact_dir: {artifacts.as_posix()}
   param_space: examples/sample_params.yaml

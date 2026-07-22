@@ -1,6 +1,3 @@
-import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pandas as pd
@@ -12,7 +9,7 @@ from goa_eval.topology_profiles import load_eval_profiles, resolve_topology_prof
 
 
 def test_profile_loader_maps_known_topologies_and_defaults():
-    profiles = load_eval_profiles(Path("config/sky130_eval_profiles.yaml"))
+    profiles = load_eval_profiles(Path("config/eval_profiles.yaml"))
 
     ota = resolve_topology_profile("two_stage_opamp", profiles)
     comparator = resolve_topology_profile("comparator", profiles)
@@ -72,7 +69,7 @@ def test_extract_analysis_metrics_uses_waveform_as_tran_fallback(tmp_path):
 
 
 def test_score_real_evaluation_adds_topology_profile_scores():
-    profiles = load_eval_profiles(Path("config/sky130_eval_profiles.yaml"))
+    profiles = load_eval_profiles(Path("config/eval_profiles.yaml"))
     summary = {
         "All_pulses_exist": True,
         "Seq_pass": True,
@@ -128,50 +125,3 @@ def test_score_real_evaluation_adds_topology_profile_scores():
     assert "dc_gain_db" in score["analysis_metric_penalties"]
     assert score["not_evaluable_metrics"] == {}
     assert score["overall_score"] > 0
-
-
-def test_sky130_transient_mock_writes_topology_aware_analysis(tmp_path):
-    row = {
-        "circuit_id": "amp_001",
-        "base_circuit_id": "amp",
-        "topology": "two_stage_opamp",
-        "source_dataset": "unit_fixture",
-        "pdk": "sky130",
-        "spice_netlist": "M1 vout vin vdd vdd PMOS W=2u L=0.15u\nM2 vout vin 0 0 NMOS W=1u L=0.15u\n.END\n",
-        "testbench_spice": ".title fixture\nV1 vin 0 pulse(0 1.8 1n 1n 1n 5n 20n)\n.tran 1n 40n\n.end\n",
-        "netlist_json": {"ports": [{"name": "vout", "role": "output_v"}, {"name": "vaux", "role": "output_v"}]},
-    }
-    rows_path = tmp_path / "rows.json"
-    rows_path.write_text(json.dumps([row]), encoding="utf-8")
-    output_root = tmp_path / "sky130"
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "goa_eval.cli",
-            "sky130-transient",
-            "--mock-dataset-json",
-            str(rows_path),
-            "--mock-ngspice",
-            "--max-rows",
-            "1",
-            "--output-root",
-            str(output_root),
-        ],
-        cwd=Path.cwd(),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    runs = pd.read_csv(output_root / "sky130_runs.csv")
-    run_dir = output_root / runs.loc[0, "run_dir"]
-    score = json.loads((run_dir / "score_summary.json").read_text(encoding="utf-8"))
-    analysis = json.loads((run_dir / "analysis_metrics.json").read_text(encoding="utf-8"))
-    assert score["topology_profile"] == "ota"
-    assert "not_evaluable_metrics" in score
-    assert "output_swing_v" in analysis["tran_metrics"]
-    assert analysis["topology_profile"] == "ota"
-    assert "topology_profile" in runs.columns

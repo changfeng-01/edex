@@ -38,9 +38,6 @@ EVIDENCE_FIELDS = [
     "evidence_level",
     "simulation_backend",
     "mock_used",
-    "pdk_available",
-    "ngspice_available",
-    "reportable_as_real_ngspice",
     "optimizer_claim_level",
 ]
 

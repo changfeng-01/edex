@@ -1,8 +1,8 @@
-task_name: sky130_evidence_case
-task_type: sky130_eda_optimization
-profile: sky130_inverter_chain
+task_name: benchmark_goa_evidence_chain
+task_type: goa_eda_optimization
+profile: goa_8t1c_720
 inputs:
-  artifact_dir: examples/demo_run
+  artifact_dir: artifacts
   param_space: examples/sample_params.yaml
 validity:
   data_source: real_simulation_csv

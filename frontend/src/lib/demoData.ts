@@ -209,9 +209,6 @@ export function fallbackSummary(caseId: string): DashboardSummary {
       evidence_level: "not_available",
       simulation_backend: "not_available",
       mock_used: "unknown",
-      pdk_available: "unknown",
-      ngspice_available: "unknown",
-      reportable_as_real_ngspice: "unknown",
       optimizer_claim_level: "not_available",
     },
   };
