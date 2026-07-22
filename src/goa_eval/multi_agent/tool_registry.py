@@ -22,7 +22,7 @@ def get_tool_registry() -> dict[str, ToolMetadata]:
         ),
         "inspect_real_summary": ToolMetadata(
             "inspect_real_summary",
-            "Read real_summary.json and summarize GOA/SKY130 boundary and key metrics.",
+            "Read real_summary.json and summarize the evidence boundary and key metrics.",
             ["real_summary_path"],
             "real_summary",
             tools.inspect_real_summary,

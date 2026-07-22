@@ -72,7 +72,7 @@ For detailed usage, see `docs/pia_ca_llso_closed_loop.md`.
 
 ## 11. Relation To Existing EDA Project
 
-The module lives under `src/goa_eval/pia_ca_llso/` and is reached through the existing `goa_eval.cli` command system. It does not rewrite optimize-rounds, strategy-benchmark, sky130-mainline, or simulate-run.
+The module lives under `src/goa_eval/pia_ca_llso/` and is reached through the existing `goa_eval.cli` command system. It does not rewrite `optimize-rounds`, `goa-strategy-benchmark`, or the generic simulation-import commands.
 
 ## 12. Current Boundaries And Limits
 

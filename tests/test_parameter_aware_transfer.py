@@ -190,6 +190,55 @@ def test_task_head_fails_closed_when_a_required_metric_is_missing() -> None:
     assert result.missing_features == ("bootstrap_headroom_v",)
 
 
+def test_task_head_reweights_when_only_optional_metric_is_missing() -> None:
+    task = CircuitTaskHead.from_mapping(
+        {
+            "name": "amplifier",
+            "metrics": {
+                "gain": {
+                    "feature": "gain",
+                    "direction": "larger_better",
+                    "minimum": 10.0,
+                    "weight": 0.75,
+                },
+                "power": {
+                    "feature": "power_w",
+                    "direction": "smaller_better",
+                    "maximum": 0.1,
+                    "weight": 0.25,
+                    "required": False,
+                },
+            },
+        }
+    )
+
+    result = evaluate_task_head({"gain": 12.0}, task)
+
+    assert result.status == "partial"
+    assert result.score == result.metric_results["gain"].score
+    assert result.missing_features == ("power_w",)
+
+
+def test_variation_parameters_are_valid_but_never_optimizable() -> None:
+    profile = CircuitParameterProfile.from_mapping(
+        {
+            "name": "variation_profile",
+            "task_type": "amplifier",
+            "parameters": {
+                "delta_r1": {
+                    "kind": "variation",
+                    "role": "resistor_1",
+                    "property": "relative_error",
+                    "optimizable": True,
+                }
+            },
+        }
+    )
+
+    assert profile.parameters[0].kind == "variation"
+    assert profile.optimizable_parameters == ()
+
+
 def test_local_sensitivity_and_task_weights_make_parameter_importance_domain_specific() -> None:
     point = {"pullup_w": 10.0, "storage_c": 2.0}
 

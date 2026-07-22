@@ -29,7 +29,7 @@ EXAMPLES = Path("examples/multi_agent")
 def test_inspect_task_inputs_reports_file_availability():
     result = inspect_task_inputs(
         {
-            "leaderboard": str(EXAMPLES / "sample_sky130_leaderboard.csv"),
+            "leaderboard": str(EXAMPLES / "sample_leaderboard.csv"),
             "missing": str(EXAMPLES / "missing.csv"),
         }
     )
@@ -40,11 +40,11 @@ def test_inspect_task_inputs_reports_file_availability():
 
 
 def test_inspect_leaderboard_extracts_best_candidate():
-    result = inspect_leaderboard(EXAMPLES / "sample_sky130_leaderboard.csv")
+    result = inspect_leaderboard(EXAMPLES / "sample_leaderboard.csv")
 
     assert result.status == "pass"
     assert result.data["row_count"] >= 1
-    assert result.data["best_candidate"]["candidate_id"] == "sky_cand_001"
+    assert result.data["best_candidate"]["candidate_id"] == "candidate_001"
     assert "overall_score" in result.data["best_candidate"]
 
 
@@ -66,7 +66,7 @@ def test_inspect_real_metrics_detects_bad_cells():
 
 def test_generate_and_inspect_candidates_uses_optimizer_wrapper(tmp_path):
     generated = generate_candidates(
-        leaderboard_path=EXAMPLES / "sample_sky130_leaderboard.csv",
+        leaderboard_path=EXAMPLES / "sample_leaderboard.csv",
         param_space_path=Path("examples/sample_params.yaml"),
         output_dir=tmp_path,
         max_candidates=3,

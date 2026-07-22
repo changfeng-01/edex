@@ -48,7 +48,7 @@ def test_phase3_execution_is_reachable_through_product_api_and_persists_outputs(
             manifest = json.loads(
                 store.resolve(store.ref_from_uri(job.input_manifest_ref)).read_text(encoding="utf-8")
             )
-            assert manifest["schema_version"] == "circuitpilot.ngspice-execution-input.v1"
+            assert manifest["input_snapshot_id"]
             batch = pd.read_csv(store.resolve(job.batch_ref))
             row = batch.iloc[0]
             result = pd.DataFrame(
@@ -68,7 +68,7 @@ def test_phase3_execution_is_reachable_through_product_api_and_persists_outputs(
             return ExecutionCommand(
                 (sys.executable, "-c", command),
                 cwd=work_dir,
-                evidence={"evidence_type": "mock_fixture", "reportable_as_real_ngspice": False},
+                evidence={"evidence_type": "synthetic_execution_fixture"},
                 output_files=("simulation_results.csv",),
             )
 
@@ -77,7 +77,9 @@ def test_phase3_execution_is_reachable_through_product_api_and_persists_outputs(
             assert set(frame["candidate_id"].astype(str)) == set(expected_candidate_ids)
             return frame
 
-    registry = SimulatorRegistry({"ngspice_sky130": Adapter, "empyrean_offline": EmpyreanOfflineAdapter})
+    registry = SimulatorRegistry(
+        {"trusted_execution_fixture": Adapter, "empyrean_offline": EmpyreanOfflineAdapter}
+    )
     container.simulator_registry = registry
     container.simulation_job_service = SimulationJobService(
         container.repository,
@@ -144,7 +146,7 @@ def test_phase3_execution_is_reachable_through_product_api_and_persists_outputs(
         "/api/v1/simulation-jobs",
         json={
             "candidate_ids": [candidate["candidate_id"]],
-            "adapter_type": "ngspice_sky130",
+            "adapter_type": "trusted_execution_fixture",
             "input_manifest_ref": snapshot["manifest_ref"]["uri"],
         },
     )

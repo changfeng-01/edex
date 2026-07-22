@@ -115,7 +115,7 @@ def test_goa_strategy_benchmark_writes_boundary_outputs(tmp_path: Path) -> None:
     rows = pd.read_csv(output_root / "goa_strategy_benchmark.csv")
     assert set(rows["strategy"]) == {"random", "adaptive", "surrogate", "repair", "hybrid_goa"}
     assert set(rows["engineering_validity"]) == {"simulation_only"}
-    assert set(rows["simulation_backend"]) == {"no_real_ngspice_required"}
+    assert set(rows["simulation_backend"]) == {"external_simulator_not_required"}
 
     leaderboard = pd.read_csv(output_root / "goa_strategy_leaderboard.csv")
     assert "proxy_improvement_vs_random" in leaderboard.columns

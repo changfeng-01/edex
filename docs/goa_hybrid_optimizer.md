@@ -4,14 +4,14 @@
 
 `hybrid-goa-optimize` is a GOA-first, simulation-only optimizer. It reads existing GOA evaluation artifacts such as `optimization_history.json`, `optimization_leaderboard.csv`, or compatible benchmark CSV files, then proposes the next candidate parameter sets.
 
-It does not require real ngspice, does not depend on SKY130, and does not claim physical, silicon, or lab validation. Outputs are candidate recommendations for the next simulation round.
+It consumes existing GOA evidence without executing a local simulator and does not claim physical, silicon, or lab validation. Outputs are candidate recommendations for the next simulation round.
 
 Boundary labels are preserved in generated artifacts:
 
 - `engineering_validity = simulation_only`
 - `data_source = benchmark-derived`
 - `evidence_level = csv-derived`
-- `simulation_backend = no_real_ngspice_required`
+- `simulation_backend = external_csv`
 - `mock_used = false`
 
 ## 2. Algorithm Structure
@@ -117,14 +117,10 @@ These are prediction / candidate-quality proxy fields unless backed by a later s
 
 ## 8. GOA Strategy Benchmark
 
-`goa-strategy-benchmark` is the GOA-specific candidate-quality proxy benchmark. It stays separate from the SKY130 `strategy-benchmark` so GOA workflows do not require ngspice, a SKY130 PDK, or a transistor-level sweep.
-
-| Aspect | `goa-strategy-benchmark` | `strategy-benchmark` |
-| --- | --- | --- |
-| Target | GOA candidate generation | SKY130 multi-round strategy comparison |
-| Backend | No real ngspice required | ngspice/SKY130 path or explicit mock |
-| Evidence | Existing GOA history or leaderboard CSV | Sweep and validation artifacts |
-| Claim | Candidate-quality proxy only | Simulation-only strategy benchmark |
+`goa-strategy-benchmark` is the GOA-specific candidate-quality proxy benchmark.
+It consumes existing GOA history or a leaderboard CSV and does not execute a
+local simulator or transistor-level sweep. Its result is candidate-ranking
+evidence, not simulation validation.
 
 Example:
 
@@ -146,5 +142,5 @@ The summary preserves:
 - `benchmark_type = goa_strategy_benchmark`
 - `task_type = candidate_quality_proxy`
 - `engineering_validity = simulation_only`
-- `simulation_backend = no_real_ngspice_required`
+- `simulation_backend = external_csv`
 - `result_claim = candidate_quality_proxy_only`

@@ -79,7 +79,7 @@ paper_digitized weak labels
 + active_learning_selected_reruns
 ```
 
-The training goal is to reduce invalid or low-value simulation attempts. The database cannot replace final SPICE, SmartSpice, or ngspice reruns.
+The training goal is to reduce invalid or low-value simulation attempts. The database cannot replace final circuit-simulator reruns.
 
 ## Hybrid GOA Optimize
 

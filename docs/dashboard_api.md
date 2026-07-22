@@ -2,7 +2,7 @@
 
 This FastAPI service is a read-only adapter over product-demo artifact packages. It lets a frontend dashboard read the generated JSON, CSV, PNG, and Markdown outputs through stable API endpoints instead of fetching copied static files directly.
 
-The service does not run ngspice, does not run the optimizer, does not change validation summaries, and does not promote pending candidate suggestions into validated improvements.
+The service does not run a local simulator, does not run the optimizer, does not change validation summaries, and does not promote pending candidate suggestions into validated improvements.
 
 ## Start
 
@@ -90,7 +90,7 @@ This API only reads product-demo result packages.
 
 `awaiting_rerun_results` means after-run validation is still pending. It must not be interpreted as a validated improvement.
 
-Evidence fields such as `data_source = real_simulation_csv`, `engineering_validity = simulation_only`, `reportable_as_real_ngspice`, and `optimizer_claim_level` are returned as written by the product-demo package.
+Evidence fields such as `data_source = real_simulation_csv`, `engineering_validity = simulation_only`, `simulation_backend`, and `optimizer_claim_level` are returned as written by the product-demo package.
 
 ## Path Safety
 

@@ -13,9 +13,9 @@ from goa_eval.multi_agent.state import MultiAgentEDAState, new_state_from_task
 
 def test_multi_agent_structures_are_json_serializable():
     task = MultiAgentTask(
-        task_name="sky130_test",
-        task_type="sky130_eda_optimization",
-        profile="sky130_inverter_chain",
+        task_name="goa_test",
+        task_type="goa_eda_optimization",
+        profile="goa_8t1c_720",
         inputs={"leaderboard": "leaderboard.csv"},
         objectives={"primary": "pass_hard_constraints"},
         validity={"data_source": "real_simulation_csv", "engineering_validity": "simulation_only"},
@@ -32,7 +32,7 @@ def test_multi_agent_structures_are_json_serializable():
         memory_scope="run_local",
     )
     tool = ToolResult(tool_name="inspect_task_inputs", status="pass", data={"ok": True})
-    handoff = HandoffRecord("RouterAgent", "SKY130Agent", "profile match", ["profile"])
+    handoff = HandoffRecord("RouterAgent", "GOAAgent", "profile match", ["profile"])
     verdict = CriticVerdict("step-1", "CriticAgent", "pass", [], "ok", "continue")
     memory = MultiAgentMemory(task_metadata={"task_name": task.task_name})
     state = MultiAgentEDAState(**new_state_from_task(task, "out"))
@@ -40,5 +40,5 @@ def test_multi_agent_structures_are_json_serializable():
     payload = [task, contract, tool, handoff, verdict, memory, state]
     encoded = json.dumps([item.to_dict() for item in payload], ensure_ascii=False)
 
-    assert "sky130_test" in encoded
+    assert "goa_test" in encoded
     assert "simulation_only" in encoded

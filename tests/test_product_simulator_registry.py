@@ -45,7 +45,17 @@ def test_availability_check_does_not_render_or_execute():
     assert probe.execution_calls == 0
 
 
-def test_default_registry_exposes_controlled_phase3_adapters():
+def test_default_registry_exposes_only_supported_offline_adapters():
     registry = build_default_simulator_registry()
 
-    assert registry.names() == ("empyrean_offline", "ngspice_sky130")
+    assert registry.names() == ("empyrean_offline",)
+
+
+def test_unknown_historical_adapter_has_stable_unavailable_probe_without_registration():
+    registry = build_default_simulator_registry()
+
+    availability = registry.availability("retired_historical_adapter")
+
+    assert availability.available is False
+    assert availability.execution_enabled is False
+    assert availability.reasons == ("adapter_unavailable",)

@@ -158,7 +158,7 @@ parameters:
     assert (output_root / "pareto_front.csv").exists()
     assert (output_root / "pareto_summary.json").exists()
     assert "GOA simulation-only optimizer" in report
-    assert "no real ngspice required" in report
+    assert "requires no external simulator" in report
 
 
 def test_hybrid_goa_cli_smoke_generates_report(tmp_path: Path):

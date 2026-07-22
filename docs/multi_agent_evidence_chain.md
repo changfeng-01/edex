@@ -1,79 +1,89 @@
 # Multi-Agent Evidence Chain
 
-CircuitPilot's multi-agent layer is an orchestration layer over the existing simulation evidence tools. It routes a task to domain agents, reads existing artifacts, records handoffs, runs critic checks, and writes a decision package. It does not replace the metric, scoring, optimizer, reporting, SKY130 sweep, or multi-round optimization modules.
+CircuitPilot's multi-agent layer routes a task to a registered circuit-domain
+agent and then reuses shared evaluation, transfer, optimization, critic, memory,
+and reporting services. Circuit-specific equations live in a
+`DomainPhysicsAdapter`; orchestration and numerical projection remain shared.
 
-The required boundary labels remain:
+The required external-simulation boundary labels are:
 
 ```text
 data_source = real_simulation_csv
 engineering_validity = simulation_only
+must_resimulate = true
 ```
 
-The agent layer must preserve evidence metadata when it reads or summarizes artifacts: `evidence_level`, `simulation_backend`, `mock_used`, `pdk_available`, `ngspice_available`, `reportable_as_real_ngspice`, and `optimizer_claim_level`. A run with `mock_used=true` must not be reported as real ngspice evidence.
+Analytic-only instrumentation-amplifier output is instead labeled
+`data_source = analytic_model_proxy`. It is diagnostic evidence and cannot be
+promoted to a real-simulation candidate.
 
-The multi-agent command is:
-
-```bash
-python -m goa_eval.cli multi-agent-run \
-  --task examples/tasks/sky130_multi_agent_task.yaml \
-  --output-dir outputs/multi_agent_sky130
-```
-
-## Agents
+## Registered domain agents
 
 | Agent | Role |
 | --- | --- |
-| `SupervisorAgent` | Initializes shared state, plan metadata, and boundary context. |
-| `RouterAgent` | Selects the domain path from task type, profile, and available inputs. |
-| `GOAAgent` | Interprets GOA / 8T1C waveform artifacts, overlap, ripple, voltage loss, and false-trigger risk. |
-| `SKY130Agent` | Interprets SKY130/ngspice evidence, score summaries, timing risk, and candidate context. |
-| `GenericWaveformAgent` | Handles waveform-derived artifacts when no specific circuit family is selected. |
-| `NetlistAgent` | Performs lightweight netlist integrity checks and reports parser limitations. |
-| `EvaluationAgent` | Reads existing leaderboard, score summary, and real metrics artifacts. |
-| `OptimizationAgent` | Calls existing optimizer wrappers to create bounded next candidates. |
-| `CriticAgent` | Checks schema, boundary labels, hard constraints, metric missingness, false triggers, overlap/ripple risk, candidate risk, validation status, and forbidden physical-validation claims. |
-| `ReportAgent` | Writes the final decision report and optimization evidence card. |
+| `GOAAgent` | GOA/TFT waveform and local electrical diagnosis. |
+| `InstrumentationAmplifierAgent` | Three-op-amp instrumentation-amplifier MNA, PVT, task-head, and sensitivity analysis. |
+| `GenericWaveformAgent` | Waveform artifacts without a more specific circuit profile. |
+| `NetlistAgent` | Generic netlist integrity and parser diagnostics. |
 
-## Evidence Inputs
+`DomainAgentRegistry` resolves an exact profile first, then an alias, task type,
+and finally the input-type fallback. Core contracts are merged with registry
+contracts, so adding another circuit family does not require a new hard-coded
+router branch.
 
-The layer can read current mainline artifacts by explicit path or by an `artifact_dir` / `run_dir` task input:
+## Execution paths
 
-- `real_summary.json`
-- `real_metrics.csv`
-- `score_summary.json`
-- `analysis_metrics.json`
-- `diagnosis_report.md`
-- `real_waveform_report.md`
-- `next_candidates.csv`
-- `best_next_candidates.csv`
-- `optimization_history.json`
-- `optimization_leaderboard.csv`
-- `validation_summary.csv`
-- `run_manifest_real.json`
-- `sky130_mainline_report.md`
-- `figures/figure_manifest.json`
+Without a source effect packet:
 
-`optimization_leaderboard.csv` is treated as the shared leaderboard when no task-specific `leaderboard` is supplied. `best_next_candidates.csv` is treated as the candidate table when no task-specific `next_candidates` is supplied.
+```text
+Supervisor -> Router -> Domain Agent -> Critic -> Evaluation
+           -> Optimization -> Critic -> Report
+```
 
-`mainline_validation.json` and `validation_summary.csv` are the preferred sources for validation matrix rollups. Key fields are `validation_matrix_pass_rate`, `validation_case_count`, `validation_pass_count`, `validation_fail_count`, `validation_not_evaluable_count`, `worst_case_name`, `worst_case_metric`, and `worst_case_value`.
+With a source effect packet:
 
-## Outputs
+```text
+Supervisor -> Router -> Domain Agent -> Critic -> Evaluation
+           -> TransferCoordinator -> Critic -> Optimization
+           -> Critic -> Report
+```
 
-One run writes:
+The coordinator operates only on supported canonical physical effects. Missing
+and not-applicable effects are never replaced with zeros. Projection is rejected
+for rank loss, poor conditioning, excessive normalized uncertainty, excessive
+residual, or insufficient effect alignment.
 
-- `multi_agent_plan.json`
-- `multi_agent_trace.jsonl`
-- `multi_agent_handoff_trace.jsonl`
-- `critic_report.json`
-- `multi_agent_memory.json`
-- `multi_agent_decision_report.md`
-- `optimization_loop_record.json`
-- `optimization_decision_card.md`
+## Three-op-amp example
 
-The optimization loop record stays rerun-aware. If candidate artifacts exist but rerun leaderboard, score, or metric artifacts are missing, the status remains `awaiting_rerun_results`; it must not be described as a completed physical optimization loop.
+```bash
+python -m goa_eval.cli multi-agent-run \
+  --task examples/tasks/instrumentation_amplifier_agent_task.yaml \
+  --output-dir outputs/instrumentation_amplifier_agent
+```
 
-## Scope Boundary
+The project does not execute a local circuit simulator. It imports external CSV
+evidence through the generic simulation adapter and exports bounded candidates
+for a later simulation run.
 
-This branch keeps multi-agent behavior first-class while preserving the existing simulation-data ingestion and SKY130/ngspice capabilities. The agents may inspect and summarize evidence, but they must not claim silicon validation, physical validation, tape-out proof, real chip verification, or industrial-grade full automation.
+## Artifacts
 
-For real ngspice claims, the source artifact must have `reportable_as_real_ngspice=true`; otherwise the report should explicitly label the result as public/demo CSV, external CSV, or mock-ngspice evidence.
+Common artifacts retain their existing names, including the plan, trace,
+handoff, critic, memory, candidates, and final report. The instrumentation and
+transfer path additionally writes:
+
+- `instrumentation_agent_diagnosis.json`
+- `physical_effect_packet.json`
+- `target_sensitivity.json`
+- `transfer_projection.json` when a projection is accepted
+
+An external CSV row is keyed by `sample_id` and a scenario key formed from
+`corner + temperature_c + supply`. Every scenario is evaluated independently;
+the score combines 50% weighted mean and 50% worst case, while the barrier is
+the scenario maximum.
+
+## Scope boundary
+
+The agents organize simulation evidence and propose the next simulation inputs.
+They do not establish silicon validation, laboratory validation, tape-out proof,
+or a completed optimization result. A candidate remains a next-run suggestion
+until the external simulator returns new evidence.

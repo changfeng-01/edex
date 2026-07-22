@@ -51,4 +51,4 @@ engineering_validity = simulation_only
 must_resimulate = true
 ```
 
-These artifacts are simulation-only evidence. A selection score is not an evaluated improvement, mock execution is not real ngspice, and none of the outputs claim silicon validation.
+These artifacts are simulation-only evidence. A selection score is not an evaluated improvement, fixture execution is not external-simulation evidence, and none of the outputs claim silicon validation.

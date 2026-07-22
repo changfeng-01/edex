@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 
-PARAMETER_KINDS = frozenset({"design", "environment", "model", "parasitic", "derived"})
+PARAMETER_KINDS = frozenset({"design", "environment", "model", "parasitic", "variation", "derived"})
 MAPPING_FIDELITY_ORDER = {"exact": 0, "validated": 1, "proxy": 2, "unknown": 3}
 PARAMETER_GROUP_CONSTRAINTS = frozenset({"keep_ratio", "must_change_together", "tradeoff_coupled"})
 

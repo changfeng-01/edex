@@ -116,34 +116,20 @@ engineering_validity = simulation_only
 
 ## Evidence-Gated Reproduction
 
-Public demo output is Level 0 / Level 1 evidence. Real SKY130 acceptance must use local PDK plus ngspice and can be enforced with:
+Public demo output is Level 0 / Level 1 evidence. To reproduce an external
+simulation import, export a run as `waveform.csv` plus optional companion metric
+CSVs and run:
 
 ```powershell
-python -m goa_eval.cli sky130-mainline `
-  --sweep config/sky130_candidate_sweep.yaml `
-  --validation-config config/sky130_validation.yaml `
-  --pdk-root tools/volare-pdks/sky130A `
-  --ngspice-cmd tools/ngspice/Spice64/bin/ngspice.exe `
-  --require-real-ngspice `
-  --output-root outputs/sky130_mainline_real
+python -m goa_eval.cli simulate-run `
+  --adapter csv-import `
+  --input-dir path/to/exported/run `
+  --output-dir outputs/imported_run
 ```
 
-If PDK or ngspice is missing, `--require-real-ngspice` fails instead of falling back to mock mode. Only runs with no mock and available PDK/ngspice may set `reportable_as_real_ngspice=true`.
-
-Strategy benchmark reproduction:
-
-```powershell
-python -m goa_eval.cli strategy-benchmark `
-  --sweep config/sky130_candidate_sweep.yaml `
-  --validation-config config/sky130_validation.yaml `
-  --mock-ngspice `
-  --seeds 1,2,3 `
-  --rounds 2 `
-  --max-runs-per-round 3 `
-  --output-root outputs/strategy_benchmark
-```
-
-The benchmark writes `strategy_benchmark.csv`, `strategy_leaderboard.csv`, `strategy_benchmark_summary.json`, and `strategy_benchmark_report.md`. The summary includes scenario, fairness, baseline groups, not-evaluable rate, validation rollup, and improvement fields versus the `random` no-replay baseline.
+The import must retain `data_source = real_simulation_csv`,
+`engineering_validity = simulation_only`, and `must_resimulate = true` for
+generated candidates. It does not establish laboratory or silicon validation.
 
 这表示结果只来自仿真 CSV，不是实物测试结论，也不表示已经完成自动优化闭环。
 

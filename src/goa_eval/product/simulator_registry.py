@@ -43,7 +43,15 @@ class SimulatorRegistry:
         return factory()
 
     def availability(self, name: str) -> AdapterAvailability:
-        adapter = self.get(name)
+        try:
+            adapter = self.get(name)
+        except UnknownSimulatorAdapter:
+            return AdapterAvailability(
+                False,
+                ("adapter_unavailable",),
+                (),
+                execution_enabled=False,
+            )
         probe = adapter.availability()
         if not isinstance(probe, AdapterAvailability):
             raise TypeError(f"adapter {name!r} returned an invalid availability result")
@@ -62,11 +70,5 @@ class SimulatorRegistry:
 
 def build_default_simulator_registry() -> SimulatorRegistry:
     from goa_eval.product.adapters.empyrean_offline import EmpyreanOfflineAdapter
-    from goa_eval.product.adapters.ngspice_sky130 import NgspiceSky130Adapter
 
-    return SimulatorRegistry(
-        {
-            "empyrean_offline": EmpyreanOfflineAdapter,
-            "ngspice_sky130": NgspiceSky130Adapter,
-        }
-    )
+    return SimulatorRegistry({"empyrean_offline": EmpyreanOfflineAdapter})

@@ -1,6 +1,6 @@
 # Physics-Guided Optimizer
 
-`physics_guided_hybrid` is an additive candidate-ranking strategy for the SKY130 multi-round optimization path. It uses `src/goa_eval/physics_engine.py` to rank unsimulated sweep points before the next run, then falls back to the existing surrogate and diversity logic when the physics-prior list does not fill the budget.
+`physics_guided_hybrid` is an additive candidate-ranking strategy for the shared multi-round optimization path. It uses `src/goa_eval/physics_engine.py` to rank unsimulated sweep points before the next run, then falls back to the existing surrogate and diversity logic when the physics-prior list does not fill the budget.
 
 ```text
 data_source = real_simulation_csv
@@ -43,7 +43,7 @@ The `random` strategy remains a no-replay baseline. Existing `adaptive`, `surrog
 
 ## Benchmark Fields
 
-`strategy-benchmark` carries the physics-prior fields when they are available:
+The multi-round strategy records these physics-prior fields when they are available:
 
 - `physics_score`
 - `physical_hard_passed`
@@ -55,14 +55,5 @@ The `random` strategy remains a no-replay baseline. Existing `adaptive`, `surrog
 
 Leaderboard sorting still prioritizes hard constraints, target status, validation status, final simulation score, and simulation count. It does not sort by `physics_score`.
 
-## Example
-
-```bash
-python -m goa_eval.cli strategy-benchmark \
-  --strategies random,adaptive,surrogate,hybrid_goa,physics_guided_hybrid \
-  --mock-ngspice \
-  --seeds 1,2,3 \
-  --rounds 2 \
-  --max-runs-per-round 3 \
-  --output-root outputs/strategy_benchmark
-```
+This strategy is an internal candidate-ranking option. External evidence is
+imported separately through `simulate-run --adapter csv-import`.

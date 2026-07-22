@@ -37,26 +37,18 @@ Expected behavior:
 
 This is still a simulation-only validation example. It proves that profile metrics can drive next-run candidate generation; it is not physical validation and does not mean a completed automatic optimization loop.
 
-## Optional SKY130/ngspice Check
+## Optional External-Simulation Check
 
-On a machine with `ngspice` and a SKY130 PDK installed, run a small real simulator pass with:
+Export a run from the simulator of choice and place `waveform.csv` plus optional
+OP/AC/DC/TRAN companion CSV files in one input directory. Import it with:
 
 ```bash
-python -m goa_eval.cli sky130-sweep \
-  --sweep config/sky130_sweep.yaml \
-  --pdk-root /path/to/sky130/pdk \
-  --split train \
-  --max-rows 1 \
-  --max-runs 2 \
-  --output-root outputs/sky130_real_closed_loop
+python -m goa_eval.cli simulate-run \
+  --adapter csv-import \
+  --input-dir /path/to/exported/run \
+  --output-dir outputs/external_closed_loop
 ```
 
-Then inspect:
-
-- `outputs/sky130_real_closed_loop/sky130_sweep_runs.csv`
-- `outputs/sky130_real_closed_loop/sky130_sweep_leaderboard.csv`
-- each run directory's `analysis_metrics.json`
-- each run directory's `next_candidates.csv`
-- `outputs/sky130_real_closed_loop/next_param_space.yaml`
-
-The same boundary applies: these files are `real_simulation_csv` / `simulation_only` artifacts, not silicon or physical test evidence.
+Then inspect `analysis_metrics.json`, `score_summary.json`, and
+`next_candidates.csv`. These remain `real_simulation_csv` / `simulation_only`
+artifacts, not silicon or physical-test evidence.

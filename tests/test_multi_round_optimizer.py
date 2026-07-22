@@ -1,6 +1,4 @@
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pandas as pd
@@ -383,85 +381,7 @@ def test_should_stop_optimization_uses_patience_and_min_improvement():
     assert should_stop_optimization(rounds, patience=1, min_improvement=0.05) == ""
 
 
-def test_optimize_rounds_cli_mock_writes_multi_round_outputs(tmp_path: Path):
-    rows_path = tmp_path / "rows.json"
-    rows_path.write_text(json.dumps([_row()]), encoding="utf-8")
-    sweep_path = tmp_path / "sweep.yaml"
-    sweep_path.write_text(
-        """
-parameters:
-  m1_width:
-    target: M1.W
-    values: ["1u", "2u"]
-  load_cap:
-    target: CLOAD.C
-    values: ["1pF", "2pF"]
-""",
-        encoding="utf-8",
-    )
-    output_root = tmp_path / "multi_round"
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "goa_eval.cli",
-            "optimize-rounds",
-            "--mock-dataset-json",
-            str(rows_path),
-            "--mock-ngspice",
-            "--sweep",
-            str(sweep_path),
-            "--rounds",
-            "2",
-            "--max-runs-per-round",
-            "2",
-            "--output-root",
-            str(output_root),
-            "--strategy",
-            "hybrid",
-        ],
-        cwd=Path.cwd(),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert (output_root / "round_001" / "sky130_sweep_runs.csv").exists()
-    assert (output_root / "round_002" / "sky130_sweep_runs.csv").exists()
-    assert (output_root / "optimization_history.json").exists()
-    assert (output_root / "optimization_leaderboard.csv").exists()
-    assert (output_root / "round_summary.csv").exists()
-    assert (output_root / "final_param_space.yaml").exists()
-    assert (output_root / "best_next_candidates.csv").exists()
-
-    summary = pd.read_csv(output_root / "round_summary.csv")
-    leaderboard = pd.read_csv(output_root / "optimization_leaderboard.csv")
-    final_space = yaml.safe_load((output_root / "final_param_space.yaml").read_text(encoding="utf-8"))
-    assert len(summary) == 2
-    assert {"round_index", "best_score", "stop_reason"} <= set(summary.columns)
-    assert {
-        "round_index",
-        "overall_score",
-        "run_dir",
-        "rank_status",
-        "candidate_source",
-        "source_candidate_id",
-        "source_candidate_trigger_metric",
-        "source_candidate_parameters_json",
-    } <= set(leaderboard.columns)
-    assert leaderboard["candidate_source"].notna().all()
-    assert "initial_grid" in set(leaderboard["candidate_source"])
-    assert leaderboard["rank_status"].isin(["evaluated", "not_evaluable", "skipped", "failed"]).all()
-    assert {"optimizer_strategy", "objective_score", "model_status"} <= set(leaderboard.columns)
-    assert "optimizer_strategy" in final_space
-    assert "parameters" in final_space
-
-
-def test_optimize_rounds_cli_mock_records_top_candidate_round_and_target_fields(tmp_path: Path):
-    rows_path = tmp_path / "rows.json"
-    rows_path.write_text(json.dumps([_row()]), encoding="utf-8")
+def test_generic_multi_round_executor_uses_an_injected_runner(tmp_path: Path):
     sweep_path = tmp_path / "sweep.yaml"
     sweep_path.write_text(
         """
@@ -472,86 +392,63 @@ parameters:
   load_cap:
     target: CLOAD.C
     values: ["1pF", "2pF", "3pF"]
-""",
+""".strip(),
         encoding="utf-8",
     )
-    validation_path = tmp_path / "validation.yaml"
-    validation_path.write_text(
-        """
-target:
-  metric: Max_overlap_ratio
-  threshold: 0.1
-candidate_replay:
-  top_n: 3
-""",
-        encoding="utf-8",
-    )
-    output_root = tmp_path / "candidate_rounds"
+    output_root = tmp_path / "multi_round"
+    calls: list[dict] = []
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "goa_eval.cli",
-            "optimize-rounds",
-            "--mock-dataset-json",
-            str(rows_path),
-            "--mock-ngspice",
-            "--sweep",
-            str(sweep_path),
-            "--validation-config",
-            str(validation_path),
-            "--rounds",
-            "2",
-            "--max-runs-per-round",
-            "3",
-            "--output-root",
-            str(output_root),
-            "--strategy",
-            "adaptive",
-        ],
-        cwd=Path.cwd(),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    leaderboard = pd.read_csv(output_root / "optimization_leaderboard.csv")
-    assert {"target_metric", "target_threshold", "target_passed", "target_status"} <= set(leaderboard.columns)
-    second_round = leaderboard[leaderboard["round_index"].eq(2)]
-    assert not second_round.empty
-    assert "next_candidates" in set(second_round["candidate_source"])
-    assert len(second_round[second_round["candidate_source"].eq("next_candidates")]) == 3
-    assert second_round["source_candidate_id"].notna().any()
-    assert set(second_round["target_metric"]) == {"Max_overlap_ratio"}
-    assert set(pd.to_numeric(second_round["target_threshold"])) == {0.1}
-
-
-def _row() -> dict:
-    testbench = "\n".join(
-        [
-            ".title multi-round fixture",
-            "VDD vdd 0 DC 1.8",
-            "M1 vout vin vdd vdd PMOS W=1u L=0.15u",
-            "CLOAD vout 0 1pF",
-            "V1 vin 0 pulse(0 1.8 1n 1n 1n 5n 20n)",
-            ".tran 1n 40n",
-            ".end",
+    def fake_runner(*, sweep_path, output_root, max_runs, seed, **_kwargs):
+        config = yaml.safe_load(Path(sweep_path).read_text(encoding="utf-8"))
+        points = config.get("points") or [
+            {"m1_width": "1u", "load_cap": "1pF"},
+            {"m1_width": "2u", "load_cap": "2pF"},
         ]
+        metadata = config.get("point_metadata") or [
+            {"candidate_source": "initial_grid"},
+            {"candidate_source": "initial_grid"},
+        ]
+        rows = []
+        for index, point in enumerate(points[:max_runs]):
+            run_dir = Path(output_root) / f"run_{index:04d}"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(
+                [
+                    {
+                        "candidate_id": f"candidate_{index}",
+                        "parameters_json": json.dumps(
+                            {"m1_width": "3u", "load_cap": "1pF"}
+                        ),
+                        "search_score": 1.0,
+                    }
+                ]
+            ).to_csv(run_dir / "next_candidates.csv", index=False)
+            rows.append(
+                {
+                    "status": "evaluated",
+                    "overall_score": 80.0 + index,
+                    "Max_overlap_ratio": 0.05,
+                    "run_dir": run_dir.name,
+                    **point,
+                    **metadata[min(index, len(metadata) - 1)],
+                }
+            )
+        calls.append({"seed": seed, "count": len(rows)})
+        return rows
+
+    rounds = optimizer_module.run_multi_round_optimization(
+        sweep_path=sweep_path,
+        output_root=output_root,
+        rounds=2,
+        max_runs_per_round=2,
+        sweep_runner=fake_runner,
+        strategy="adaptive",
     )
-    return {
-        "circuit_id": "multi_round_amp",
-        "topology": "two_stage_opamp",
-        "source_dataset": "unit_fixture",
-        "pdk": "sky130",
-        "spice_netlist": testbench,
-        "testbench_spice": testbench,
-        "netlist_json": {
-            "ports": [
-                {"name": "vout", "role": "output_v"},
-                {"name": "vaux", "role": "output_v"},
-                {"name": "vthird", "role": "output_v"},
-            ]
-        },
-    }
+
+    assert len(rounds) == 2
+    assert len(calls) == 2
+    assert (output_root / "optimization_history.json").exists()
+    assert (output_root / "optimization_leaderboard.csv").exists()
+    assert (output_root / "best_next_candidates.csv").exists()
+    leaderboard = pd.read_csv(output_root / "optimization_leaderboard.csv")
+    assert {"initial_grid", "next_candidates"} <= set(leaderboard["candidate_source"])

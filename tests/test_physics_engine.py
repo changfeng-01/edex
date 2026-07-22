@@ -116,7 +116,7 @@ def test_low_voltage_margin_has_specific_mask_penalty_rationale():
     assert "mask penalty: voltage margin is low" in result.rationale
 
 
-def test_evaluate_candidate_physics_does_not_run_ngspice_or_read_files(monkeypatch):
+def test_evaluate_candidate_physics_does_not_run_an_external_simulator_or_read_files(monkeypatch):
     def fail_open(*args, **kwargs):
         raise AssertionError("physics prior must not read external files")
 

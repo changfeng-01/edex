@@ -494,7 +494,7 @@ def inspect_existing_reports(inputs: dict[str, Any]) -> ToolResult:
     normalized = normalize_artifact_inputs(inputs)
     reports = {}
     warnings: list[str] = []
-    for key in ["diagnosis_report", "real_waveform_report", "sky130_mainline_report"]:
+    for key in ["diagnosis_report", "real_waveform_report"]:
         path_text = normalized.get(key)
         exists = bool(path_text and Path(str(path_text)).exists())
         report = {"path": str(path_text) if path_text else None, "exists": exists, "forbidden_hits": []}

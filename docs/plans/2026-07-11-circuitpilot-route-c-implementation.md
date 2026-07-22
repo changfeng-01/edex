@@ -440,7 +440,7 @@ Verify:
 
 - normalize_evidence_boundary is the normalization source;
 - artifact hashes become EvidenceRecord rows;
-- mock evidence cannot become reportable_as_real_ngspice;
+- mock evidence cannot become reportable_as_real_local-simulator;
 - missing required evidence produces evidence_incomplete;
 - unresimulated candidates cannot be confirmed.
 
@@ -855,19 +855,19 @@ git commit -m "feat: execute registered simulation jobs"
 
 - Create: src/goa_eval/product/simulator_registry.py
 - Create: src/goa_eval/product/adapters/__init__.py
-- Create: src/goa_eval/product/adapters/ngspice_sky130.py
+- Create: src/goa_eval/product/adapters/local-simulator_retired_foundry_flow.py
 - Create: src/goa_eval/product/adapters/empyrean_offline.py
 - Test: tests/test_product_simulator_registry.py
-- Test: tests/test_product_ngspice_adapter.py
+- Test: tests/test_product_local-simulator_adapter.py
 - Test: tests/test_product_empyrean_adapter.py
 
 **Step 1: Write registry tests**
 
 Unknown adapters fail. Registered adapters expose availability, render, execute/import and evidence metadata without executing during availability checks.
 
-**Step 2: Implement strict ngspice/SKY130 adapter**
+**Step 2: Implement strict retired local-simulator/foundry flow adapter**
 
-Reuse sky130-mainline behavior. Missing ngspice or PDK fails closed. Never fall back to mock when real execution was requested.
+Reuse retired_foundry_flow-mainline behavior. Missing local-simulator or PDK fails closed. Never fall back to mock when real execution was requested.
 
 **Step 3: Implement Empyrean offline adapter**
 
@@ -877,8 +877,8 @@ Reuse current interface manifest, net mapping and parsers. Support export/import
 
 ~~~powershell
 $env:PYTHONPATH='src'
-python -m pytest tests/test_product_simulator_registry.py tests/test_product_ngspice_adapter.py tests/test_product_empyrean_adapter.py tests/test_empyrean_import_cli.py -q
-git add src/goa_eval/product/simulator_registry.py src/goa_eval/product/adapters tests/test_product_simulator_registry.py tests/test_product_ngspice_adapter.py tests/test_product_empyrean_adapter.py
+python -m pytest tests/test_product_simulator_registry.py tests/test_product_local-simulator_adapter.py tests/test_product_empyrean_adapter.py tests/test_empyrean_import_cli.py -q
+git add src/goa_eval/product/simulator_registry.py src/goa_eval/product/adapters tests/test_product_simulator_registry.py tests/test_product_local-simulator_adapter.py tests/test_product_empyrean_adapter.py
 git commit -m "feat: register controlled simulator adapters"
 ~~~
 
@@ -889,7 +889,7 @@ $env:PYTHONPATH='src'
 python -m pytest tests -k pia -q
 ~~~
 
-Also run one fail-closed test without a configured PDK. Run the optional real-ngspice test only in an explicitly configured environment.
+Also run one fail-closed test without a configured PDK. Run the optional real-local-simulator test only in an explicitly configured environment.
 
 ---
 
@@ -1034,7 +1034,7 @@ Before declaring Route C implemented:
 3. Build the public product demo into a temporary directory.
 4. Verify CLI, legacy upload API and product API agree on core summary values.
 5. Verify every proposed candidate has must_resimulate=true.
-6. Verify mock/local results cannot set reportable_as_real_ngspice=true.
+6. Verify mock/local results cannot set reportable_as_real_local-simulator=true.
 7. Verify invalid result IDs fail without mutating experiment state.
 8. Verify pending PIA evolution resumes without duplicate candidates.
 9. Verify existing product-demo bundles remain readable.

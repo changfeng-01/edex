@@ -83,9 +83,6 @@ def run_empyrean_import(
         "evidence_level": "level_1_external_csv",
         "simulation_backend": "empyrean_exported_files",
         "mock_used": False,
-        "pdk_available": False,
-        "ngspice_available": False,
-        "reportable_as_real_ngspice": False,
         "optimizer_claim_level": "candidate_generated" if generate_candidates else "evaluation_only",
     }
     write_json(output_dir / "simulation_metadata.json", metadata)

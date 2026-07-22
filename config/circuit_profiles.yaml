@@ -193,6 +193,83 @@ profiles:
         voh_min_v: 0.20
         constraint_violation: 0.15
 
+  instrumentation_amplifier_three_opamp_compensated_v1:
+    type: "instrumentation_amplifier"
+    aliases:
+      - three_opamp_7r
+      - instrumentation_amplifier
+      - three_opamp_lm324
+    boundary:
+      data_source: "real_simulation_csv"
+      engineering_validity: "simulation_only"
+      must_resimulate: true
+    reference:
+      source: "analytic_template"
+      note: "LM324 names only an external model or CSV identity; analytic proxy results do not claim device-level LM324 accuracy."
+    physics_version: "instrumentation_amplifier_three_opamp_v1"
+    task_head_version: "instrumentation_amplifier_task_v1"
+    objectives:
+      required_inputs:
+        - target_differential_gain
+    parameter_profile:
+      parameters:
+        first_stage_resistance: {column: R, role: first_stage, property: resistance, kind: design, unit: ohm, optimizable: true, bounds: [5.0e3, 50.0e3], mapping_fidelity: exact}
+        gain_resistance: {column: RG, role: gain, property: resistance, kind: design, unit: ohm, optimizable: true, bounds: [0.5e3, 20.0e3], mapping_fidelity: exact}
+        differential_resistance: {column: RD, role: difference_stage, property: resistance, kind: design, unit: ohm, optimizable: true, bounds: [5.0e3, 50.0e3], mapping_fidelity: exact}
+        positive_ratio: {column: KD_plus, role: difference_stage_positive, property: resistance_ratio, kind: design, unit: ratio, optimizable: true, bounds: [0.8, 2.0], mapping_fidelity: exact}
+        negative_ratio: {column: KD_minus, role: difference_stage_negative, property: resistance_ratio, kind: design, unit: ratio, optimizable: true, bounds: [0.8, 2.0], mapping_fidelity: exact}
+        compensation_capacitance: {column: CF, role: compensation, property: capacitance, kind: design, unit: F, optimizable: true, bounds: [1.0e-12, 1.0e-9], mapping_fidelity: exact}
+        differential_input: {column: Vd, role: input, property: differential_voltage, kind: environment, unit: V, optimizable: false, mapping_fidelity: exact}
+        common_mode_input: {column: V_CM, role: input, property: common_mode_voltage, kind: environment, unit: V, optimizable: false, mapping_fidelity: exact}
+        input_frequency: {column: f, role: input, property: frequency, kind: environment, unit: Hz, optimizable: false, mapping_fidelity: exact}
+        positive_supply: {column: VCC, role: supply, property: positive_voltage, kind: environment, unit: V, optimizable: false, mapping_fidelity: exact}
+        negative_supply: {column: VEE, role: supply, property: negative_voltage, kind: environment, unit: V, optimizable: false, mapping_fidelity: exact}
+        output_load: {column: RL, role: load, property: resistance, kind: environment, unit: ohm, optimizable: false, mapping_fidelity: exact}
+        temperature: {column: temperature_c, role: environment, property: temperature_c, kind: environment, unit: degC, optimizable: false, mapping_fidelity: exact}
+        corner: {column: corner, role: environment, property: corner, kind: environment, optimizable: false, mapping_fidelity: exact}
+        open_loop_gain: {column: A0, role: opamp_model, property: open_loop_gain, kind: model, unit: ratio, optimizable: false, mapping_fidelity: exact}
+        gain_bandwidth: {column: GBW, role: opamp_model, property: gain_bandwidth, kind: model, unit: Hz, optimizable: false, mapping_fidelity: exact}
+        slew_rate: {column: SR, role: opamp_model, property: slew_rate, kind: model, unit: V/s, optimizable: false, mapping_fidelity: exact}
+        output_resistance: {column: Rout, role: opamp_model, property: output_resistance, kind: model, unit: ohm, optimizable: false, mapping_fidelity: exact}
+        input_offset: {column: input_offset_v, role: opamp_model, property: input_offset, kind: model, unit: V, optimizable: false, mapping_fidelity: exact}
+        input_bias_current: {column: input_bias_current_a, role: opamp_model, property: input_bias_current, kind: model, unit: A, optimizable: false, mapping_fidelity: exact}
+        input_common_min: {column: input_common_min_v, role: opamp_model, property: input_common_min, kind: model, unit: V, optimizable: false, mapping_fidelity: exact}
+        input_common_max: {column: input_common_max_v, role: opamp_model, property: input_common_max, kind: model, unit: V, optimizable: false, mapping_fidelity: exact}
+        output_low: {column: output_low_v, role: opamp_model, property: output_low, kind: model, unit: V, optimizable: false, mapping_fidelity: exact}
+        output_high: {column: output_high_v, role: opamp_model, property: output_high, kind: model, unit: V, optimizable: false, mapping_fidelity: exact}
+        supply_current: {column: supply_current_a, role: opamp_model, property: supply_current, kind: model, unit: A, optimizable: false, mapping_fidelity: exact}
+        resistor_variation_1: {column: delta1, role: resistor_1, property: relative_error, kind: variation, unit: ratio, optimizable: false, mapping_fidelity: exact}
+        resistor_variation_2: {column: delta2, role: resistor_2, property: relative_error, kind: variation, unit: ratio, optimizable: false, mapping_fidelity: exact}
+        resistor_variation_3: {column: delta3, role: resistor_3, property: relative_error, kind: variation, unit: ratio, optimizable: false, mapping_fidelity: exact}
+        resistor_variation_4: {column: delta4, role: resistor_4, property: relative_error, kind: variation, unit: ratio, optimizable: false, mapping_fidelity: exact}
+        resistor_variation_5: {column: delta5, role: resistor_5, property: relative_error, kind: variation, unit: ratio, optimizable: false, mapping_fidelity: exact}
+        resistor_variation_6: {column: delta6, role: resistor_6, property: relative_error, kind: variation, unit: ratio, optimizable: false, mapping_fidelity: exact}
+    required_analyses: [op, ac, tran]
+    metrics:
+      gain_error_fraction: {source: ac_metrics, source_analysis: ac, unit: ratio, maximum: 0.01, direction: smaller_better, required: true}
+      cmrr_db: {source: ac_metrics, source_analysis: ac, unit: dB, minimum: 60.0, direction: larger_better, required: true}
+      bandwidth_hz: {source: ac_metrics, source_analysis: ac, unit: Hz, minimum: 10000.0, direction: larger_better, required: true}
+      output_headroom_v: {source: op_metrics, source_analysis: op, unit: V, minimum: 1.5, direction: larger_better, required: true}
+      slew_utilization: {source: tran_metrics, source_analysis: tran, unit: ratio, maximum: 1.0, direction: smaller_better, required: true}
+      power_w: {source: op_metrics, source_analysis: op, unit: W, direction: smaller_better, required: false}
+    hard_constraints:
+      gain_error_fraction: {maximum: 0.01}
+      cmrr_db: {minimum: 60.0}
+      bandwidth_hz: {minimum: 10.0e3}
+      output_headroom_v: {minimum: 1.5}
+      slew_utilization: {maximum: 1.0}
+    objective:
+      scalarization: {method: weighted_sum, missing_metric_policy: not_evaluable}
+      weights:
+        gain_error_fraction: 0.25
+        cmrr_db: 0.25
+        bandwidth_hz: 0.15
+        output_headroom_v: 0.15
+        slew_utilization: 0.10
+        power_w: 0.10
+    historical_calibration:
+      namespace_fields: [agent, profile, physics_version, task_head_version, corner_set]
+
   ota_general:
     type: "analog_amplifier"
     aliases:

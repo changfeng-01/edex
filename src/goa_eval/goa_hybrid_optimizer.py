@@ -332,7 +332,7 @@ def _candidate(
         "data_source": "benchmark-derived",
         "engineering_validity": "simulation_only",
         "evidence_level": "csv-derived",
-        "simulation_backend": "no_real_ngspice_required",
+        "simulation_backend": "external_simulator_not_required",
         "mock_used": False,
     }
 
@@ -705,7 +705,7 @@ def _optimizer_summary(
         "boundary": {
             "mainline": "GOA",
             "engineering_validity": "simulation_only",
-            "real_ngspice_required": False,
+            "external_simulator_required": False,
             "claim": "candidate recommendation only; next simulation is still required",
         },
         "input_data": {
@@ -727,7 +727,7 @@ def _optimizer_summary(
         "data_source": "benchmark-derived",
         "engineering_validity": "simulation_only",
         "evidence_level": "csv-derived",
-        "simulation_backend": "no_real_ngspice_required",
+        "simulation_backend": "external_simulator_not_required",
         "mock_used": False,
     }
 
@@ -738,7 +738,7 @@ def _optimizer_report(summary: dict[str, Any], frame: pd.DataFrame) -> str:
         "",
         "## 1. Task Boundary",
         "",
-        "This run is a GOA simulation-only optimizer. It uses CSV/benchmark-derived results, has no real ngspice required boundary, and does not claim silicon or physical validation.",
+        "This run is a GOA simulation-only optimizer. It uses CSV/benchmark-derived results, requires no external simulator, and does not claim silicon or physical validation.",
         "",
         "## 2. Input Data",
         "",
@@ -808,7 +808,7 @@ def _candidate_markdown(frame: pd.DataFrame) -> str:
         "- data_source: `benchmark-derived`",
         "- engineering_validity: `simulation_only`",
         "- evidence_level: `csv-derived`",
-        "- simulation_backend: `no_real_ngspice_required`",
+        "- simulation_backend: `external_simulator_not_required`",
         "",
     ]
     for _, row in frame.iterrows():

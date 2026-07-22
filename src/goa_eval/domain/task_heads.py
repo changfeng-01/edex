@@ -15,6 +15,7 @@ class TaskMetricSpec:
     maximum: float | None = None
     target: float | None = None
     scale: float = 1.0
+    required: bool = True
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class CircuitTaskHead:
                     maximum=_optional_float(raw.get("maximum")),
                     target=_optional_float(raw.get("target")),
                     scale=scale,
+                    required=bool(raw.get("required", True)),
                 )
             )
         return cls(
@@ -135,12 +137,21 @@ class TaskHeadEvaluation:
 def evaluate_task_head(features: Mapping[str, Any], task: CircuitTaskHead) -> TaskHeadEvaluation:
     results: dict[str, TaskMetricEvaluation] = {}
     missing: list[str] = []
+    missing_required: list[str] = []
     weighted_score = 0.0
     weight_total = 0.0
     for metric in task.metrics:
         value = _optional_float(features.get(metric.feature))
-        if value is None or not math.isfinite(value):
+        infinite_larger_better = value == float("inf") and metric.direction not in {
+            "smaller_better",
+            "minimize",
+            "target",
+            "target_value",
+        }
+        if value is None or (not math.isfinite(value) and not infinite_larger_better):
             missing.append(metric.feature)
+            if metric.required:
+                missing_required.append(metric.feature)
             continue
         margin, score = _metric_margin_and_score(value, metric)
         results[metric.name] = TaskMetricEvaluation(
@@ -152,7 +163,7 @@ def evaluate_task_head(features: Mapping[str, Any], task: CircuitTaskHead) -> Ta
         )
         weighted_score += metric.weight * score
         weight_total += metric.weight
-    if missing and task.missing_metric_policy == "not_evaluable":
+    if missing_required and task.missing_metric_policy == "not_evaluable":
         return TaskHeadEvaluation("missing_required_metrics", None, results, tuple(missing))
     if weight_total <= 0.0:
         return TaskHeadEvaluation("unavailable", None, results, tuple(missing))

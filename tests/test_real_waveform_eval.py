@@ -95,7 +95,7 @@ def test_sequence_pass():
     assert result.summary["Seq_pass"] is True
 
 
-def test_short_sky130_window_starting_high_is_detected_as_single_pulse():
+def test_short_window_starting_high_is_detected_as_single_pulse():
     time = np.arange(0.0, 4.1e-9, 0.1e-9)
     signal = np.where(time < 0.8e-9, 1.8, 0.0)
     frame = pd.DataFrame({"time": time, "o1": signal})

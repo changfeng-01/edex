@@ -76,9 +76,6 @@ export interface EvidenceBoundary {
   evidence_level?: string;
   simulation_backend?: string;
   mock_used?: boolean | string;
-  pdk_available?: boolean | string;
-  ngspice_available?: boolean | string;
-  reportable_as_real_ngspice?: boolean | string;
   optimizer_claim_level?: string;
 }
 

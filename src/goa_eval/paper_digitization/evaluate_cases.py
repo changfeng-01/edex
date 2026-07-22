@@ -41,9 +41,6 @@ def evaluate_paper_cases(*, index_path: Path, output_root: Path) -> list[dict[st
                 "simulation_backend": "paper_digitized_csv",
                 "evidence_level": "level_1_external_csv",
                 "mock_used": False,
-                "pdk_available": False,
-                "ngspice_available": False,
-                "reportable_as_real_ngspice": False,
                 "optimizer_claim_level": "candidate_generated",
             }
             summary = run_real_waveform_evaluation(

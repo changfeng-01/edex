@@ -10,6 +10,7 @@ from .parameter_profiles import (
     ParameterUpdate,
     audit_parameter_profile,
     decode_action_set,
+    project_parameter_value,
 )
 from .source_selection import source_domain_weights
 from .task_heads import CircuitTaskHead, TaskHeadEvaluation, TaskMetricEvaluation, TaskMetricSpec, evaluate_task_head
@@ -32,6 +33,7 @@ __all__ = [
     "audit_parameter_profile",
     "decode_action",
     "decode_action_set",
+    "project_parameter_value",
     "domain_distance",
     "evaluate_task_head",
     "source_domain_weights",

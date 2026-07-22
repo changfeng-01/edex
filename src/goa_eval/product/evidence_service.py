@@ -69,8 +69,6 @@ class EvidenceService:
         )
 
     def validate_boundary(self, evidence: Mapping[str, Any]) -> dict[str, Any]:
-        if evidence.get("mock_used") is True and evidence.get("reportable_as_real_ngspice") is True:
-            raise EvidenceBoundaryInvalid("mock_used=true cannot be reportable_as_real_ngspice=true")
         return normalize_evidence_boundary(evidence)
 
     def summarize_completeness(

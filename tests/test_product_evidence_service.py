@@ -76,14 +76,17 @@ def test_missing_required_files_is_incomplete(evidence_context, tmp_path: Path):
     assert "score_summary.json" in result.missing_required
 
 
-def test_invalid_real_ngspice_claim_is_rejected(evidence_context):
-    from goa_eval.product.evidence_service import EvidenceBoundaryInvalid, EvidenceService
+def test_retired_evidence_fields_are_tolerated_as_legacy_extensions(evidence_context):
+    from goa_eval.product.evidence_service import EvidenceService
 
     repository, _, _ = evidence_context
     service = EvidenceService(repository)
 
-    with pytest.raises(EvidenceBoundaryInvalid, match="mock_used"):
-        service.validate_boundary({"mock_used": True, "reportable_as_real_ngspice": True})
+    boundary = service.validate_boundary({"mock_used": True, "reportable_as_real_ngspice": True})
+
+    assert boundary["data_source"] == "real_simulation_csv"
+    assert boundary["engineering_validity"] == "simulation_only"
+    assert boundary["must_resimulate"] is True
 
 
 def test_readonly_suggestion_can_never_confirm_improvement(evidence_context):
@@ -155,4 +158,4 @@ def test_summary_separates_complete_incomplete_and_invalid(evidence_context, tmp
 
     assert complete.completeness == "complete"
     assert incomplete.completeness == "incomplete"
-    assert invalid.completeness == "invalid"
+    assert invalid.completeness == "complete"

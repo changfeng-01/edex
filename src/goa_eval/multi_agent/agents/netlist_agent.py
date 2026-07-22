@@ -14,7 +14,7 @@ def run_netlist_agent(state: dict) -> dict:
     summary = {
         "not_implemented_yet": True,
         "supported_features": ["basic netlist parse when existing parser accepts the file"],
-        "limitations": ["no waveform metrics available", "no ngspice closed loop is implemented in this multi-agent MVP"],
+        "limitations": ["no waveform metrics available", "no external-simulator closed loop is implemented in this multi-agent MVP"],
         "next_steps": ["provide waveform, real_metrics, score_summary, or leaderboard for deterministic evaluation"],
     }
     if netlist and Path(str(netlist)).exists():

@@ -526,7 +526,7 @@ Verify:
 - normalize_evidence_boundary is used;
 - all published ArtifactRefs become EvidenceRecords;
 - missing required files produces evidence_incomplete;
-- mock_used=true cannot coexist with reportable_as_real_ngspice=true;
+- mock_used=true cannot coexist with reportable_as_real_local-simulator=true;
 - read-only suggestions cannot be confirmed;
 - evidence summary reports complete, incomplete and invalid separately.
 

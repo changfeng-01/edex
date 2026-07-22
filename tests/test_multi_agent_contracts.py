@@ -5,7 +5,6 @@ REQUIRED_AGENTS = {
     "SupervisorAgent",
     "RouterAgent",
     "GOAAgent",
-    "SKY130Agent",
     "GenericWaveformAgent",
     "NetlistAgent",
     "EvaluationAgent",

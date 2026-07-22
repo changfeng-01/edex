@@ -21,4 +21,4 @@ CircuitPilot benchmarks are engineering evaluations, not score-only leaderboards
 
 ## Interpretation
 
-`not_evaluable` is separate from failed, skipped, and passed. Candidate generation is a next-run suggestion and must not be reported as completed optimization or physical validation. `physics_score` is only pre-simulation ranking evidence and is not a final score. Mock ngspice runs are useful for software checks but are not reportable as real SKY130/ngspice evidence.
+`not_evaluable` is separate from failed, skipped, and passed. Candidate generation is a next-run suggestion and must not be reported as completed optimization or physical validation. `physics_score` is only pre-simulation ranking evidence and is not a final score. Fixture data may test the software chain but is not external-simulation evidence.

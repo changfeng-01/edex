@@ -1,4 +1,9 @@
-# CircuitPilot 全仓库技术报告
+# CircuitPilot 历史迁移技术记录（退役后端移除前）
+
+> 本文档仅保存 2026-05-28 的迁移前仓库快照，其中提到的专用后端、命令、
+> adapter、配置和测试均已退役，不代表当前运行能力。当前架构请以
+> `README.md`、`docs/multi_agent_evidence_chain.md` 和
+> `docs/instrumentation_amplifier_agent_template_zh.md` 为准。
 
 生成时间：2026-05-28  
 当前工作区：`D:\EDA大赛`  
